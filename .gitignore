@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+dist/
+build/
+
+# Node / Next.js
+node_modules/
+.next/
+frontend/.next/
+frontend/node_modules/
+frontend/out/
+
+# Environment / secrets
+backend/.env
+.env
+.env.*
+!.env.example
+
+# Docker volumes / uploads
+backend/uploads/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Root-level scratch / test scripts
+check_login.py
+reset_pw.py
+send_reset.py
+test_*.py
+*.png

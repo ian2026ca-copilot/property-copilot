@@ -1,0 +1,19 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "marketcap-frontend",
+      "runtimeExecutable": "cmd.exe",
+      "runtimeArgs": ["/c", "cd C:\\projects\\marketCap\\frontend && npm run dev"],
+      "port": 3000,
+      "autoPort": false
+    },
+    {
+      "name": "property-copilot-frontend",
+      "runtimeExecutable": "cmd.exe",
+      "runtimeArgs": ["/c", "cd C:\\projects\\property-copilot\\frontend && npm run dev -- --port 3001"],
+      "port": 3001,
+      "autoPort": false
+    }
+  ]
+}
