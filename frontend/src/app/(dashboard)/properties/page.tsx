@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { propertiesApi, tenantsApi, imagesApi, type PropertyOut, type UnitOut, type ImageOut } from "@/lib/api";
+import { propertiesApi, tenantsApi, imagesApi, type PropertyOut, type UnitOut, type ImageOut, type TenantOut, type UnitTenantInfo } from "@/lib/api";
 import { MOCK_MODE } from "@/lib/useApiData";
 
 // ─── Mock data ────────────────────────────────────────────────────────────────
@@ -29,17 +29,18 @@ interface UnitRow {
   leaseStart: string | null;
   leaseEnd: string | null;
   outstandingBalance: number;
+  tenants: UnitTenantInfo[];
 }
 
 const MOCK_UNITS: UnitRow[] = [
-  { id: "u1", property_id: "1", number: "101", property: "Sunset Towers", layout: "2 bed / 1 bath", sqft: 850, rent: 2400, status: "Occupied", tenant: "Emma Jones", tenantUserId: null, tenantAvatarUrl: null, leaseId: "l1", leaseStart: "2026-02-01", leaseEnd: "2027-01-31", outstandingBalance: 0 },
-  { id: "u2", property_id: "1", number: "102", property: "Sunset Towers", layout: "1 bed / 1 bath", sqft: 620, rent: 1950, status: "Maintenance", tenant: null, tenantUserId: null, tenantAvatarUrl: null, leaseId: null, leaseStart: null, leaseEnd: null, outstandingBalance: 0 },
-  { id: "u3", property_id: "1", number: "103", property: "Sunset Towers", layout: "2 bed / 2 bath", sqft: 1020, rent: 2750, status: "Occupied", tenant: "Marcus Lee", tenantUserId: null, tenantAvatarUrl: null, leaseId: "l2", leaseStart: "2025-09-01", leaseEnd: "2026-08-31", outstandingBalance: 2750 },
-  { id: "u4", property_id: "1", number: "201", property: "Sunset Towers", layout: "Studio", sqft: 420, rent: 1600, status: "Vacant", tenant: null, tenantUserId: null, tenantAvatarUrl: null, leaseId: null, leaseStart: null, leaseEnd: null, outstandingBalance: 0 },
-  { id: "u5", property_id: "2", number: "A1", property: "Cedar Row", layout: "3 bed / 2 bath", sqft: 1280, rent: 3100, status: "Occupied", tenant: "Sarah Kim", tenantUserId: null, tenantAvatarUrl: null, leaseId: "l3", leaseStart: "2025-06-01", leaseEnd: "2026-05-31", outstandingBalance: 6200 },
-  { id: "u6", property_id: "2", number: "A2", property: "Cedar Row", layout: "2 bed / 1 bath", sqft: 900, rent: 2200, status: "Occupied", tenant: "David Chen", tenantUserId: null, tenantAvatarUrl: null, leaseId: "l4", leaseStart: "2025-11-01", leaseEnd: "2026-08-15", outstandingBalance: 0 },
-  { id: "u7", property_id: "3", number: "B1", property: "Northside Commons", layout: "1 bed / 1 bath", sqft: 580, rent: 1800, status: "Vacant", tenant: null, tenantUserId: null, tenantAvatarUrl: null, leaseId: null, leaseStart: null, leaseEnd: null, outstandingBalance: 0 },
-  { id: "u8", property_id: "3", number: "B2", property: "Northside Commons", layout: "2 bed / 2 bath", sqft: 960, rent: 2500, status: "Occupied", tenant: "Priya Nair", tenantUserId: null, tenantAvatarUrl: null, leaseId: "l5", leaseStart: "2026-01-01", leaseEnd: "2026-12-31", outstandingBalance: 0 },
+  { id: "u1", property_id: "1", number: "101", property: "Sunset Towers", layout: "2 bed / 1 bath", sqft: 850, rent: 2400, status: "Occupied", tenant: "Emma Jones", tenantUserId: null, tenantAvatarUrl: null, leaseId: "l1", leaseStart: "2026-02-01", leaseEnd: "2027-01-31", outstandingBalance: 0, tenants: [] },
+  { id: "u2", property_id: "1", number: "102", property: "Sunset Towers", layout: "1 bed / 1 bath", sqft: 620, rent: 1950, status: "Maintenance", tenant: null, tenantUserId: null, tenantAvatarUrl: null, leaseId: null, leaseStart: null, leaseEnd: null, outstandingBalance: 0, tenants: [] },
+  { id: "u3", property_id: "1", number: "103", property: "Sunset Towers", layout: "2 bed / 2 bath", sqft: 1020, rent: 2750, status: "Occupied", tenant: "Marcus Lee", tenantUserId: null, tenantAvatarUrl: null, leaseId: "l2", leaseStart: "2025-09-01", leaseEnd: "2026-08-31", outstandingBalance: 2750, tenants: [] },
+  { id: "u4", property_id: "1", number: "201", property: "Sunset Towers", layout: "Studio", sqft: 420, rent: 1600, status: "Vacant", tenant: null, tenantUserId: null, tenantAvatarUrl: null, leaseId: null, leaseStart: null, leaseEnd: null, outstandingBalance: 0, tenants: [] },
+  { id: "u5", property_id: "2", number: "A1", property: "Cedar Row", layout: "3 bed / 2 bath", sqft: 1280, rent: 3100, status: "Occupied", tenant: "Sarah Kim", tenantUserId: null, tenantAvatarUrl: null, leaseId: "l3", leaseStart: "2025-06-01", leaseEnd: "2026-05-31", outstandingBalance: 6200, tenants: [] },
+  { id: "u6", property_id: "2", number: "A2", property: "Cedar Row", layout: "2 bed / 1 bath", sqft: 900, rent: 2200, status: "Occupied", tenant: "David Chen", tenantUserId: null, tenantAvatarUrl: null, leaseId: "l4", leaseStart: "2025-11-01", leaseEnd: "2026-08-15", outstandingBalance: 0, tenants: [] },
+  { id: "u7", property_id: "3", number: "B1", property: "Northside Commons", layout: "1 bed / 1 bath", sqft: 580, rent: 1800, status: "Vacant", tenant: null, tenantUserId: null, tenantAvatarUrl: null, leaseId: null, leaseStart: null, leaseEnd: null, outstandingBalance: 0, tenants: [] },
+  { id: "u8", property_id: "3", number: "B2", property: "Northside Commons", layout: "2 bed / 2 bath", sqft: 960, rent: 2500, status: "Occupied", tenant: "Priya Nair", tenantUserId: null, tenantAvatarUrl: null, leaseId: "l5", leaseStart: "2026-01-01", leaseEnd: "2026-12-31", outstandingBalance: 0, tenants: [] },
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -84,6 +85,7 @@ function fromApiUnit(u: UnitOut, propertyName: string): UnitRow {
     leaseStart: u.lease_start ?? null,
     leaseEnd: u.lease_end ?? null,
     outstandingBalance: u.outstanding_balance ?? 0,
+    tenants: u.tenants ?? [],
   };
 }
 
@@ -270,6 +272,7 @@ function PropertyModal({ initial, onClose, onSave }: {
           year_built: payload.year_built ?? null,
           unit_count: initial?.unit_count ?? 0,
           occupied_count: initial?.occupied_count ?? 0,
+          cover_url: initial?.cover_url ?? null,
         };
       } else {
         saved = initial
@@ -477,6 +480,127 @@ function UnitModal({ propertyId, propertyName, initial, onClose, onSave }: {
   );
 }
 
+// ─── Tenant Detail Modal ──────────────────────────────────────────────────────
+
+function TenantCard({ tenantUserId, tenantInfo, unitRent }: {
+  tenantUserId: string | null;
+  tenantInfo: UnitTenantInfo;
+  unitRent: number;
+}) {
+  const [tenant, setTenant] = useState<TenantOut | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!tenantUserId) { setLoading(false); return; }
+    tenantsApi.getPerson(tenantUserId)
+      .then(t => setTenant(t))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [tenantUserId]);
+
+  const initials = (tenantInfo.tenant_name ?? "?").split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase();
+  const rows: [string, string | null | undefined][] = tenant ? [
+    ["Email", tenant.email],
+    ["Phone", tenant.phone || null],
+    ["Date of birth", tenant.date_of_birth || null],
+    ["Address", [tenant.street_address, tenant.city, tenant.province, tenant.postal_code, tenant.country].filter(Boolean).join(", ") || null],
+  ] : [];
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-3">
+        <div className="w-10 h-10 rounded-full bg-black text-white text-xs font-bold flex items-center justify-center shrink-0">
+          {initials}
+        </div>
+        <div>
+          <p className="text-sm font-semibold text-slate-900">{tenantInfo.tenant_name}</p>
+          {loading && <p className="text-xs text-slate-400">Loading…</p>}
+        </div>
+      </div>
+
+      {!loading && tenant && (
+        <div className="space-y-1.5 pl-1">
+          {rows.map(([label, value]) => value ? (
+            <div key={label} className="flex gap-3">
+              <span className="text-xs text-slate-400 w-24 shrink-0">{label}</span>
+              <span className="text-xs text-slate-700 font-medium">{value}</span>
+            </div>
+          ) : null)}
+        </div>
+      )}
+
+      <div className="pl-1 space-y-1.5 border-t border-slate-100 pt-2">
+        <div className="flex gap-3">
+          <span className="text-xs text-slate-400 w-24 shrink-0">Lease period</span>
+          <span className="text-xs text-slate-700 font-medium">{tenantInfo.lease_start} → {tenantInfo.lease_end}</span>
+        </div>
+        <div className="flex gap-3">
+          <span className="text-xs text-slate-400 w-24 shrink-0">Rent</span>
+          <span className="text-xs text-slate-700 font-medium">${unitRent.toLocaleString()}/mo</span>
+        </div>
+        {tenantInfo.outstanding_balance > 0 && (
+          <div className="flex gap-3">
+            <span className="text-xs text-slate-400 w-24 shrink-0">Outstanding</span>
+            <span className="text-xs text-red-600 font-medium">${tenantInfo.outstanding_balance.toLocaleString()}</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function TenantDetailModal({ unit, onClose }: { unit: UnitRow; onClose: () => void }) {
+  // Derive list of tenants to show — prefer the rich `tenants` array from backend,
+  // fall back to the legacy single-tenant fields
+  const tenantList: UnitTenantInfo[] = unit.tenants.length > 0
+    ? unit.tenants
+    : unit.tenantUserId
+      ? [{
+          tenant_user_id: unit.tenantUserId,
+          tenant_name: unit.tenant,
+          tenant_avatar_url: unit.tenantAvatarUrl,
+          lease_id: unit.leaseId ?? "",
+          lease_start: unit.leaseStart,
+          lease_end: unit.leaseEnd,
+          outstanding_balance: unit.outstandingBalance,
+        }]
+      : [];
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl w-full max-w-sm shadow-xl overflow-hidden max-h-[90vh] flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 shrink-0">
+          <div>
+            <h2 className="text-base font-semibold text-slate-900">
+              {tenantList.length > 1 ? `${tenantList.length} tenants` : "Tenant detail"}
+            </h2>
+            <p className="text-xs text-slate-400 mt-0.5">Unit {unit.number} · {unit.property}</p>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
+        </div>
+
+        <div className="px-6 py-5 space-y-5 overflow-y-auto">
+          {tenantList.length === 0 && <p className="text-xs text-slate-400">No tenant data available.</p>}
+          {tenantList.map((t, i) => (
+            <React.Fragment key={t.tenant_user_id}>
+              {i > 0 && <div className="border-t border-slate-200" />}
+              <TenantCard tenantUserId={t.tenant_user_id} tenantInfo={t} unitRent={unit.rent} />
+            </React.Fragment>
+          ))}
+        </div>
+
+        <div className="px-6 pb-5 shrink-0">
+          <button onClick={onClose}
+            className="w-full py-2 border border-slate-200 rounded-lg text-sm text-slate-600 hover:bg-slate-50">
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 type ModalState =
@@ -489,11 +613,13 @@ type ModalState =
   | { type: "deleteUnit"; unit: UnitRow }
   | { type: "endLease"; unit: UnitRow }
   | { type: "propertyImages"; property: PropertyOut }
-  | { type: "unitImages"; unit: UnitRow };
+  | { type: "unitImages"; unit: UnitRow }
+  | { type: "tenantDetail"; unit: UnitRow };
 
 export default function PropertiesPage() {
   const router = useRouter();
   const [filter, setFilter] = useState("all");
+  const [selectedPropertyIds, setSelectedPropertyIds] = useState<Set<string>>(new Set());
   const [modal, setModal] = useState<ModalState>({ type: "none" });
   const [properties, setProperties] = useState<PropertyOut[]>(MOCK_PROPERTIES);
   const [units, setUnits] = useState<UnitRow[]>(MOCK_UNITS);
@@ -636,6 +762,7 @@ export default function PropertiesPage() {
       setProperties((prev) => prev.map((p) =>
         p.id === u.property_id ? { ...p, unit_count: p.unit_count + 1 } : p
       ));
+      setSelectedPropertyIds(new Set([u.property_id]));
     }
     setModal({ type: "none" });
   }
@@ -664,7 +791,8 @@ export default function PropertiesPage() {
     setModal({ type: "none" });
   }
 
-  const filtered = filter === "all" ? units : units.filter((u) => u.status === filter);
+  const propertyUnits = units.filter(u => selectedPropertyIds.has(u.property_id));
+  const filtered = filter === "all" ? propertyUnits : propertyUnits.filter((u) => u.status === filter);
 
   return (
     <div className="max-w-[1280px] mx-auto px-6 py-6 space-y-6">
@@ -729,6 +857,9 @@ export default function PropertiesPage() {
           onClose={() => setModal({ type: "none" })}
         />
       )}
+      {(modal.type === "tenantDetail") && (
+        <TenantDetailModal unit={modal.unit} onClose={() => setModal({ type: "none" })} />
+      )}
 
       {/* Header */}
       <div className="flex items-end justify-between">
@@ -747,7 +878,17 @@ export default function PropertiesPage() {
       {/* Property cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {properties.map((p) => (
-          <div key={p.id} className="bg-white rounded-xl border border-slate-200 overflow-hidden hover:shadow-md transition-shadow group">
+          <div key={p.id} onClick={(e) => {
+              setSelectedPropertyIds(prev => {
+                const next = new Set(prev);
+                if (e.ctrlKey || e.metaKey) {
+                  next.has(p.id) ? next.delete(p.id) : next.add(p.id);
+                } else {
+                  if (next.size === 1 && next.has(p.id)) { next.clear(); } else { next.clear(); next.add(p.id); }
+                }
+                return next;
+              });
+            }} className={`bg-white rounded-xl border overflow-hidden hover:shadow-md transition-shadow group cursor-pointer ${selectedPropertyIds.has(p.id) ? "border-black ring-2 ring-black" : "border-slate-200"}`}>
             {/* Slim accent header with action buttons */}
             <div className="h-10 bg-slate-100 flex items-center justify-end px-2 gap-1 relative">
               <span className="absolute left-3 text-[10px] font-medium text-slate-400 uppercase tracking-wider">
@@ -843,12 +984,35 @@ export default function PropertiesPage() {
       {/* Unit inventory */}
       <div className="bg-white rounded-xl border border-slate-200">
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-          <h3 className="text-sm font-semibold text-slate-900">Unit inventory</h3>
-          <select
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            className="text-xs border border-slate-200 rounded-lg px-3 py-1.5 bg-white outline-none focus:border-black"
-          >
+          <h3 className="text-sm font-semibold text-slate-900">
+            Unit inventory
+            {selectedPropertyIds.size === 1 && (
+              <span className="ml-2 text-xs font-normal text-slate-400">· {properties.find(p => selectedPropertyIds.has(p.id))?.name}</span>
+            )}
+            {selectedPropertyIds.size > 1 && (
+              <span className="ml-2 text-xs font-normal text-slate-400">· {selectedPropertyIds.size} properties</span>
+            )}
+          </h3>
+          <div className="flex items-center gap-2">
+            {(() => {
+              const selProp = selectedPropertyIds.size === 1 ? properties.find(p => selectedPropertyIds.has(p.id)) ?? null : null;
+              const disabled = !selProp;
+              return (
+                <button
+                  disabled={disabled}
+                  title={disabled ? "Select a property first" : `Add unit to ${selProp!.name}`}
+                  onClick={(e) => { e.stopPropagation(); selProp && setModal({ type: "addUnit", propertyId: selProp.id, propertyName: selProp.name }); }}
+                  className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-colors ${disabled ? "bg-slate-100 text-slate-400 cursor-not-allowed" : "bg-black text-white hover:bg-slate-800"}`}
+                >
+                  + Unit
+                </button>
+              );
+            })()}
+            <select
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              className="text-xs border border-slate-200 rounded-lg px-3 py-1.5 bg-white outline-none focus:border-black"
+            >
             <option value="all">All status</option>
             <option value="Occupied">Occupied</option>
             <option value="Vacant">Vacant</option>
@@ -857,6 +1021,7 @@ export default function PropertiesPage() {
             <option value="Notice">Notice</option>
             <option value="Renovation">Renovation</option>
           </select>
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -900,8 +1065,33 @@ export default function PropertiesPage() {
                         </span>
                       </td>
                       <td className="px-3 py-3">
-                        {u.tenant ? (
-                          <div className="flex items-center gap-1.5">
+                        {u.tenants.length > 0 ? (
+                          <button
+                            onClick={() => setModal({ type: "tenantDetail", unit: u })}
+                            className="flex flex-col gap-1 text-left group"
+                          >
+                            {u.tenants.map((t, i) => {
+                              const initials = (t.tenant_name ?? "?").split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase();
+                              return (
+                                <div key={t.tenant_user_id} className="flex items-center gap-1.5">
+                                  {t.tenant_avatar_url ? (
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img src={t.tenant_avatar_url} alt={t.tenant_name ?? ""} className="w-6 h-6 rounded-full object-cover border border-slate-200 shrink-0" />
+                                  ) : (
+                                    <div className="w-6 h-6 rounded-full bg-black text-white text-[9px] font-bold flex items-center justify-center shrink-0">
+                                      {initials}
+                                    </div>
+                                  )}
+                                  <span className="text-xs text-blue-600 font-medium group-hover:underline">{t.tenant_name}</span>
+                                </div>
+                              );
+                            })}
+                          </button>
+                        ) : u.tenant ? (
+                          <button
+                            onClick={() => setModal({ type: "tenantDetail", unit: u })}
+                            className="flex items-center gap-1.5 hover:underline text-left"
+                          >
                             {u.tenantAvatarUrl ? (
                               // eslint-disable-next-line @next/next/no-img-element
                               <img src={u.tenantAvatarUrl} alt={u.tenant} className="w-6 h-6 rounded-full object-cover border border-slate-200 shrink-0" />
@@ -910,8 +1100,8 @@ export default function PropertiesPage() {
                                 {u.tenant.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase()}
                               </div>
                             )}
-                            <span className="text-xs text-slate-700 font-medium">{u.tenant}</span>
-                          </div>
+                            <span className="text-xs text-blue-600 font-medium">{u.tenant}</span>
+                          </button>
                         ) : (
                           <span className="text-xs text-slate-300">—</span>
                         )}

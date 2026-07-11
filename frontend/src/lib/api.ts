@@ -20,6 +20,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
     throw new Error(err.detail ?? "Request failed");
   }
+  if (res.status === 204 || res.headers.get("content-length") === "0") return undefined as T;
   return res.json();
 }
 
@@ -64,6 +65,16 @@ export interface PropertyOut {
   cover_url: string | null;
 }
 
+export interface UnitTenantInfo {
+  tenant_user_id: string;
+  tenant_name: string | null;
+  tenant_avatar_url: string | null;
+  lease_id: string;
+  lease_start: string | null;
+  lease_end: string | null;
+  outstanding_balance: number;
+}
+
 export interface UnitOut {
   id: string;
   property_id: string;
@@ -81,6 +92,7 @@ export interface UnitOut {
   lease_start?: string | null;
   lease_end?: string | null;
   outstanding_balance?: number;
+  tenants?: UnitTenantInfo[];
 }
 
 export interface TenantDocumentOut {
@@ -288,6 +300,8 @@ export const tenantsApi = {
   availableUnits: () => api.get<UnitOut[]>("/tenants/units/available"),
   // Person-only (decoupled)
   listPersons: () => api.get<TenantOut[]>("/tenants/persons"),
+  getPerson: (id: string) => api.get<TenantOut>(`/tenants/person/${id}`),
+  aiExtract: (file: File) => upload<Record<string, string | null>>("/tenants/ai-extract", file),
   createPerson: (body: object) => api.post<TenantOut>("/tenants/person", body),
   updatePerson: (id: string, body: object) => api.put<TenantOut>(`/tenants/person/${id}`, body),
   deactivatePerson: (id: string) => api.delete<void>(`/tenants/person/${id}`),

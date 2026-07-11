@@ -338,7 +338,8 @@ export default function HomePage() {
     if (!loading && user) router.replace("/dashboard");
   }, [user, loading, router]);
 
-  if (loading || user) return null;
+  if (loading) return null;
+  if (user) return null;
 
   return (
     <div className="min-h-screen bg-white text-slate-900">

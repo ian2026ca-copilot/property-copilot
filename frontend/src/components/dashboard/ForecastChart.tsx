@@ -21,7 +21,7 @@ export default function ForecastChart({ data }: { data: DataPoint[] }) {
         <XAxis dataKey="month" tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
         <YAxis
           yAxisId="occ"
-          domain={([min]: [number]) => [Math.max(0, Math.floor(min / 10) * 10), 100]}
+          domain={[0, 100]}
           tick={{ fontSize: 11, fill: "#94a3b8" }}
           axisLine={false}
           tickLine={false}

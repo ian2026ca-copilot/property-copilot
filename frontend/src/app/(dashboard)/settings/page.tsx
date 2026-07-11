@@ -9,10 +9,10 @@ import { MOCK_MODE } from "@/lib/useApiData";
 // ─── Mock data ────────────────────────────────────────────────────────────────
 
 const MOCK_TEAM: TeamMemberOut[] = [
-  { member_id: "m1", user_id: "u1", full_name: "Jordan Ellis", email: "jordan@propertyco.com", role: "OWNER" },
-  { member_id: "m2", user_id: "u2", full_name: "Alex Morgan", email: "alex@propertyco.com", role: "MANAGER" },
-  { member_id: "m3", user_id: "u3", full_name: "Taylor Brooks", email: "taylor@propertyco.com", role: "AGENT" },
-  { member_id: "m4", user_id: "u4", full_name: "Casey Liu", email: "casey@propertyco.com", role: "AGENT" },
+  { member_id: "m1", user_id: "u1", full_name: "Jordan Ellis", email: "jordan@propertyco.com", phone: "", role: "OWNER" },
+  { member_id: "m2", user_id: "u2", full_name: "Alex Morgan", email: "alex@propertyco.com", phone: "", role: "MANAGER" },
+  { member_id: "m3", user_id: "u3", full_name: "Taylor Brooks", email: "taylor@propertyco.com", phone: "", role: "AGENT" },
+  { member_id: "m4", user_id: "u4", full_name: "Casey Liu", email: "casey@propertyco.com", phone: "", role: "AGENT" },
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -73,6 +73,7 @@ function InviteModal({ onClose, onSave }: { onClose: () => void; onSave: (m: Tea
       user_id: `mock-u-${Date.now()}`,
       full_name: form.full_name,
       email: form.email,
+      phone: "",
       role: form.role as TeamMemberOut["role"],
     });
   }

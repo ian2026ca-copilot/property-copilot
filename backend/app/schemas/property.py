@@ -57,6 +57,16 @@ class UnitUpdate(BaseModel):
     status: UnitStatus | None = None
 
 
+class UnitTenantInfo(BaseModel):
+    tenant_user_id: str
+    tenant_name: str | None = None
+    tenant_avatar_url: str | None = None
+    lease_id: str
+    lease_start: str | None = None
+    lease_end: str | None = None
+    outstanding_balance: float = 0.0
+
+
 class UnitOut(BaseModel):
     id: uuid.UUID
     property_id: uuid.UUID
@@ -74,5 +84,6 @@ class UnitOut(BaseModel):
     lease_start: str | None = None
     lease_end: str | None = None
     outstanding_balance: float = 0.0
+    tenants: list[UnitTenantInfo] = []
 
     model_config = {"from_attributes": True}

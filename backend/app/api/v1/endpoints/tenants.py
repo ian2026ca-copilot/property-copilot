@@ -310,6 +310,7 @@ async def create_person(
         tenant_user.first_name = body.first_name
         tenant_user.last_name = body.last_name
         tenant_user.full_name = f"{body.first_name} {body.last_name}".strip()
+        tenant_user.is_active = True  # re-activate if previously deleted
         if body.phone:
             tenant_user.phone = body.phone
         if body.date_of_birth:
@@ -341,6 +342,67 @@ async def create_person(
     return _tenant_to_out(u, u.tenant_documents)
 
 
+@router.post("/ai-extract")
+async def ai_extract_tenant(
+    file: UploadFile = File(...),
+    current: tuple[User, OrganizationMember] = Depends(get_current_user),
+):
+    """Use Gemini vision to extract tenant info from an uploaded identity document."""
+    import json
+    import google.generativeai as genai
+
+    api_key = os.environ.get("GEMINI_API_KEY", "")
+    if not api_key:
+        raise HTTPException(status_code=503, detail="Gemini API key not configured")
+
+    content = await file.read()
+    if len(content) > 20 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="File too large (max 20 MB)")
+
+    mime = file.content_type or "image/jpeg"
+
+    # Gemini natively supports PDFs — pass through as-is
+    prompt = (
+        "You are an expert at reading identity documents. "
+        "Extract the following fields from this document image and return ONLY a JSON object with these exact keys "
+        "(use null for any field you cannot find or are not confident about):\n"
+        "first_name, last_name, date_of_birth (YYYY-MM-DD format), "
+        "street_address, city, province, postal_code, country\n\n"
+        "Rules:\n"
+        "- Return ONLY the JSON object, no explanation.\n"
+        "- For date_of_birth use YYYY-MM-DD format.\n"
+        "- For province use the full name (e.g. 'Alberta', not 'AB').\n"
+        "- If country is Canada or USA, fill province/state if visible.\n"
+        "- Do not guess — use null if unsure."
+    )
+
+    try:
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel("gemini-2.5-flash")
+        image_part = {"mime_type": mime, "data": content}
+        response = model.generate_content([prompt, image_part])
+        raw = response.text or ""
+    except Exception as e:
+        err_str = str(e)
+        if "quota" in err_str.lower() or "429" in err_str:
+            raise HTTPException(status_code=402, detail="Gemini quota exceeded — check your API key at aistudio.google.com")
+        raise HTTPException(status_code=502, detail=f"Gemini error: {err_str[:200]}")
+
+    raw = raw.strip()
+    if raw.startswith("```"):
+        raw = raw.split("```")[1]
+        if raw.startswith("json"):
+            raw = raw[4:]
+    raw = raw.strip()
+
+    try:
+        data = json.loads(raw)
+    except Exception:
+        raise HTTPException(status_code=422, detail=f"Could not parse AI response: {raw[:200]}")
+
+    return data
+
+
 @router.get("/persons", response_model=list[TenantOut])
 async def list_persons(
     current: tuple[User, OrganizationMember] = Depends(get_current_user),
@@ -361,6 +423,23 @@ async def list_persons(
     )
     users = result.scalars().all()
     return [_tenant_to_out(u, u.tenant_documents) for u in users]
+
+
+@router.get("/person/{tenant_user_id}", response_model=TenantOut)
+async def get_person(
+    tenant_user_id: str,
+    current: tuple[User, OrganizationMember] = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(User)
+        .where(User.id == tenant_user_id)
+        .options(selectinload(User.tenant_documents))
+    )
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+    return _tenant_to_out(user, user.tenant_documents)
 
 
 @router.put("/person/{tenant_user_id}", response_model=TenantOut)
@@ -391,12 +470,12 @@ async def update_person(
 @router.delete("/person/{tenant_user_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def deactivate_person(
     tenant_user_id: str,
-    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.MANAGER)),
     db: AsyncSession = Depends(get_db),
 ):
     """Soft-deactivate a tenant person."""
     _, member = current
-    result = await db.execute(select(User).where(User.id == tenant_user_id, User.is_active == True))
+    result = await db.execute(select(User).where(User.id == tenant_user_id))
     tenant = result.scalar_one_or_none()
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant not found")

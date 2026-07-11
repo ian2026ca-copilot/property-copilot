@@ -1,4 +1,5 @@
 import os
+from collections import OrderedDict
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
@@ -12,7 +13,7 @@ from app.models.image import PropertyImage
 from app.models.lease import Lease, LeaseStatus
 from app.models.payment import Payment, PaymentStatus
 from app.models.user import User as UserModel
-from app.schemas.property import PropertyCreate, PropertyOut, PropertyUpdate, UnitCreate, UnitUpdate, UnitOut
+from app.schemas.property import PropertyCreate, PropertyOut, PropertyUpdate, UnitCreate, UnitUpdate, UnitOut, UnitTenantInfo
 
 router = APIRouter(prefix="/properties", tags=["properties"])
 
@@ -157,7 +158,7 @@ async def list_units(
 
     uploads_base = os.getenv("FRONTEND_URL", "http://localhost:3001").replace(":3001", ":8002").replace(":3000", ":8002")
 
-    # Left-join active lease + tenant to get tenant name and lease dates
+    # Left-join all active/pending leases + tenants per unit
     result = await db.execute(
         select(Unit, Lease, UserModel)
         .outerjoin(
@@ -167,20 +168,12 @@ async def list_units(
         )
         .outerjoin(UserModel, UserModel.id == Lease.tenant_user_id)
         .where(Unit.property_id == property_id)
-        .order_by(Unit.unit_number)
+        .order_by(Unit.unit_number, Lease.start_date)
     )
-    # Deduplicate: keep only first lease per unit (in case of multiple pending leases)
-    seen_unit_ids: set = set()
-    deduped = []
-    for row in result.all():
-        uid = row[0].id
-        if uid not in seen_unit_ids:
-            seen_unit_ids.add(uid)
-            deduped.append(row)
-    rows = deduped
+    all_rows = result.all()
 
-    # Collect lease IDs for outstanding balance subquery
-    lease_ids = [lease.id for _, lease, _ in rows if lease]
+    # Collect all lease IDs for outstanding balance subquery
+    lease_ids = [row[1].id for row in all_rows if row[1]]
     balance_by_lease: dict = {}
     if lease_ids:
         bal_result = await db.execute(
@@ -193,12 +186,38 @@ async def list_units(
         )
         balance_by_lease = {str(row[0]): float(row[1]) for row in bal_result.all()}
 
+    # Group rows by unit, collecting all tenants per unit
+    units_map: OrderedDict = OrderedDict()
+    for unit, lease, tenant in all_rows:
+        uid = str(unit.id)
+        if uid not in units_map:
+            units_map[uid] = (unit, [])
+        if lease and tenant:
+            units_map[uid][1].append((lease, tenant))
+
     units_out = []
-    for unit, lease, tenant in rows:
-        # Auto-derive OCCUPIED when active lease exists, restore to VACANT when none
-        effective_status = UnitStatus.OCCUPIED if lease else (
+    for uid, (unit, lease_tenant_pairs) in units_map.items():
+        has_lease = bool(lease_tenant_pairs)
+        effective_status = UnitStatus.OCCUPIED if has_lease else (
             unit.status if unit.status != UnitStatus.OCCUPIED else UnitStatus.VACANT
         )
+        # Primary tenant (first lease) for backwards-compatible fields
+        first_lease, first_tenant = lease_tenant_pairs[0] if has_lease else (None, None)
+        tenants_info = [
+            UnitTenantInfo(
+                tenant_user_id=str(t.id),
+                tenant_name=t.display_name,
+                tenant_avatar_url=(
+                    f"{uploads_base}/uploads/{t.avatar_filename}"
+                    if t.avatar_filename else None
+                ),
+                lease_id=str(l.id),
+                lease_start=str(l.start_date),
+                lease_end=str(l.end_date),
+                outstanding_balance=balance_by_lease.get(str(l.id), 0.0),
+            )
+            for l, t in lease_tenant_pairs
+        ]
         units_out.append(UnitOut(
             id=unit.id,
             property_id=unit.property_id,
@@ -208,16 +227,17 @@ async def list_units(
             square_feet=unit.square_feet,
             monthly_rent=unit.monthly_rent,
             status=effective_status,
-            tenant_name=tenant.display_name if tenant else None,
-            tenant_user_id=str(tenant.id) if tenant else None,
+            tenant_name=first_tenant.display_name if first_tenant else None,
+            tenant_user_id=str(first_tenant.id) if first_tenant else None,
             tenant_avatar_url=(
-                f"{uploads_base}/uploads/{tenant.avatar_filename}"
-                if tenant and tenant.avatar_filename else None
+                f"{uploads_base}/uploads/{first_tenant.avatar_filename}"
+                if first_tenant and first_tenant.avatar_filename else None
             ),
-            lease_id=str(lease.id) if lease else None,
-            lease_start=str(lease.start_date) if lease else None,
-            lease_end=str(lease.end_date) if lease else None,
-            outstanding_balance=balance_by_lease.get(str(lease.id), 0.0) if lease else 0.0,
+            lease_id=str(first_lease.id) if first_lease else None,
+            lease_start=str(first_lease.start_date) if first_lease else None,
+            lease_end=str(first_lease.end_date) if first_lease else None,
+            outstanding_balance=balance_by_lease.get(str(first_lease.id), 0.0) if first_lease else 0.0,
+            tenants=tenants_info,
         ))
     return units_out
 
