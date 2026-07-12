@@ -2,12 +2,19 @@ import uuid
 import enum
 from datetime import date
 
-from sqlalchemy import String, Date, Numeric, ForeignKey, Enum as SAEnum, Text
+from sqlalchemy import String, Date, Numeric, ForeignKey, Enum as SAEnum, Text, Table, Column
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
 from app.models.base import TimestampMixin, new_uuid
+
+lease_co_tenants = Table(
+    "lease_co_tenants",
+    Base.metadata,
+    Column("lease_id", UUID(as_uuid=True), ForeignKey("leases.id", ondelete="CASCADE"), primary_key=True),
+    Column("user_id", UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
+)
 
 
 class LeaseStatus(str, enum.Enum):
@@ -46,4 +53,5 @@ class Lease(Base, TimestampMixin):
 
     unit: Mapped["Unit"] = relationship(back_populates="leases")  # noqa: F821
     payments: Mapped[list["Payment"]] = relationship(back_populates="lease")  # noqa: F821
-    tenant: Mapped["User"] = relationship()  # noqa: F821
+    tenant: Mapped["User"] = relationship(foreign_keys="[Lease.tenant_user_id]")  # noqa: F821
+    co_tenants: Mapped[list["User"]] = relationship(secondary="lease_co_tenants")  # noqa: F821

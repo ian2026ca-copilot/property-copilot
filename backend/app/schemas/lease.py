@@ -81,6 +81,7 @@ class TenantInvite(BaseModel):
 class LeaseCreate(BaseModel):
     unit_id: uuid.UUID
     tenant_user_id: uuid.UUID
+    co_tenant_ids: list[uuid.UUID] = []
     start_date: date
     end_date: date
     monthly_rent: float
@@ -134,6 +135,7 @@ class LeaseOut(BaseModel):
     document_url: str | None = None
     notes: str | None
     tenant: TenantOut | None = None
+    co_tenants: list[TenantOut] = []
     unit_number: str | None = None
     property_name: str | None = None
 

@@ -6,3 +6,4 @@ from app.models.payment import Payment  # noqa: F401
 from app.models.maintenance import MaintenanceRequest  # noqa: F401
 from app.models.password_reset import PasswordResetToken  # noqa: F401
 from app.models.image import PropertyImage, UnitImage  # noqa: F401
+from app.models.lease_template import LeaseTemplate  # noqa: F401

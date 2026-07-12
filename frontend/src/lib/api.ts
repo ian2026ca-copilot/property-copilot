@@ -17,6 +17,10 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 
   const res = await fetch(`${BASE_URL}${path}`, { ...init, headers });
   if (!res.ok) {
+    if (res.status === 401 && typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
+      window.location.href = "/login";
+      return undefined as T;
+    }
     const err = await res.json().catch(() => ({ detail: res.statusText }));
     throw new Error(err.detail ?? "Request failed");
   }
@@ -133,6 +137,7 @@ export interface LeaseOut {
   document_url: string | null;
   notes: string | null;
   tenant: TenantOut | null;
+  co_tenants: TenantOut[];
   unit_number: string | null;
   property_name: string | null;
 }
@@ -265,12 +270,57 @@ export const imagesApi = {
   deleteUnit: (propertyId: string, unitId: string, imageId: string) => api.delete<void>(`/properties/${propertyId}/units/${unitId}/images/${imageId}`),
 };
 
+export interface LeaseTemplateOut {
+  id: string;
+  name: string;
+  original_name: string;
+  description: string | null;
+  url: string;
+  created_at: string;
+}
+
 export const leasesApi = {
   list: () => api.get<LeaseOut[]>("/leases"),
   create: (body: object) => api.post<LeaseOut>("/leases", body),
   get: (id: string) => api.get<LeaseOut>(`/leases/${id}`),
   update: (id: string, body: object) => api.put<LeaseOut>(`/leases/${id}`, body),
   terminate: (id: string) => api.delete<void>(`/leases/${id}`),
+  deleteDocument: (leaseId: string) => api.delete<void>(`/leases/${leaseId}/document`),
+  listTemplates: () => api.get<LeaseTemplateOut[]>("/leases/templates"),
+  aiGenerateTemplate: (params: { province: string; lease_type: string; property_type: string; bedrooms: string; notes: string }) => {
+    const token = typeof document !== "undefined"
+      ? (document.cookie.match(/(?:^|; )token=([^;]*)/) || [])[1]
+      : null;
+    const headers: Record<string, string> = {};
+    if (token) headers["Authorization"] = `Bearer ${decodeURIComponent(token)}`;
+    const body = new FormData();
+    Object.entries(params).forEach(([k, v]) => body.append(k, v));
+    return fetch(`${BASE_URL}/leases/templates/ai-generate`, { method: "POST", headers, body })
+      .then(async r => {
+        if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.detail ?? "Generation failed"); }
+        return r.json() as Promise<LeaseTemplateOut>;
+      });
+  },
+  deleteTemplate: (id: string) => api.delete<void>(`/leases/templates/${id}`),
+  uploadTemplate: (name: string, description: string, file: File) => {
+    const token = typeof document !== "undefined"
+      ? (document.cookie.match(/(?:^|; )token=([^;]*)/) || [])[1]
+      : null;
+    const headers: Record<string, string> = {};
+    if (token) headers["Authorization"] = `Bearer ${decodeURIComponent(token)}`;
+    const body = new FormData();
+    body.append("file", file);
+    body.append("name", name);
+    body.append("description", description);
+    return fetch(`${BASE_URL}/leases/templates`, { method: "POST", headers, body })
+      .then(async r => {
+        if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.detail ?? "Upload failed"); }
+        return r.json() as Promise<LeaseTemplateOut>;
+      });
+  },
+  generateDocument: (leaseId: string, templateId: string) =>
+    api.post<LeaseOut>(`/leases/${leaseId}/generate-document`, { template_id: templateId }),
+  deletePermanent: (id: string) => api.delete<void>(`/leases/${id}/permanent`),
   renew: (id: string, body: { start_date: string; end_date: string; monthly_rent?: number; lease_type?: string }) =>
     api.post<LeaseOut>(`/leases/${id}/renew`, body),
   uploadDocument: (leaseId: string, file: File) => {

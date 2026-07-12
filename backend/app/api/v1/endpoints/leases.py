@@ -2,9 +2,11 @@ import os
 import uuid
 import pathlib
 from datetime import date
+from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -13,6 +15,8 @@ from app.core.database import get_db
 from app.api.deps import get_current_user, require_min_role
 from app.models.user import User, OrganizationMember, UserRole, TenantDocument
 from app.models.lease import Lease, LeaseStatus, LeaseType
+from app.models.payment import Payment
+from app.models.lease_template import LeaseTemplate
 from app.models.property import Unit, Property, UnitStatus
 from app.schemas.lease import LeaseCreate, LeaseUpdate, LeaseRenew, LeaseOut, TenantOut, TenantDocumentOut
 from app.api.v1.endpoints.payments import generate_monthly_payments
@@ -22,7 +26,13 @@ router = APIRouter(prefix="/leases", tags=["leases"])
 UPLOAD_DIR = pathlib.Path("/app/uploads")
 LEASE_DOC_DIR = UPLOAD_DIR / "leases"
 MAX_SIZE_MB = 50
-ALLOWED_DOC_TYPES = {"application/pdf", "image/jpeg", "image/png"}
+ALLOWED_DOC_TYPES = {
+    "application/pdf",
+    "image/jpeg",
+    "image/png",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+}
 
 
 def _uploads_url(filename: str) -> str:
@@ -46,7 +56,7 @@ def _compute_status_from_dates(start_date: date, end_date: date) -> LeaseStatus:
 
 
 def _effective_status(lease: Lease) -> LeaseStatus:
-    """Return stored status directly — status is computed on create/date-update."""
+    """Return stored status directly â€” status is computed on create/date-update."""
     return lease.status
 
 
@@ -76,6 +86,7 @@ def _tenant_to_out(user: User, docs: list[TenantDocument] | None = None) -> Tena
 def _lease_to_out(lease: Lease) -> LeaseOut:
     docs = list(lease.tenant.tenant_documents) if lease.tenant and hasattr(lease.tenant, "tenant_documents") else []
     doc_url = _doc_url(lease.document_path) if lease.document_path else None
+    co_tenants = [_tenant_to_out(u) for u in (lease.co_tenants or [])]
     return LeaseOut(
         id=lease.id,
         unit_id=lease.unit_id,
@@ -89,6 +100,7 @@ def _lease_to_out(lease: Lease) -> LeaseOut:
         document_url=doc_url,
         notes=lease.notes,
         tenant=_tenant_to_out(lease.tenant, docs) if lease.tenant else None,
+        co_tenants=co_tenants,
         unit_number=lease.unit.unit_number if lease.unit else None,
         property_name=lease.unit.property.name if lease.unit and lease.unit.property else None,
     )
@@ -100,6 +112,7 @@ async def _get_lease(lease_id: str, org_id: uuid.UUID, db: AsyncSession) -> Leas
         .where(Lease.id == lease_id, Lease.organization_id == org_id)
         .options(
             selectinload(Lease.tenant).selectinload(User.tenant_documents),
+            selectinload(Lease.co_tenants),
             selectinload(Lease.unit).selectinload(Unit.property),
         )
     )
@@ -109,7 +122,33 @@ async def _get_lease(lease_id: str, org_id: uuid.UUID, db: AsyncSession) -> Leas
     return lease
 
 
-# ── List ───────────────────────────────────────────────────────────────────────
+
+
+# â”€â”€ Lease Templates â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+TEMPLATE_DIR = UPLOAD_DIR / "lease_templates"
+ALLOWED_TEMPLATE_TYPES = {
+    "application/pdf",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "image/jpeg",
+    "image/png",
+}
+
+
+class LeaseTemplateOut(BaseModel):
+    id: str
+    name: str
+    original_name: str
+    description: Optional[str]
+    url: str
+    created_at: str
+
+    class Config:
+        from_attributes = True
+
+
+# â”€â”€ List â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 @router.get("", response_model=list[LeaseOut])
 async def list_leases(
@@ -122,6 +161,7 @@ async def list_leases(
         .where(Lease.organization_id == member.organization_id)
         .options(
             selectinload(Lease.tenant).selectinload(User.tenant_documents),
+            selectinload(Lease.co_tenants),
             selectinload(Lease.unit).selectinload(Unit.property),
         )
         .order_by(Lease.created_at.desc())
@@ -129,7 +169,7 @@ async def list_leases(
     return [_lease_to_out(l) for l in result.scalars().all()]
 
 
-# ── Create ─────────────────────────────────────────────────────────────────────
+# â”€â”€ Create â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 @router.post("", response_model=LeaseOut, status_code=status.HTTP_201_CREATED)
 async def create_lease(
@@ -180,11 +220,234 @@ async def create_lease(
     for p in monthly_payments:
         db.add(p)
 
+    await db.flush()
+
+    # Add co-tenants
+    if body.co_tenant_ids:
+        from app.models.lease import lease_co_tenants
+        from sqlalchemy import insert as sa_insert
+        valid_co_ids = [cid for cid in body.co_tenant_ids if cid != body.tenant_user_id]
+        if valid_co_ids:
+            await db.execute(
+                sa_insert(lease_co_tenants),
+                [{"lease_id": lease.id, "user_id": cid} for cid in valid_co_ids],
+            )
+
     await db.commit()
     return _lease_to_out(await _get_lease(str(lease.id), member.organization_id, db))
 
 
-# ── Read one ───────────────────────────────────────────────────────────────────
+# â”€â”€ Read one â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+def _template_url(file_path: str) -> str:
+    base = os.environ.get("BACKEND_URL", "http://localhost:8000")
+    return f"{base}/uploads/{file_path}"
+
+
+@router.get("/templates", response_model=list[LeaseTemplateOut])
+async def list_lease_templates(
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.MANAGER)),
+    db: AsyncSession = Depends(get_db),
+):
+    _, member = current
+    result = await db.execute(
+        select(LeaseTemplate)
+        .where(LeaseTemplate.organization_id == member.organization_id)
+        .order_by(LeaseTemplate.created_at.desc())
+    )
+    templates = result.scalars().all()
+    return [
+        LeaseTemplateOut(
+            id=str(t.id),
+            name=t.name,
+            original_name=t.original_name,
+            description=t.description,
+            url=_template_url(t.file_path),
+            created_at=t.created_at.isoformat(),
+        )
+        for t in templates
+    ]
+
+
+@router.post("/templates", response_model=LeaseTemplateOut, status_code=201)
+async def upload_lease_template(
+    file: UploadFile = File(...),
+    name: str = Form(...),
+    description: str = Form(""),
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.MANAGER)),
+    db: AsyncSession = Depends(get_db),
+):
+    _, member = current
+    if file.content_type not in ALLOWED_TEMPLATE_TYPES:
+        raise HTTPException(status_code=400, detail="Only PDF, Word, JPEG, or PNG files accepted")
+    data = await file.read()
+    if len(data) > MAX_SIZE_MB * 1024 * 1024:
+        raise HTTPException(status_code=400, detail=f"File exceeds {MAX_SIZE_MB} MB limit")
+
+    ext = pathlib.Path(file.filename or "template").suffix or ".pdf"
+    filename = f"lease_templates/template_{uuid.uuid4()}{ext}"
+    TEMPLATE_DIR.mkdir(parents=True, exist_ok=True)
+    (UPLOAD_DIR / filename).write_bytes(data)
+
+    tmpl = LeaseTemplate(
+        organization_id=member.organization_id,
+        name=name,
+        original_name=file.filename or name,
+        file_path=filename,
+        description=description or None,
+    )
+    db.add(tmpl)
+    await db.commit()
+    await db.refresh(tmpl)
+    return LeaseTemplateOut(
+        id=str(tmpl.id),
+        name=tmpl.name,
+        original_name=tmpl.original_name,
+        description=tmpl.description,
+        url=_template_url(tmpl.file_path),
+        created_at=tmpl.created_at.isoformat(),
+    )
+
+
+@router.post("/templates/ai-generate", response_model=LeaseTemplateOut, status_code=201)
+async def ai_generate_lease_template(
+    province: str = Form(...),
+    lease_type: str = Form("Fixed-term"),
+    property_type: str = Form("Residential Apartment"),
+    bedrooms: str = Form(""),
+    notes: str = Form(""),
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.MANAGER)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Use Gemini to generate a lease agreement template as a Word document."""
+    import io
+    import google.generativeai as genai
+    from docx import Document
+    from docx.shared import Pt
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+    api_key = os.environ.get("GEMINI_API_KEY", "")
+    if not api_key:
+        raise HTTPException(status_code=503, detail="Gemini API key not configured")
+
+    _, member = current
+
+    bedrooms_line = f"Bedrooms: {bedrooms}\n" if bedrooms else ""
+    notes_line = f"Additional requirements: {notes}\n" if notes else ""
+
+    prompt = (
+        f"Generate a comprehensive residential lease agreement for {province}, Canada.\n\n"
+        f"Lease type: {lease_type}\n"
+        f"Property type: {property_type}\n"
+        f"{bedrooms_line}"
+        f"{notes_line}\n"
+        "Use these placeholders throughout: [LANDLORD NAME], [TENANT NAME], [PROPERTY ADDRESS], "
+        "[MONTHLY RENT], [SECURITY DEPOSIT], [START DATE], [END DATE].\n\n"
+        "Structure with these numbered sections (use ALL CAPS for section titles):\n"
+        "1. PARTIES\n2. PREMISES\n3. TERM\n4. RENT\n5. SECURITY DEPOSIT\n"
+        "6. UTILITIES AND SERVICES\n7. MAINTENANCE AND REPAIRS\n8. ENTRY BY LANDLORD\n"
+        "9. PETS POLICY\n10. SMOKING POLICY\n11. ALTERATIONS\n12. SUBLETTING\n"
+        "13. TERMINATION\n14. DEFAULT\n15. GOVERNING LAW\n16. SIGNATURES\n\n"
+        f"Make it legally appropriate for {province} residential tenancy law.\n"
+        "Return plain text only â€” no markdown, no backticks."
+    )
+
+    try:
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel("gemini-2.5-flash")
+        response = model.generate_content(prompt)
+        content = response.text or ""
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Gemini error: {str(e)[:200]}")
+
+    # Build Word document
+    doc = Document()
+
+    # Title
+    title_para = doc.add_paragraph()
+    title_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run = title_para.add_run("RESIDENTIAL LEASE AGREEMENT")
+    run.bold = True
+    run.font.size = Pt(16)
+    doc.add_paragraph()
+
+    for line in content.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            doc.add_paragraph()
+            continue
+        # Section header detection: ALL CAPS line or starts with digit+dot
+        is_header = stripped.isupper() and len(stripped) > 3
+        if not is_header and len(stripped) > 2:
+            parts = stripped.split(".", 1)
+            is_header = parts[0].strip().isdigit()
+        if is_header:
+            p = doc.add_paragraph()
+            run = p.add_run(stripped)
+            run.bold = True
+            run.font.size = Pt(11)
+        else:
+            doc.add_paragraph(stripped)
+
+    # Signature block
+    doc.add_paragraph()
+    sig = doc.add_paragraph()
+    sig.add_run("LANDLORD: ________________________________    Date: ____________").bold = False
+    doc.add_paragraph()
+    sig2 = doc.add_paragraph()
+    sig2.add_run("TENANT:   ________________________________    Date: ____________").bold = False
+
+    buf = io.BytesIO()
+    doc.save(buf)
+    data = buf.getvalue()
+
+    template_name = f"AI â€” {property_type} ({province})"
+    filename = f"lease_templates/ai_lease_{uuid.uuid4()}.docx"
+    TEMPLATE_DIR.mkdir(parents=True, exist_ok=True)
+    (UPLOAD_DIR / filename).write_bytes(data)
+
+    tmpl = LeaseTemplate(
+        organization_id=member.organization_id,
+        name=template_name,
+        original_name=f"{template_name}.docx",
+        file_path=filename,
+        description=f"{lease_type} | {property_type} | {province}" + (f" | {notes}" if notes else ""),
+    )
+    db.add(tmpl)
+    await db.commit()
+    await db.refresh(tmpl)
+    return LeaseTemplateOut(
+        id=str(tmpl.id),
+        name=tmpl.name,
+        original_name=tmpl.original_name,
+        description=tmpl.description,
+        url=_template_url(tmpl.file_path),
+        created_at=tmpl.created_at.isoformat(),
+    )
+
+
+@router.delete("/templates/{template_id}", status_code=204)
+async def delete_lease_template(
+    template_id: str,
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.MANAGER)),
+    db: AsyncSession = Depends(get_db),
+):
+    _, member = current
+    result = await db.execute(
+        select(LeaseTemplate).where(
+            LeaseTemplate.id == template_id,
+            LeaseTemplate.organization_id == member.organization_id,
+        )
+    )
+    tmpl = result.scalar_one_or_none()
+    if not tmpl:
+        raise HTTPException(status_code=404, detail="Template not found")
+    try:
+        (UPLOAD_DIR / tmpl.file_path).unlink(missing_ok=True)
+    except OSError:
+        pass
+    await db.delete(tmpl)
+    await db.commit()
+
 
 @router.get("/{lease_id}", response_model=LeaseOut)
 async def get_lease(
@@ -196,7 +459,7 @@ async def get_lease(
     return _lease_to_out(await _get_lease(lease_id, member.organization_id, db))
 
 
-# ── Update ─────────────────────────────────────────────────────────────────────
+# â”€â”€ Update â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 @router.put("/{lease_id}", response_model=LeaseOut)
 async def update_lease(
@@ -242,7 +505,7 @@ async def update_lease(
     return _lease_to_out(await _get_lease(lease_id, member.organization_id, db))
 
 
-# ── Terminate ──────────────────────────────────────────────────────────────────
+# â”€â”€ Terminate â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 @router.delete("/{lease_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def terminate_lease(
@@ -277,7 +540,50 @@ async def terminate_lease(
     await db.commit()
 
 
-# ── Renew ──────────────────────────────────────────────────────────────────────
+@router.delete("/{lease_id}/permanent", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_lease_permanent(
+    lease_id: str,
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.MANAGER)),
+    db: AsyncSession = Depends(get_db),
+):
+    _, member = current
+    result = await db.execute(
+        select(Lease).where(Lease.id == lease_id, Lease.organization_id == member.organization_id)
+    )
+    lease = result.scalar_one_or_none()
+    if not lease:
+        raise HTTPException(status_code=404, detail="Lease not found")
+
+    # Restore unit to vacant if no other active lease remains
+    other = await db.execute(
+        select(Lease).where(
+            Lease.unit_id == lease.unit_id,
+            Lease.id != lease.id,
+            Lease.status.in_([LeaseStatus.ACTIVE, LeaseStatus.PENDING]),
+        )
+    )
+    if not other.scalars().first():
+        unit_res = await db.execute(select(Unit).where(Unit.id == lease.unit_id))
+        unit = unit_res.scalar_one_or_none()
+        if unit:
+            unit.status = UnitStatus.VACANT
+
+    # Delete associated payments first (no cascade in DB)
+    from sqlalchemy import delete as sa_delete
+    await db.execute(sa_delete(Payment).where(Payment.lease_id == lease.id))
+
+    if lease.document_path:
+        try:
+            (UPLOAD_DIR / lease.document_path).unlink(missing_ok=True)
+        except OSError:
+            pass
+
+    await db.delete(lease)
+    await db.commit()
+
+
+
+# â”€â”€ Renew â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 @router.post("/{lease_id}/renew", response_model=LeaseOut, status_code=status.HTTP_201_CREATED)
 async def renew_lease(
@@ -315,7 +621,7 @@ async def renew_lease(
     return _lease_to_out(await _get_lease(str(new_lease.id), member.organization_id, db))
 
 
-# ── Document upload / download ─────────────────────────────────────────────────
+# â”€â”€ Document upload / download â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 @router.post("/{lease_id}/document", response_model=LeaseOut)
 async def upload_lease_document(
@@ -328,7 +634,7 @@ async def upload_lease_document(
     lease = await _get_lease(lease_id, member.organization_id, db)
 
     if file.content_type not in ALLOWED_DOC_TYPES:
-        raise HTTPException(status_code=400, detail="Only PDF, JPEG, or PNG files accepted")
+        raise HTTPException(status_code=400, detail="Only PDF, Word (.doc/.docx), JPEG, or PNG files accepted")
 
     data = await file.read()
     if len(data) > MAX_SIZE_MB * 1024 * 1024:
@@ -350,6 +656,270 @@ async def upload_lease_document(
 
     await db.commit()
     return _lease_to_out(await _get_lease(lease_id, member.organization_id, db))
+
+
+@router.delete("/{lease_id}/document", status_code=204)
+async def delete_lease_document(
+    lease_id: str,
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.MANAGER)),
+    db: AsyncSession = Depends(get_db),
+):
+    _, member = current
+    lease = await _get_lease(lease_id, member.organization_id, db)
+    if not lease.document_path:
+        raise HTTPException(status_code=404, detail="No document to delete")
+    try:
+        (UPLOAD_DIR / lease.document_path).unlink(missing_ok=True)
+    except OSError:
+        pass
+    lease.document_path = None
+    await db.commit()
+
+
+
+@router.post("/{lease_id}/generate-document", response_model=LeaseOut)
+async def generate_lease_document(
+    lease_id: str,
+    body: dict,
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.MANAGER)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Generate a lease agreement from a template using Gemini."""
+    import io
+    import google.generativeai as genai
+    from docx import Document
+    from docx.shared import Pt
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+    template_id = body.get("template_id")
+    if not template_id:
+        raise HTTPException(status_code=400, detail="template_id is required")
+
+    api_key = os.environ.get("GEMINI_API_KEY", "")
+    if not api_key:
+        raise HTTPException(status_code=503, detail="Gemini API key not configured")
+
+    _, member = current
+
+    from app.models.organization import Organization as Org
+    org_result = await db.execute(select(Org).where(Org.id == member.organization_id))
+    org = org_result.scalar_one_or_none()
+    landlord_name = org.name if org else "[LANDLORD NAME]"
+
+    result = await db.execute(
+        select(Lease)
+        .where(Lease.id == lease_id, Lease.organization_id == member.organization_id)
+        .options(
+            selectinload(Lease.tenant),
+            selectinload(Lease.co_tenants),
+            selectinload(Lease.unit).selectinload(Unit.property),
+        )
+    )
+    lease = result.scalar_one_or_none()
+    if not lease:
+        raise HTTPException(status_code=404, detail="Lease not found")
+
+    tmpl_result = await db.execute(
+        select(LeaseTemplate).where(
+            LeaseTemplate.id == template_id,
+            LeaseTemplate.organization_id == member.organization_id,
+        )
+    )
+    tmpl = tmpl_result.scalar_one_or_none()
+    if not tmpl:
+        raise HTTPException(status_code=404, detail="Template not found")
+
+    template_text = ""
+    tmpl_path = UPLOAD_DIR / tmpl.file_path
+    if tmpl_path.suffix.lower() == ".docx":
+        try:
+            tmpl_doc = Document(str(tmpl_path))
+            template_text = "\n".join(p.text for p in tmpl_doc.paragraphs if p.text.strip())
+        except Exception:
+            template_text = ""
+
+    tenant = lease.tenant
+    unit = lease.unit
+    prop = unit.property if unit else None
+
+    all_tenants = []
+    if tenant:
+        all_tenants.append(tenant)
+    for ct in (lease.co_tenants or []):
+        all_tenants.append(ct)
+
+    tenant_names = ", ".join(
+        f"{t.first_name} {t.last_name}".strip() for t in all_tenants
+    ) if all_tenants else "[TENANT NAME]"
+
+    tenant_contact_lines = []
+    for i, t in enumerate(all_tenants, 1):
+        label = f"Tenant {i}" if len(all_tenants) > 1 else "Tenant"
+        name = f"{t.first_name} {t.last_name}".strip()
+        tenant_contact_lines.append(f"{label} Name: {name}")
+        tenant_contact_lines.append(f"{label} Email: {t.email or '[EMAIL]'}")
+        tenant_contact_lines.append(f"{label} Tel: {t.phone or '[PHONE]'}")
+    tenant_contacts = "\n".join(tenant_contact_lines) if tenant_contact_lines else "[TENANT CONTACT]"
+
+    if prop:
+        property_address = f"Unit {unit.unit_number}, {prop.address}, {prop.city}, {prop.state} {prop.zip_code}"
+    elif unit:
+        property_address = f"Unit {unit.unit_number}"
+    else:
+        property_address = "[PROPERTY ADDRESS]"
+
+    unit_details_parts = []
+    if unit:
+        unit_details_parts.append(f"Unit Number: {unit.unit_number}")
+        unit_details_parts.append(f"Bedrooms: {unit.bedrooms}")
+        unit_details_parts.append(f"Bathrooms: {unit.bathrooms}")
+        if unit.square_feet:
+            unit_details_parts.append(f"Square Feet: {unit.square_feet}")
+    if prop:
+        unit_details_parts.append(f"Property Name: {prop.name}")
+        unit_details_parts.append(f"Property Type: {prop.property_type.value if hasattr(prop.property_type, 'value') else prop.property_type}")
+        unit_details_parts.append(f"Full Address: {prop.address}, {prop.city}, {prop.state} {prop.zip_code}")
+    unit_details = "\n".join(unit_details_parts) if unit_details_parts else "[UNIT DETAILS]"
+
+    lease_type_str = lease.lease_type.value if hasattr(lease.lease_type, "value") else str(lease.lease_type)
+
+    shared_details = (
+        f"TENANT NAME(S): {tenant_names}\n"
+        f"TENANT CONTACT(S):\n{tenant_contacts}\n"
+        f"LANDLORD NAME: {landlord_name}\n"
+        f"PROPERTY DETAILS:\n{unit_details}\n"
+        f"MONTHLY RENT: ${lease.monthly_rent:,.2f}\n"
+        f"SECURITY DEPOSIT: ${lease.security_deposit:,.2f}\n"
+        f"START DATE: {lease.start_date}\n"
+        f"END DATE: {lease.end_date}\n"
+        f"LEASE TYPE: {lease_type_str}\n"
+    )
+
+    instruction = (
+        "IMPORTANT: The PARTIES section must list each tenant's full name, email address, and phone number exactly as provided. "
+        "The PREMISES section must include the full property address, unit number, bedrooms, and bathrooms. "
+        "Do not omit any of these fields."
+    )
+
+    if template_text:
+        prompt = (
+            "Fill in this lease agreement template with the real details below.\n\n"
+            + shared_details
+            + f"\n{instruction}\n\nTEMPLATE:\n\n"
+            + template_text
+            + "\n\nReplace all placeholders with the real values above. Keep all legal clauses. Return plain text only."
+        )
+    else:
+        prompt = (
+            "Generate a complete residential lease agreement with these details:\n\n"
+            + shared_details
+            + f"Style: {tmpl.description or tmpl.name}\n\n"
+            + instruction
+            + "\n\nUse numbered ALL CAPS section headings. Return plain text only."
+        )
+
+    try:
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel("gemini-2.5-flash")
+        response = model.generate_content(prompt)
+        content = response.text or ""
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Gemini error: {str(e)[:200]}")
+
+    out_doc = Document()
+    title_para = out_doc.add_paragraph()
+    title_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run = title_para.add_run("RESIDENTIAL LEASE AGREEMENT")
+    run.bold = True
+    run.font.size = Pt(16)
+    out_doc.add_paragraph()
+
+    # --- Parties section (always written programmatically) ---
+    ph = out_doc.add_paragraph()
+    ph.add_run("1. PARTIES").bold = True
+
+    landlord_p = out_doc.add_paragraph()
+    landlord_p.add_run("Landlord: ").bold = True
+    landlord_p.add_run(landlord_name)
+
+    for i, t in enumerate(all_tenants, 1):
+        label = f"Tenant {i}" if len(all_tenants) > 1 else "Tenant"
+        t_name = f"{t.first_name} {t.last_name}".strip()
+        tp = out_doc.add_paragraph()
+        tp.add_run(f"{label}: ").bold = True
+        tp.add_run(t_name)
+        ep = out_doc.add_paragraph(style="Normal")
+        ep.paragraph_format.left_indent = Pt(18)
+        ep.add_run("Email: ").bold = True
+        ep.add_run(t.email or "—")
+        pp = out_doc.add_paragraph(style="Normal")
+        pp.paragraph_format.left_indent = Pt(18)
+        pp.add_run("Tel: ").bold = True
+        pp.add_run(t.phone if t.phone else "—")
+
+    out_doc.add_paragraph()
+
+    # --- Premises section (always written programmatically) ---
+    prh = out_doc.add_paragraph()
+    prh.add_run("2. PREMISES").bold = True
+    addr_p = out_doc.add_paragraph()
+    addr_p.add_run("Address: ").bold = True
+    addr_p.add_run(property_address)
+    if unit:
+        beds_p = out_doc.add_paragraph()
+        beds_p.add_run("Unit: ").bold = True
+        beds_p.add_run(
+            f"{unit.unit_number} — {unit.bedrooms} bed / {unit.bathrooms} bath"
+            + (f" / {unit.square_feet} sq ft" if unit.square_feet else "")
+        )
+    out_doc.add_paragraph()
+
+    # --- AI-generated body (skip sections 1 & 2 which we wrote ourselves) ---
+    _skip_block = False
+    for line in content.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            if not _skip_block:
+                out_doc.add_paragraph()
+            continue
+        # Detect section headers
+        is_header = stripped.isupper() and len(stripped) > 3
+        sec_num = None
+        if not is_header and len(stripped) > 2:
+            parts = stripped.split(".", 1)
+            if parts[0].strip().isdigit():
+                is_header = True
+                sec_num = int(parts[0].strip())
+        if is_header:
+            if sec_num in (1, 2):
+                _skip_block = True
+            else:
+                _skip_block = False
+                p = out_doc.add_paragraph()
+                r = p.add_run(stripped)
+                r.bold = True
+                r.font.size = Pt(11)
+        elif not _skip_block:
+            out_doc.add_paragraph(stripped)
+
+    buf = io.BytesIO()
+    out_doc.save(buf)
+    doc_data = buf.getvalue()
+
+    if lease.document_path:
+        try:
+            (UPLOAD_DIR / lease.document_path).unlink(missing_ok=True)
+        except OSError:
+            pass
+
+    filename = f"leases/ai_lease_{lease.id}_{uuid.uuid4()}.docx"
+    LEASE_DOC_DIR.mkdir(parents=True, exist_ok=True)
+    (UPLOAD_DIR / filename).write_bytes(doc_data)
+    lease.document_path = filename
+    await db.commit()
+
+    return _lease_to_out(await _get_lease(lease_id, member.organization_id, db))
+
 
 
 @router.get("/{lease_id}/document")
