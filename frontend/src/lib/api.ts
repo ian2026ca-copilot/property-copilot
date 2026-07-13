@@ -135,6 +135,7 @@ export interface LeaseOut {
   status: string;
   lease_type: "FIXED" | "MONTH_TO_MONTH";
   document_url: string | null;
+  landlord_name: string | null;
   notes: string | null;
   tenant: TenantOut | null;
   co_tenants: TenantOut[];

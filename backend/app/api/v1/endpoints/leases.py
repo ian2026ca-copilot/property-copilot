@@ -98,6 +98,7 @@ def _lease_to_out(lease: Lease) -> LeaseOut:
         status=_effective_status(lease),
         lease_type=lease.lease_type,
         document_url=doc_url,
+        landlord_name=lease.landlord_name,
         notes=lease.notes,
         tenant=_tenant_to_out(lease.tenant, docs) if lease.tenant else None,
         co_tenants=co_tenants,
@@ -205,6 +206,7 @@ async def create_lease(
         monthly_rent=body.monthly_rent,
         security_deposit=body.security_deposit,
         lease_type=body.lease_type,
+        landlord_name=body.landlord_name or None,
         notes=body.notes,
         status=_compute_status_from_dates(body.start_date, body.end_date),
     )
@@ -568,18 +570,20 @@ async def delete_lease_permanent(
         if unit:
             unit.status = UnitStatus.VACANT
 
-    # Delete associated payments first (no cascade in DB)
-    from sqlalchemy import delete as sa_delete
-    await db.execute(sa_delete(Payment).where(Payment.lease_id == lease.id))
+    doc_path = lease.document_path
+    lease_id_val = lease.id
 
-    if lease.document_path:
+    # Use raw SQL deletes to avoid ORM cascade/lazy-load issues in async context
+    from sqlalchemy import delete as sa_delete
+    await db.execute(sa_delete(Payment).where(Payment.lease_id == lease_id_val))
+    await db.execute(sa_delete(Lease).where(Lease.id == lease_id_val))
+    await db.commit()
+
+    if doc_path:
         try:
-            (UPLOAD_DIR / lease.document_path).unlink(missing_ok=True)
+            (UPLOAD_DIR / doc_path).unlink(missing_ok=True)
         except OSError:
             pass
-
-    await db.delete(lease)
-    await db.commit()
 
 
 
@@ -595,7 +599,6 @@ async def renew_lease(
     _, member = current
     old = await _get_lease(lease_id, member.organization_id, db)
 
-    # Terminate old lease
     old.status = LeaseStatus.TERMINATED
 
     new_lease = Lease(
@@ -612,6 +615,15 @@ async def renew_lease(
     )
     db.add(new_lease)
     await db.flush()
+
+    # Carry over co-tenants from old lease
+    if old.co_tenants:
+        from app.models.lease import lease_co_tenants
+        from sqlalchemy import insert as sa_insert
+        await db.execute(
+            sa_insert(lease_co_tenants),
+            [{"lease_id": new_lease.id, "user_id": ct.id} for ct in old.co_tenants],
+        )
 
     monthly_payments = generate_monthly_payments(new_lease, member.organization_id)
     for p in monthly_payments:
@@ -704,7 +716,7 @@ async def generate_lease_document(
     from app.models.organization import Organization as Org
     org_result = await db.execute(select(Org).where(Org.id == member.organization_id))
     org = org_result.scalar_one_or_none()
-    landlord_name = org.name if org else "[LANDLORD NAME]"
+    org_landlord = org.name if org else "[LANDLORD NAME]"
 
     result = await db.execute(
         select(Lease)
@@ -718,6 +730,8 @@ async def generate_lease_document(
     lease = result.scalar_one_or_none()
     if not lease:
         raise HTTPException(status_code=404, detail="Lease not found")
+
+    landlord_name = lease.landlord_name or org_landlord
 
     tmpl_result = await db.execute(
         select(LeaseTemplate).where(

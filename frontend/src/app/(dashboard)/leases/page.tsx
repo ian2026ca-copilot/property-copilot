@@ -57,13 +57,14 @@ function Avatar({ name, url, size = 7 }: { name: string; url?: string | null; si
 interface CreateLeaseModalProps {
   units: UnitOut[];
   persons: TenantOut[];
+  landlordSuggestions: string[];
   presetTenantId?: string;
   presetUnitId?: string;
   onClose: () => void;
   onSave: (lease: LeaseOut) => void;
 }
 
-function CreateLeaseModal({ units, persons, presetTenantId, presetUnitId, onClose, onSave }: CreateLeaseModalProps) {
+function CreateLeaseModal({ units, persons, landlordSuggestions, presetTenantId, presetUnitId, onClose, onSave }: CreateLeaseModalProps) {
   const [form, setForm] = useState({
     tenant_user_id: presetTenantId ?? "",
     unit_id: presetUnitId ?? "",
@@ -72,6 +73,7 @@ function CreateLeaseModal({ units, persons, presetTenantId, presetUnitId, onClos
     monthly_rent: "",
     security_deposit: "",
     lease_type: "FIXED" as LeaseType,
+    landlord_name: "",
     notes: "",
   });
   const [coTenantIds, setCoTenantIds] = useState<string[]>([]);
@@ -95,7 +97,14 @@ function CreateLeaseModal({ units, persons, presetTenantId, presetUnitId, onClos
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!form.tenant_user_id || !form.unit_id || !form.start_date || !form.end_date || !form.monthly_rent) {
+    // Auto-add tenant if user selected from dropdown but didn't click "+ Add tenant"
+    let primaryTenantId = form.tenant_user_id;
+    if (!primaryTenantId && tenantPickerValue) {
+      set("tenant_user_id", tenantPickerValue);
+      primaryTenantId = tenantPickerValue;
+      setTenantPickerValue("");
+    }
+    if (!primaryTenantId || !form.unit_id || !form.start_date || !form.end_date || !form.monthly_rent) {
       setError("Tenant, unit, dates, and rent are required.");
       return;
     }
@@ -103,14 +112,15 @@ function CreateLeaseModal({ units, persons, presetTenantId, presetUnitId, onClos
     setError("");
     try {
       const lease = await leasesApi.create({
-        tenant_user_id: form.tenant_user_id,
-        co_tenant_ids: coTenantIds.filter(id => id !== form.tenant_user_id),
+        tenant_user_id: primaryTenantId,
+        co_tenant_ids: coTenantIds.filter(id => id !== primaryTenantId),
         unit_id: form.unit_id,
         start_date: form.start_date,
         end_date: form.end_date,
         monthly_rent: parseFloat(form.monthly_rent),
         security_deposit: parseFloat(form.security_deposit || "0"),
         lease_type: form.lease_type,
+        landlord_name: form.landlord_name || null,
         notes: form.notes || null,
       });
 
@@ -263,6 +273,20 @@ function CreateLeaseModal({ units, persons, presetTenantId, presetUnitId, onClos
               <input type="number" min="0" step="0.01" value={form.security_deposit} onChange={e => set("security_deposit", e.target.value)}
                 placeholder="2000" className={inp} />
             </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Landlord name</label>
+            <input
+              list="landlord-suggestions"
+              value={form.landlord_name}
+              onChange={e => set("landlord_name", e.target.value)}
+              placeholder="Enter or select landlord name"
+              className={inp}
+            />
+            <datalist id="landlord-suggestions">
+              {landlordSuggestions.map(name => <option key={name} value={name} />)}
+            </datalist>
           </div>
 
           <div>
@@ -979,6 +1003,7 @@ export default function LeasesPage() {
         <CreateLeaseModal
           units={units}
           persons={persons}
+          landlordSuggestions={[...new Set(leases.map(l => l.landlord_name).filter(Boolean) as string[])]}
           presetTenantId={presetTenantId}
           onClose={() => setModal(null)}
           onSave={handleSave}

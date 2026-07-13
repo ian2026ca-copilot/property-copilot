@@ -87,6 +87,7 @@ class LeaseCreate(BaseModel):
     monthly_rent: float
     security_deposit: float = 0.0
     lease_type: LeaseType = LeaseType.FIXED
+    landlord_name: str | None = None
     notes: str | None = None
 
 
@@ -133,6 +134,7 @@ class LeaseOut(BaseModel):
     status: LeaseStatus
     lease_type: LeaseType = LeaseType.FIXED
     document_url: str | None = None
+    landlord_name: str | None = None
     notes: str | None
     tenant: TenantOut | None = None
     co_tenants: list[TenantOut] = []
