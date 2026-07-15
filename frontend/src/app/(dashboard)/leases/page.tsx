@@ -52,6 +52,308 @@ function Avatar({ name, url, size = 7 }: { name: string; url?: string | null; si
   );
 }
 
+// ─── AI Lease Chatbot ──────────────────────────────────────────────────────────
+
+type ChatStep = "unit" | "tenant" | "dates" | "rent" | "landlord" | "template" | "confirm";
+
+interface AILeaseModalProps {
+  units: UnitOut[];
+  persons: TenantOut[];
+  templates: LeaseTemplateOut[];
+  landlordSuggestions: string[];
+  onClose: () => void;
+  onSave: (lease: LeaseOut) => void;
+}
+
+interface ChatMsg { from: "bot" | "user"; text: string; }
+
+function AILeaseModal({ units, persons, templates, landlordSuggestions, onClose, onSave }: AILeaseModalProps) {
+  const [step, setStep] = useState<ChatStep>("unit");
+  const [msgs, setMsgs] = useState<ChatMsg[]>([
+    { from: "bot", text: "Hi! Let's create a new lease. Which unit is this for?" },
+  ]);
+  const [unitId, setUnitId] = useState("");
+  const [tenantIds, setTenantIds] = useState<string[]>([]);
+  const [tenantPicker, setTenantPicker] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [monthlyRent, setMonthlyRent] = useState("");
+  const [landlordName, setLandlordName] = useState("");
+  const [templateId, setTemplateId] = useState(templates[0]?.id ?? "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs]);
+
+  function addMsg(from: "bot" | "user", text: string) {
+    setMsgs(prev => [...prev, { from, text }]);
+  }
+
+  function advance(userText: string, next: ChatStep, botText: string) {
+    addMsg("user", userText);
+    setTimeout(() => { addMsg("bot", botText); setStep(next); }, 300);
+  }
+
+  const selectedUnit = units.find(u => u.id === unitId);
+  const selectedTenants = tenantIds.map(id => persons.find(p => p.id === id)).filter(Boolean) as TenantOut[];
+
+  async function handleCreate() {
+    setSaving(true);
+    setError("");
+    try {
+      const primaryId = tenantIds[0];
+      const coIds = tenantIds.slice(1);
+      const lease = await leasesApi.create({
+        unit_id: unitId,
+        tenant_user_id: primaryId,
+        co_tenant_ids: coIds,
+        start_date: startDate,
+        end_date: endDate,
+        monthly_rent: parseFloat(monthlyRent),
+        security_deposit: 0,
+        lease_type: "FIXED",
+        landlord_name: landlordName || null,
+        notes: null,
+      });
+      if (templateId) {
+        addMsg("bot", "Generating your lease document with AI… ✨");
+        const withDoc = await leasesApi.generateDocument(lease.id, templateId);
+        onSave(withDoc);
+      } else {
+        onSave(lease);
+      }
+    } catch (err: any) {
+      setError(err.message ?? "Failed to create lease");
+      setSaving(false);
+    }
+  }
+
+  const inp = "w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500";
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
+      <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full max-w-lg shadow-xl flex flex-col" style={{ height: "min(680px, 92vh)" }}>
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 shrink-0">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-full bg-violet-600 flex items-center justify-center">
+              <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-slate-900">AI Lease Assistant</p>
+              <p className="text-[11px] text-slate-400">Powered by Gemini</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
+        </div>
+
+        {/* Chat area */}
+        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+          {msgs.map((m, i) => (
+            <div key={i} className={`flex ${m.from === "user" ? "justify-end" : "justify-start"}`}>
+              {m.from === "bot" && (
+                <div className="w-6 h-6 rounded-full bg-violet-100 flex items-center justify-center mr-2 mt-0.5 shrink-0">
+                  <svg className="w-3 h-3 text-violet-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                </div>
+              )}
+              <div className={`max-w-[78%] px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed ${
+                m.from === "bot"
+                  ? "bg-slate-100 text-slate-800 rounded-tl-sm"
+                  : "bg-violet-600 text-white rounded-tr-sm"
+              }`}>
+                {m.text}
+              </div>
+            </div>
+          ))}
+          <div ref={bottomRef} />
+        </div>
+
+        {/* Input area */}
+        <div className="px-4 pb-4 pt-2 border-t border-slate-100 shrink-0 space-y-2">
+          {error && <p className="text-xs text-red-600 bg-red-50 px-3 py-1.5 rounded-lg">{error}</p>}
+
+          {step === "unit" && (
+            <div className="flex gap-2">
+              <select value={unitId} onChange={e => setUnitId(e.target.value)} className={inp}>
+                <option value="">— select unit —</option>
+                {units.map(u => (
+                  <option key={u.id} value={u.id}>
+                    {u.property_name} — Unit {u.unit_number} ({u.status}) · ${u.monthly_rent}/mo
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={() => {
+                  if (!unitId) return;
+                  const u = units.find(x => x.id === unitId)!;
+                  setMonthlyRent(String(u.monthly_rent));
+                  advance(
+                    `${u.property_name} — Unit ${u.unit_number}`,
+                    "tenant",
+                    persons.length === 0
+                      ? "No tenants found. Please add tenants first."
+                      : "Who are the tenants? Select and add one or more."
+                  );
+                }}
+                className="px-3 py-2 bg-violet-600 text-white rounded-lg text-sm hover:bg-violet-700 shrink-0">
+                Next →
+              </button>
+            </div>
+          )}
+
+          {step === "tenant" && (
+            <div className="space-y-2">
+              {tenantIds.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {selectedTenants.map((t, i) => (
+                    <span key={t.id} className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-100 rounded-full text-xs font-medium text-slate-700">
+                      {i === 0 && <span className="w-1.5 h-1.5 rounded-full bg-violet-600 inline-block" />}
+                      {t.full_name}
+                      <button onClick={() => setTenantIds(prev => prev.filter(x => x !== t.id))} className="text-slate-400 hover:text-red-500">×</button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              <div className="flex gap-2">
+                <select value={tenantPicker} onChange={e => setTenantPicker(e.target.value)} className={inp}>
+                  <option value="">— select tenant —</option>
+                  {persons.filter(p => !tenantIds.includes(p.id)).map(p => (
+                    <option key={p.id} value={p.id}>{p.full_name} ({p.email})</option>
+                  ))}
+                </select>
+                <button
+                  onClick={() => {
+                    if (tenantPicker) { setTenantIds(prev => [...prev, tenantPicker]); setTenantPicker(""); }
+                  }}
+                  className="px-3 py-2 bg-slate-100 text-slate-700 rounded-lg text-sm hover:bg-slate-200 shrink-0">
+                  + Add
+                </button>
+              </div>
+              <button
+                onClick={() => {
+                  const ids = tenantPicker && !tenantIds.includes(tenantPicker) ? [...tenantIds, tenantPicker] : tenantIds;
+                  if (ids.length === 0) return;
+                  setTenantIds(ids);
+                  setTenantPicker("");
+                  const names = ids.map(id => persons.find(p => p.id === id)?.full_name ?? "").join(", ");
+                  advance(names, "dates", "What are the lease start and end dates?");
+                }}
+                className="w-full px-3 py-2 bg-violet-600 text-white rounded-lg text-sm hover:bg-violet-700">
+                Next →
+              </button>
+            </div>
+          )}
+
+          {step === "dates" && (
+            <div className="space-y-2">
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs text-slate-500 mb-1 block">Start date</label>
+                  <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className={inp} />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-500 mb-1 block">End date</label>
+                  <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className={inp} />
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  if (!startDate || !endDate) return;
+                  advance(`${startDate} → ${endDate}`, "rent", `What's the monthly rent? (Pre-filled: $${monthlyRent}/mo)`);
+                }}
+                className="w-full px-3 py-2 bg-violet-600 text-white rounded-lg text-sm hover:bg-violet-700">
+                Next →
+              </button>
+            </div>
+          )}
+
+          {step === "rent" && (
+            <div className="flex gap-2">
+              <input type="number" min="0" step="0.01" value={monthlyRent} onChange={e => setMonthlyRent(e.target.value)}
+                placeholder="Monthly rent" className={inp} />
+              <button
+                onClick={() => {
+                  if (!monthlyRent) return;
+                  advance(`$${parseFloat(monthlyRent).toLocaleString()}/mo`, "landlord", "What's the landlord name? (Leave blank to use your organization name)");
+                }}
+                className="px-3 py-2 bg-violet-600 text-white rounded-lg text-sm hover:bg-violet-700 shrink-0">
+                Next →
+              </button>
+            </div>
+          )}
+
+          {step === "landlord" && (
+            <div className="flex gap-2">
+              <input
+                list="ai-landlord-suggestions"
+                value={landlordName}
+                onChange={e => setLandlordName(e.target.value)}
+                placeholder="Landlord name (optional)"
+                className={inp}
+              />
+              <datalist id="ai-landlord-suggestions">
+                {landlordSuggestions.map(n => <option key={n} value={n} />)}
+              </datalist>
+              <button
+                onClick={() => {
+                  advance(landlordName || "(organization name)", "template",
+                    templates.length > 0
+                      ? `Which lease template would you like to use? (${templates.length} available)`
+                      : "No templates found — I'll generate a standard residential lease."
+                  );
+                  if (templates.length === 0) setTimeout(() => setStep("confirm"), 350);
+                }}
+                className="px-3 py-2 bg-violet-600 text-white rounded-lg text-sm hover:bg-violet-700 shrink-0">
+                Next →
+              </button>
+            </div>
+          )}
+
+          {step === "template" && templates.length > 0 && (
+            <div className="space-y-2">
+              <select value={templateId} onChange={e => setTemplateId(e.target.value)} className={inp}>
+                <option value="">— no template (standard lease) —</option>
+                {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+              <button
+                onClick={() => {
+                  const t = templates.find(x => x.id === templateId);
+                  advance(t ? t.name : "Standard lease (no template)", "confirm",
+                    "All set! Here's a summary — ready to create the lease and generate the document?");
+                }}
+                className="w-full px-3 py-2 bg-violet-600 text-white rounded-lg text-sm hover:bg-violet-700">
+                Next →
+              </button>
+            </div>
+          )}
+
+          {step === "confirm" && (
+            <div className="space-y-2">
+              <div className="bg-slate-50 rounded-xl px-3 py-3 text-xs space-y-1 text-slate-600">
+                <div><span className="font-medium text-slate-800">Unit:</span> {selectedUnit ? `${selectedUnit.property_name} — Unit ${selectedUnit.unit_number}` : "—"}</div>
+                <div><span className="font-medium text-slate-800">Tenants:</span> {selectedTenants.map(t => t.full_name).join(", ") || "—"}</div>
+                <div><span className="font-medium text-slate-800">Dates:</span> {startDate} → {endDate}</div>
+                <div><span className="font-medium text-slate-800">Rent:</span> ${parseFloat(monthlyRent || "0").toLocaleString()}/mo</div>
+                {landlordName && <div><span className="font-medium text-slate-800">Landlord:</span> {landlordName}</div>}
+                <div><span className="font-medium text-slate-800">Template:</span> {templates.find(t => t.id === templateId)?.name ?? "Standard lease"}</div>
+              </div>
+              <button onClick={handleCreate} disabled={saving}
+                className="w-full px-4 py-2.5 bg-violet-600 text-white rounded-xl text-sm font-medium hover:bg-violet-700 disabled:opacity-50">
+                {saving ? "Creating lease…" : "✨ Create & Generate Document"}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Modals ────────────────────────────────────────────────────────────────────
 
 interface CreateLeaseModalProps {
@@ -60,11 +362,12 @@ interface CreateLeaseModalProps {
   landlordSuggestions: string[];
   presetTenantId?: string;
   presetUnitId?: string;
+  aiMode?: boolean;
   onClose: () => void;
   onSave: (lease: LeaseOut) => void;
 }
 
-function CreateLeaseModal({ units, persons, landlordSuggestions, presetTenantId, presetUnitId, onClose, onSave }: CreateLeaseModalProps) {
+function CreateLeaseModal({ units, persons, landlordSuggestions, presetTenantId, presetUnitId, aiMode, onClose, onSave }: CreateLeaseModalProps) {
   const [form, setForm] = useState({
     tenant_user_id: presetTenantId ?? "",
     unit_id: presetUnitId ?? "",
@@ -86,8 +389,14 @@ function CreateLeaseModal({ units, persons, landlordSuggestions, presetTenantId,
   const [generating, setGenerating] = useState(false);
 
   useEffect(() => {
-    leasesApi.listTemplates().then(setTemplates).catch(() => {});
-  }, []);
+    leasesApi.listTemplates().then(list => {
+      setTemplates(list);
+      if (aiMode && list.length > 0) {
+        setSelectedTemplateId(list[0].id);
+        setShowTemplatePicker(false);
+      }
+    }).catch(() => {});
+  }, [aiMode]);
 
   function set(k: string, v: string) { setForm(f => ({ ...f, [k]: v })); }
 
@@ -155,7 +464,13 @@ function CreateLeaseModal({ units, persons, landlordSuggestions, presetTenantId,
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl w-full max-w-lg shadow-xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-          <h2 className="text-base font-semibold text-slate-900">Create lease</h2>
+          <h2 className="text-base font-semibold text-slate-900 flex items-center gap-2">
+            {aiMode && <span className="inline-flex items-center gap-1 text-xs font-medium bg-violet-100 text-violet-700 px-2 py-0.5 rounded-full">
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+              AI
+            </span>}
+            Create lease
+          </h2>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
         </div>
         <form onSubmit={submit} className="px-6 py-5 space-y-4">
@@ -379,11 +694,13 @@ function CreateLeaseModal({ units, persons, landlordSuggestions, presetTenantId,
 
 interface EditLeaseModalProps {
   lease: LeaseRow;
+  templates: LeaseTemplateOut[];
+  landlordSuggestions: string[];
   onClose: () => void;
   onSave: (lease: LeaseOut) => void;
 }
 
-function EditLeaseModal({ lease, onClose, onSave }: EditLeaseModalProps) {
+function EditLeaseModal({ lease, templates, landlordSuggestions, onClose, onSave }: EditLeaseModalProps) {
   const [form, setForm] = useState({
     start_date: lease.start_date,
     end_date: lease.end_date,
@@ -391,9 +708,13 @@ function EditLeaseModal({ lease, onClose, onSave }: EditLeaseModalProps) {
     security_deposit: String(lease.security_deposit),
     lease_type: (lease.lease_type ?? "FIXED") as LeaseType,
     status: lease.status as LeaseStatus,
+    landlord_name: lease.landlord_name ?? "",
     notes: lease.notes ?? "",
   });
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
+  const [showTemplatePicker, setShowTemplatePicker] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [generating, setGenerating] = useState(false);
   const [error, setError] = useState("");
 
   function set(k: string, v: string) { setForm(f => ({ ...f, [k]: v })); }
@@ -401,6 +722,7 @@ function EditLeaseModal({ lease, onClose, onSave }: EditLeaseModalProps) {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
+    setError("");
     try {
       const updated = await leasesApi.update(lease.id, {
         start_date: form.start_date,
@@ -409,8 +731,25 @@ function EditLeaseModal({ lease, onClose, onSave }: EditLeaseModalProps) {
         security_deposit: parseFloat(form.security_deposit),
         lease_type: form.lease_type,
         status: form.status,
+        landlord_name: form.landlord_name || null,
         notes: form.notes || null,
       });
+
+      if (selectedTemplateId) {
+        setGenerating(true);
+        try {
+          const withDoc = await leasesApi.generateDocument(updated.id, selectedTemplateId);
+          onSave(withDoc);
+          return;
+        } catch (genErr: any) {
+          setError(`Lease updated, but document generation failed: ${genErr.message ?? "unknown error"}`);
+          onSave(updated);
+          return;
+        } finally {
+          setGenerating(false);
+        }
+      }
+
       onSave(updated);
     } catch (err: any) {
       setError(err.message ?? "Failed to update lease");
@@ -418,6 +757,9 @@ function EditLeaseModal({ lease, onClose, onSave }: EditLeaseModalProps) {
       setSaving(false);
     }
   }
+
+  const inp = "w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black";
+  const isWorking = saving || generating;
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
@@ -436,8 +778,7 @@ function EditLeaseModal({ lease, onClose, onSave }: EditLeaseModalProps) {
 
           <div>
             <label className="block text-xs font-medium text-slate-500 mb-1">Lease type</label>
-            <select value={form.lease_type} onChange={e => set("lease_type", e.target.value)}
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black">
+            <select value={form.lease_type} onChange={e => set("lease_type", e.target.value)} className={inp}>
               <option value="FIXED">Fixed term</option>
               <option value="MONTH_TO_MONTH">Month-to-month</option>
             </select>
@@ -446,33 +787,28 @@ function EditLeaseModal({ lease, onClose, onSave }: EditLeaseModalProps) {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-slate-500 mb-1">Start date</label>
-              <input type="date" value={form.start_date} onChange={e => set("start_date", e.target.value)}
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black" />
+              <input type="date" value={form.start_date} onChange={e => set("start_date", e.target.value)} className={inp} />
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-500 mb-1">End date</label>
-              <input type="date" value={form.end_date} onChange={e => set("end_date", e.target.value)}
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black" />
+              <input type="date" value={form.end_date} onChange={e => set("end_date", e.target.value)} className={inp} />
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-slate-500 mb-1">Monthly rent</label>
-              <input type="number" min="0" step="0.01" value={form.monthly_rent} onChange={e => set("monthly_rent", e.target.value)}
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black" />
+              <input type="number" min="0" step="0.01" value={form.monthly_rent} onChange={e => set("monthly_rent", e.target.value)} className={inp} />
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-500 mb-1">Security deposit</label>
-              <input type="number" min="0" step="0.01" value={form.security_deposit} onChange={e => set("security_deposit", e.target.value)}
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black" />
+              <input type="number" min="0" step="0.01" value={form.security_deposit} onChange={e => set("security_deposit", e.target.value)} className={inp} />
             </div>
           </div>
 
           <div>
             <label className="block text-xs font-medium text-slate-500 mb-1">Status override</label>
-            <select value={form.status} onChange={e => set("status", e.target.value)}
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black">
+            <select value={form.status} onChange={e => set("status", e.target.value)} className={inp}>
               <option value="ACTIVE">Active</option>
               <option value="PENDING">Pending</option>
               <option value="EXPIRED">Expired</option>
@@ -481,9 +817,81 @@ function EditLeaseModal({ lease, onClose, onSave }: EditLeaseModalProps) {
           </div>
 
           <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Landlord name</label>
+            <input
+              list="edit-landlord-suggestions"
+              value={form.landlord_name}
+              onChange={e => set("landlord_name", e.target.value)}
+              placeholder="Enter or select landlord name"
+              className={inp}
+            />
+            <datalist id="edit-landlord-suggestions">
+              {landlordSuggestions.map(name => <option key={name} value={name} />)}
+            </datalist>
+          </div>
+
+          <div>
             <label className="block text-xs font-medium text-slate-500 mb-1">Notes</label>
             <textarea value={form.notes} onChange={e => set("notes", e.target.value)} rows={2}
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black resize-none" />
+              className={`${inp} resize-none`} />
+          </div>
+
+          {/* Template selection */}
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Lease agreement template</label>
+            {selectedTemplateId ? (
+              <div className="flex items-center gap-2 border border-violet-200 bg-violet-50 rounded-xl px-3 py-2.5">
+                <span className="text-violet-500">✨</span>
+                <span className="text-sm text-violet-800 font-medium flex-1 truncate">
+                  {templates.find(t => t.id === selectedTemplateId)?.name}
+                </span>
+                <button type="button" onClick={() => setSelectedTemplateId("")}
+                  className="text-xs text-slate-400 hover:text-slate-600 shrink-0">
+                  × Remove
+                </button>
+              </div>
+            ) : (
+              <button type="button" onClick={() => setShowTemplatePicker(p => !p)}
+                className="w-full flex items-center gap-2 px-3 py-2.5 border border-dashed border-slate-300 hover:border-violet-400 hover:bg-violet-50 rounded-xl text-sm text-slate-500 hover:text-violet-700 transition-colors group">
+                <svg className="w-4 h-4 group-hover:text-violet-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                ✨ Select template for AI-generated agreement
+                <svg className="w-3.5 h-3.5 ml-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={showTemplatePicker ? "M5 15l7-7 7 7" : "M19 9l-7 7-7-7"} />
+                </svg>
+              </button>
+            )}
+
+            {showTemplatePicker && !selectedTemplateId && (
+              <div className="mt-1 border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+                {templates.length === 0 ? (
+                  <div className="px-4 py-3 text-xs text-slate-400 text-center italic">
+                    No templates yet — go to Templates to upload or AI-generate one.
+                  </div>
+                ) : (
+                  <ul className="divide-y divide-slate-100 max-h-48 overflow-y-auto">
+                    {templates.map(t => (
+                      <li key={t.id}>
+                        <button type="button"
+                          onClick={() => { setSelectedTemplateId(t.id); setShowTemplatePicker(false); }}
+                          className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-violet-50 transition-colors text-left">
+                          <div className="w-7 h-7 rounded-lg bg-violet-100 flex items-center justify-center shrink-0">
+                            <svg className="w-3.5 h-3.5 text-violet-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                            </svg>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-slate-800 truncate">{t.name}</p>
+                            {t.description && <p className="text-[11px] text-slate-400 truncate">{t.description}</p>}
+                          </div>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="pt-2 flex gap-3">
@@ -491,9 +899,14 @@ function EditLeaseModal({ lease, onClose, onSave }: EditLeaseModalProps) {
               className="flex-1 px-4 py-2 border border-slate-200 rounded-lg text-sm text-slate-600 hover:bg-slate-50">
               Cancel
             </button>
-            <button type="submit" disabled={saving}
-              className="flex-1 px-4 py-2 bg-black text-white rounded-lg text-sm font-medium hover:bg-slate-800 disabled:opacity-50">
-              {saving ? "Saving…" : "Save changes"}
+            <button type="submit" disabled={isWorking}
+              className="flex-1 px-4 py-2 bg-black text-white rounded-lg text-sm font-medium hover:bg-slate-800 disabled:opacity-50 flex items-center justify-center gap-2">
+              {generating ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  Generating document…
+                </>
+              ) : saving ? "Saving…" : selectedTemplateId ? "Save & Generate Document" : "Save changes"}
             </button>
           </div>
         </form>
@@ -504,18 +917,32 @@ function EditLeaseModal({ lease, onClose, onSave }: EditLeaseModalProps) {
 
 interface RenewModalProps {
   lease: LeaseRow;
+  units: UnitOut[];
+  persons: TenantOut[];
+  landlordSuggestions: string[];
+  templates: LeaseTemplateOut[];
   onClose: () => void;
   onSave: (lease: LeaseOut) => void;
 }
 
-function RenewModal({ lease, onClose, onSave }: RenewModalProps) {
+function RenewModal({ lease, units, persons, landlordSuggestions, templates, onClose, onSave }: RenewModalProps) {
   const [form, setForm] = useState({
+    unit_id: lease.unit_id,
+    tenant_user_id: lease.tenant_user_id,
     start_date: lease.end_date,
     end_date: "",
     monthly_rent: String(lease.monthly_rent),
+    security_deposit: String(lease.security_deposit),
     lease_type: (lease.lease_type ?? "FIXED") as LeaseType,
+    landlord_name: lease.landlord_name ?? "",
+    notes: lease.notes ?? "",
   });
+  const [coTenantIds, setCoTenantIds] = useState<string[]>(lease.co_tenants?.map(t => t.id) ?? []);
+  const [tenantPickerValue, setTenantPickerValue] = useState("");
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
+  const [showTemplatePicker, setShowTemplatePicker] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [generating, setGenerating] = useState(false);
   const [error, setError] = useState("");
 
   function set(k: string, v: string) { setForm(f => ({ ...f, [k]: v })); }
@@ -524,13 +951,36 @@ function RenewModal({ lease, onClose, onSave }: RenewModalProps) {
     e.preventDefault();
     if (!form.start_date || !form.end_date) { setError("Both dates are required."); return; }
     setSaving(true);
+    setError("");
     try {
       const renewed = await leasesApi.renew(lease.id, {
+        unit_id: form.unit_id,
+        tenant_user_id: form.tenant_user_id,
+        co_tenant_ids: coTenantIds.filter(id => id !== form.tenant_user_id),
         start_date: form.start_date,
         end_date: form.end_date,
         monthly_rent: parseFloat(form.monthly_rent),
+        security_deposit: parseFloat(form.security_deposit || "0"),
         lease_type: form.lease_type,
+        landlord_name: form.landlord_name || null,
+        notes: form.notes || null,
       });
+
+      if (selectedTemplateId) {
+        setGenerating(true);
+        try {
+          const withDoc = await leasesApi.generateDocument(renewed.id, selectedTemplateId);
+          onSave(withDoc);
+          return;
+        } catch (genErr: any) {
+          setError(`Lease renewed, but document generation failed: ${genErr.message ?? "unknown error"}`);
+          onSave(renewed);
+          return;
+        } finally {
+          setGenerating(false);
+        }
+      }
+
       onSave(renewed);
     } catch (err: any) {
       setError(err.message ?? "Failed to renew lease");
@@ -539,9 +989,12 @@ function RenewModal({ lease, onClose, onSave }: RenewModalProps) {
     }
   }
 
+  const inp = "w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black";
+  const isWorking = saving || generating;
+
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl w-full max-w-md shadow-xl">
+      <div className="bg-white rounded-2xl w-full max-w-lg shadow-xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
           <h2 className="text-base font-semibold text-slate-900">Renew lease</h2>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
@@ -554,10 +1007,74 @@ function RenewModal({ lease, onClose, onSave }: RenewModalProps) {
             The current lease (ending {lease.end_date}) will be terminated and a new one created.
           </p>
 
+          {/* Multi-tenant selector */}
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Tenant *</label>
+            {(form.tenant_user_id || coTenantIds.length > 0) && (
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {[form.tenant_user_id, ...coTenantIds].filter(Boolean).map((id, idx) => {
+                  const p = persons.find(x => x.id === id);
+                  if (!p) return null;
+                  return (
+                    <span key={id} className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-100 rounded-full text-xs text-slate-700 font-medium">
+                      {idx === 0 && <span className="w-1.5 h-1.5 rounded-full bg-black inline-block" />}
+                      {p.full_name}
+                      <button type="button" onClick={() => {
+                        if (idx === 0) {
+                          const next = coTenantIds[0];
+                          set("tenant_user_id", next ?? "");
+                          setCoTenantIds(prev => prev.slice(1));
+                        } else {
+                          setCoTenantIds(prev => prev.filter(x => x !== id));
+                        }
+                      }} className="ml-0.5 text-slate-400 hover:text-red-500 leading-none">×</button>
+                    </span>
+                  );
+                })}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <select
+                value={tenantPickerValue}
+                onChange={e => setTenantPickerValue(e.target.value)}
+                className={`${inp} flex-1`}
+              >
+                <option value="">— select tenant —</option>
+                {persons
+                  .filter(p => p.id !== form.tenant_user_id && !coTenantIds.includes(p.id))
+                  .map(p => <option key={p.id} value={p.id}>{p.full_name} ({p.email})</option>)
+                }
+              </select>
+              <button type="button"
+                onClick={() => {
+                  if (!tenantPickerValue) return;
+                  if (!form.tenant_user_id) {
+                    set("tenant_user_id", tenantPickerValue);
+                  } else {
+                    setCoTenantIds(prev => [...prev, tenantPickerValue]);
+                  }
+                  setTenantPickerValue("");
+                }}
+                className="px-3 py-2 bg-black text-white text-sm rounded-lg hover:bg-slate-800 whitespace-nowrap shrink-0">
+                + Add tenant
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Unit *</label>
+            <select value={form.unit_id} onChange={e => set("unit_id", e.target.value)} className={inp}>
+              {units.map(u => (
+                <option key={u.id} value={u.id}>
+                  {u.property_name} — Unit {u.unit_number} ({u.status}) · ${u.monthly_rent}/mo
+                </option>
+              ))}
+            </select>
+          </div>
+
           <div>
             <label className="block text-xs font-medium text-slate-500 mb-1">Lease type</label>
-            <select value={form.lease_type} onChange={e => set("lease_type", e.target.value)}
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black">
+            <select value={form.lease_type} onChange={e => set("lease_type", e.target.value)} className={inp}>
               <option value="FIXED">Fixed term</option>
               <option value="MONTH_TO_MONTH">Month-to-month</option>
             </select>
@@ -565,21 +1082,102 @@ function RenewModal({ lease, onClose, onSave }: RenewModalProps) {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-slate-500 mb-1">New start date</label>
-              <input type="date" value={form.start_date} onChange={e => set("start_date", e.target.value)}
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black" />
+              <label className="block text-xs font-medium text-slate-500 mb-1">Start date *</label>
+              <input type="date" value={form.start_date} onChange={e => set("start_date", e.target.value)} className={inp} />
             </div>
             <div>
-              <label className="block text-xs font-medium text-slate-500 mb-1">New end date</label>
-              <input type="date" value={form.end_date} onChange={e => set("end_date", e.target.value)}
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black" />
+              <label className="block text-xs font-medium text-slate-500 mb-1">End date *</label>
+              <input type="date" value={form.end_date} onChange={e => set("end_date", e.target.value)} className={inp} />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">Monthly rent *</label>
+              <input type="number" min="0" step="0.01" value={form.monthly_rent} onChange={e => set("monthly_rent", e.target.value)} className={inp} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">Security deposit</label>
+              <input type="number" min="0" step="0.01" value={form.security_deposit} onChange={e => set("security_deposit", e.target.value)} className={inp} />
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">Monthly rent</label>
-            <input type="number" min="0" step="0.01" value={form.monthly_rent} onChange={e => set("monthly_rent", e.target.value)}
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black" />
+            <label className="block text-xs font-medium text-slate-500 mb-1">Landlord name</label>
+            <input
+              list="renew-landlord-suggestions"
+              value={form.landlord_name}
+              onChange={e => set("landlord_name", e.target.value)}
+              placeholder="Enter or select landlord name"
+              className={inp}
+            />
+            <datalist id="renew-landlord-suggestions">
+              {landlordSuggestions.map(name => <option key={name} value={name} />)}
+            </datalist>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Notes</label>
+            <textarea value={form.notes} onChange={e => set("notes", e.target.value)} rows={2}
+              className={`${inp} resize-none`} />
+          </div>
+
+          {/* Template selection */}
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Lease agreement template</label>
+            {selectedTemplateId ? (
+              <div className="flex items-center gap-2 border border-violet-200 bg-violet-50 rounded-xl px-3 py-2.5">
+                <span className="text-violet-500">✨</span>
+                <span className="text-sm text-violet-800 font-medium flex-1 truncate">
+                  {templates.find(t => t.id === selectedTemplateId)?.name}
+                </span>
+                <button type="button" onClick={() => setSelectedTemplateId("")}
+                  className="text-xs text-slate-400 hover:text-slate-600 shrink-0">
+                  × Remove
+                </button>
+              </div>
+            ) : (
+              <button type="button" onClick={() => setShowTemplatePicker(p => !p)}
+                className="w-full flex items-center gap-2 px-3 py-2.5 border border-dashed border-slate-300 hover:border-violet-400 hover:bg-violet-50 rounded-xl text-sm text-slate-500 hover:text-violet-700 transition-colors group">
+                <svg className="w-4 h-4 group-hover:text-violet-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                ✨ Select template for AI-generated agreement
+                <svg className="w-3.5 h-3.5 ml-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={showTemplatePicker ? "M5 15l7-7 7 7" : "M19 9l-7 7-7-7"} />
+                </svg>
+              </button>
+            )}
+
+            {showTemplatePicker && !selectedTemplateId && (
+              <div className="mt-1 border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+                {templates.length === 0 ? (
+                  <div className="px-4 py-3 text-xs text-slate-400 text-center italic">
+                    No templates yet — go to Templates to upload or AI-generate one.
+                  </div>
+                ) : (
+                  <ul className="divide-y divide-slate-100 max-h-48 overflow-y-auto">
+                    {templates.map(t => (
+                      <li key={t.id}>
+                        <button type="button"
+                          onClick={() => { setSelectedTemplateId(t.id); setShowTemplatePicker(false); }}
+                          className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-violet-50 transition-colors text-left">
+                          <div className="w-7 h-7 rounded-lg bg-violet-100 flex items-center justify-center shrink-0">
+                            <svg className="w-3.5 h-3.5 text-violet-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                            </svg>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-slate-800 truncate">{t.name}</p>
+                            {t.description && <p className="text-[11px] text-slate-400 truncate">{t.description}</p>}
+                          </div>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="pt-2 flex gap-3">
@@ -587,9 +1185,14 @@ function RenewModal({ lease, onClose, onSave }: RenewModalProps) {
               className="flex-1 px-4 py-2 border border-slate-200 rounded-lg text-sm text-slate-600 hover:bg-slate-50">
               Cancel
             </button>
-            <button type="submit" disabled={saving}
-              className="flex-1 px-4 py-2 bg-black text-white rounded-lg text-sm font-medium hover:bg-slate-800 disabled:opacity-50">
-              {saving ? "Renewing…" : "Renew lease"}
+            <button type="submit" disabled={isWorking}
+              className="flex-1 px-4 py-2 bg-black text-white rounded-lg text-sm font-medium hover:bg-slate-800 disabled:opacity-50 flex items-center justify-center gap-2">
+              {generating ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  Generating document…
+                </>
+              ) : saving ? "Renewing…" : selectedTemplateId ? "Renew & Generate Document" : "Renew lease"}
             </button>
           </div>
         </form>
@@ -756,12 +1359,22 @@ export default function LeasesPage() {
   const [leases, setLeases] = useState<LeaseRow[]>([]);
   const [units, setUnits] = useState<UnitOut[]>([]);
   const [persons, setPersons] = useState<TenantOut[]>([]);
+  const [pageTemplates, setPageTemplates] = useState<LeaseTemplateOut[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<LeaseStatus | "ALL">("ALL");
+  const [expandedTenants, setExpandedTenants] = useState<Set<string>>(new Set());
+
+  function toggleTenant(key: string) {
+    setExpandedTenants(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }
 
   type Modal =
-    | { type: "create" }
+    | { type: "create"; aiMode?: boolean }
     | { type: "edit"; lease: LeaseRow }
     | { type: "renew"; lease: LeaseRow }
     | { type: "terminate"; lease: LeaseRow }
@@ -774,14 +1387,16 @@ export default function LeasesPage() {
   const load = useCallback(async () => {
     if (MOCK_MODE) { setLoading(false); return; }
     try {
-      const [ls, us, ps] = await Promise.all([
+      const [ls, us, ps, ts] = await Promise.all([
         leasesApi.list(),
         tenantsApi.availableUnits(),
         tenantsApi.listPersons(),
+        leasesApi.listTemplates(),
       ]);
       setLeases(ls.map(fromApi));
       setUnits(us);
       setPersons(ps);
+      setPageTemplates(ts);
     } finally {
       setLoading(false);
     }
@@ -806,6 +1421,23 @@ export default function LeasesPage() {
 
   const counts: Record<string, number> = { ALL: leases.length };
   ALL_STATUSES.forEach(s => { counts[s] = leases.filter(l => l.status === s).length; });
+
+  // Group by tenant, most-recently-started lease first within each group.
+  const tenantGroups = (() => {
+    const map = new Map<string, { tenant: LeaseRow["tenant"]; leases: LeaseRow[] }>();
+    for (const l of filtered) {
+      const key = l.tenant_user_id;
+      if (!map.has(key)) map.set(key, { tenant: l.tenant, leases: [] });
+      map.get(key)!.leases.push(l);
+    }
+    return [...map.entries()]
+      .map(([key, g]) => ({
+        key,
+        tenant: g.tenant,
+        leases: g.leases.sort((a, b) => b.start_date.localeCompare(a.start_date)),
+      }))
+      .sort((a, b) => (a.tenant?.full_name ?? "").localeCompare(b.tenant?.full_name ?? ""));
+  })();
 
   function handleSave(lease: LeaseOut) {
     const row = fromApi(lease);
@@ -861,7 +1493,14 @@ export default function LeasesPage() {
             </svg>
             Templates
           </button>
-          <button onClick={() => setModal({ type: "create" })}
+          <button onClick={() => setModal({ type: "create", aiMode: true })}
+            className="px-4 py-2 bg-violet-600 text-white text-sm font-medium rounded-xl hover:bg-violet-700 transition-colors flex items-center gap-1.5">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+            AI Lease
+          </button>
+          <button onClick={() => setModal({ type: "create", aiMode: false })}
             className="px-4 py-2 bg-black text-white text-sm font-medium rounded-xl hover:bg-slate-800 transition-colors">
             + New lease
           </button>
@@ -905,13 +1544,28 @@ export default function LeasesPage() {
                   {search || statusFilter !== "ALL" ? "No leases match your filter." : "No leases yet. Create one to get started."}
                 </td></tr>
               )}
-              {filtered.map(l => {
-                const expiring = l.status === "ACTIVE" && l._daysUntilExpiry <= 90 && l._daysUntilExpiry > 0;
-                const expired = l._daysUntilExpiry < 0 && l.status !== "TERMINATED";
+              {tenantGroups.map(g => {
+                const hasMore = g.leases.length > 1;
+                const isExpanded = expandedTenants.has(g.key);
+                const visibleLeases = hasMore && !isExpanded ? g.leases.slice(0, 1) : g.leases;
                 return (
-                  <tr key={l.id} className="hover:bg-slate-50 transition-colors group">
+                <React.Fragment key={g.key}>
+                  {visibleLeases.map((l, idx) => {
+                    const expiring = l.status === "ACTIVE" && l._daysUntilExpiry <= 90 && l._daysUntilExpiry > 0;
+                    const expired = l._daysUntilExpiry < 0 && l.status !== "TERMINATED";
+                    const isFirst = idx === 0;
+                    return (
+                      <tr key={l.id} className="hover:bg-slate-50 transition-colors group">
                     <td className="px-4 py-3">
-                      <div className="flex items-center gap-2.5">
+                      <div
+                        className={`flex items-center gap-2.5 ${hasMore && isFirst ? "cursor-pointer" : ""}`}
+                        onClick={hasMore && isFirst ? () => toggleTenant(g.key) : undefined}
+                      >
+                        {hasMore && isFirst && (
+                          <svg className={`w-3 h-3 text-slate-400 transition-transform shrink-0 ${isExpanded ? "rotate-90" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                          </svg>
+                        )}
                         <Avatar name={l.tenant?.full_name ?? "?"} url={l.tenant?.avatar_url} size={7} />
                         <div>
                           <p className="text-xs font-semibold text-slate-900">{l.tenant?.full_name ?? "—"}</p>
@@ -919,6 +1573,11 @@ export default function LeasesPage() {
                           {l.co_tenants?.length > 0 && (
                             <p className="text-[10px] text-slate-400 mt-0.5">
                               +{l.co_tenants.map(t => t.full_name).join(", ")}
+                            </p>
+                          )}
+                          {hasMore && isFirst && (
+                            <p className="text-[10px] text-slate-400 mt-0.5">
+                              {g.leases.length} leases{isExpanded ? " · showing all" : ` · ${g.leases.length - 1} hidden`}
                             </p>
                           )}
                         </div>
@@ -991,6 +1650,9 @@ export default function LeasesPage() {
                       </div>
                     </td>
                   </tr>
+                    );
+                  })}
+                </React.Fragment>
                 );
               })}
             </tbody>
@@ -999,7 +1661,17 @@ export default function LeasesPage() {
       </div>
 
       {/* Modals */}
-      {modal?.type === "create" && (
+      {modal?.type === "create" && modal.aiMode && (
+        <AILeaseModal
+          units={units}
+          persons={persons}
+          templates={pageTemplates}
+          landlordSuggestions={[...new Set(leases.map(l => l.landlord_name).filter(Boolean) as string[])]}
+          onClose={() => setModal(null)}
+          onSave={lease => { handleSave(lease); load(); }}
+        />
+      )}
+      {modal?.type === "create" && !modal.aiMode && (
         <CreateLeaseModal
           units={units}
           persons={persons}
@@ -1010,10 +1682,24 @@ export default function LeasesPage() {
         />
       )}
       {modal?.type === "edit" && (
-        <EditLeaseModal lease={modal.lease} onClose={() => setModal(null)} onSave={handleSave} />
+        <EditLeaseModal
+          lease={modal.lease}
+          templates={pageTemplates}
+          landlordSuggestions={[...new Set(leases.map(l => l.landlord_name).filter(Boolean) as string[])]}
+          onClose={() => setModal(null)}
+          onSave={lease => { handleSave(lease); load(); }}
+        />
       )}
       {modal?.type === "renew" && (
-        <RenewModal lease={modal.lease} onClose={() => setModal(null)} onSave={lease => { handleSave(lease); load(); }} />
+        <RenewModal
+          lease={modal.lease}
+          units={units}
+          persons={persons}
+          templates={pageTemplates}
+          landlordSuggestions={[...new Set(leases.map(l => l.landlord_name).filter(Boolean) as string[])]}
+          onClose={() => setModal(null)}
+          onSave={lease => { handleSave(lease); load(); }}
+        />
       )}
       {modal?.type === "terminate" && (
         <TerminateDialog lease={modal.lease} onClose={() => setModal(null)} onConfirm={handleTerminate} loading={terminateLoading} />

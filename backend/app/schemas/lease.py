@@ -105,14 +105,21 @@ class LeaseUpdate(BaseModel):
     security_deposit: float | None = None
     lease_type: LeaseType | None = None
     status: LeaseStatus | None = None
+    landlord_name: str | None = None
     notes: str | None = None
 
 
 class LeaseRenew(BaseModel):
     start_date: date
     end_date: date
+    unit_id: uuid.UUID | None = None
+    tenant_user_id: uuid.UUID | None = None
+    co_tenant_ids: list[uuid.UUID] | None = None
     monthly_rent: float | None = None
+    security_deposit: float | None = None
     lease_type: LeaseType | None = None
+    landlord_name: str | None = None
+    notes: str | None = None
 
 
 class UnitSummary(BaseModel):

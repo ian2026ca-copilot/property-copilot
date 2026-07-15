@@ -599,31 +599,76 @@ async def renew_lease(
     _, member = current
     old = await _get_lease(lease_id, member.organization_id, db)
 
+    new_unit_id = body.unit_id if body.unit_id is not None else old.unit_id
+    new_tenant_id = body.tenant_user_id if body.tenant_user_id is not None else old.tenant_user_id
+
+    if body.tenant_user_id is not None:
+        tenant_result = await db.execute(select(User).where(User.id == body.tenant_user_id, User.is_active == True))
+        if not tenant_result.scalar_one_or_none():
+            raise HTTPException(status_code=404, detail="Tenant not found")
+
+    if body.unit_id is not None:
+        unit_result = await db.execute(
+            select(Unit).join(Property).where(
+                Unit.id == body.unit_id,
+                Property.organization_id == member.organization_id,
+                Property.is_active == True,
+            )
+        )
+        if not unit_result.scalar_one_or_none():
+            raise HTTPException(status_code=404, detail="Unit not found")
+
     old.status = LeaseStatus.TERMINATED
 
     new_lease = Lease(
         organization_id=member.organization_id,
-        unit_id=old.unit_id,
-        tenant_user_id=old.tenant_user_id,
+        unit_id=new_unit_id,
+        tenant_user_id=new_tenant_id,
         start_date=body.start_date,
         end_date=body.end_date,
         monthly_rent=body.monthly_rent if body.monthly_rent is not None else old.monthly_rent,
-        security_deposit=old.security_deposit,
+        security_deposit=body.security_deposit if body.security_deposit is not None else old.security_deposit,
         lease_type=body.lease_type if body.lease_type is not None else old.lease_type,
-        notes=old.notes,
+        landlord_name=body.landlord_name if body.landlord_name is not None else old.landlord_name,
+        notes=body.notes if body.notes is not None else old.notes,
         status=_compute_status_from_dates(body.start_date, body.end_date),
     )
     db.add(new_lease)
     await db.flush()
 
-    # Carry over co-tenants from old lease
-    if old.co_tenants:
+    # Co-tenants: use explicit list if provided, otherwise carry over from old lease
+    if body.co_tenant_ids is not None:
+        co_ids = [cid for cid in body.co_tenant_ids if cid != new_tenant_id]
+    else:
+        co_ids = [ct.id for ct in old.co_tenants]
+    if co_ids:
         from app.models.lease import lease_co_tenants
         from sqlalchemy import insert as sa_insert
         await db.execute(
             sa_insert(lease_co_tenants),
-            [{"lease_id": new_lease.id, "user_id": ct.id} for ct in old.co_tenants],
+            [{"lease_id": new_lease.id, "user_id": cid} for cid in co_ids],
         )
+
+    # Sync unit occupancy — mark new unit occupied, and free the old unit if it changed
+    if new_lease.status == LeaseStatus.ACTIVE:
+        new_unit_result = await db.execute(select(Unit).where(Unit.id == new_unit_id))
+        new_unit = new_unit_result.scalar_one_or_none()
+        if new_unit:
+            new_unit.status = UnitStatus.OCCUPIED
+
+    if new_unit_id != old.unit_id:
+        other = await db.execute(
+            select(Lease).where(
+                Lease.unit_id == old.unit_id,
+                Lease.id != old.id,
+                Lease.status.in_([LeaseStatus.ACTIVE, LeaseStatus.PENDING]),
+            )
+        )
+        if not other.scalar_one_or_none():
+            old_unit_result = await db.execute(select(Unit).where(Unit.id == old.unit_id))
+            old_unit = old_unit_result.scalar_one_or_none()
+            if old_unit:
+                old_unit.status = UnitStatus.VACANT
 
     monthly_payments = generate_monthly_payments(new_lease, member.organization_id)
     for p in monthly_payments:

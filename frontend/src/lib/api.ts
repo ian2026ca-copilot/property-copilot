@@ -322,8 +322,18 @@ export const leasesApi = {
   generateDocument: (leaseId: string, templateId: string) =>
     api.post<LeaseOut>(`/leases/${leaseId}/generate-document`, { template_id: templateId }),
   deletePermanent: (id: string) => api.delete<void>(`/leases/${id}/permanent`),
-  renew: (id: string, body: { start_date: string; end_date: string; monthly_rent?: number; lease_type?: string }) =>
-    api.post<LeaseOut>(`/leases/${id}/renew`, body),
+  renew: (id: string, body: {
+    start_date: string;
+    end_date: string;
+    unit_id?: string;
+    tenant_user_id?: string;
+    co_tenant_ids?: string[];
+    monthly_rent?: number;
+    security_deposit?: number;
+    lease_type?: string;
+    landlord_name?: string | null;
+    notes?: string | null;
+  }) => api.post<LeaseOut>(`/leases/${id}/renew`, body),
   uploadDocument: (leaseId: string, file: File) => {
     const token = typeof document !== "undefined"
       ? (document.cookie.match(/(?:^|; )token=([^;]*)/) || [])[1]
