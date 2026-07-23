@@ -77,8 +77,6 @@ def send_welcome_email(to_email: str, full_name: str, org_name: str, role: str, 
     first = full_name.split()[0] if full_name else "there"
     role_label = {
         "OWNER": "Property Owner",
-        "MANAGER": "Property Manager",
-        "AGENT": "Leasing Agent",
         "TENANT": "Tenant",
     }.get(role, role.title())
 

@@ -114,7 +114,7 @@ async def list_payments(
 @router.post("", response_model=PaymentOut, status_code=status.HTTP_201_CREATED)
 async def create_payment(
     body: PaymentCreate,
-    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.MANAGER)),
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
     _, member = current
@@ -146,7 +146,7 @@ async def create_payment(
 async def update_payment(
     payment_id: str,
     body: PaymentUpdate,
-    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.MANAGER)),
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
     _, member = current

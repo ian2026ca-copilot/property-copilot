@@ -377,6 +377,7 @@ function CreateLeaseModal({ units, persons, landlordSuggestions, presetTenantId,
     security_deposit: "",
     lease_type: "FIXED" as LeaseType,
     landlord_name: "",
+    landlord_email: "",
     notes: "",
   });
   const [coTenantIds, setCoTenantIds] = useState<string[]>([]);
@@ -430,6 +431,7 @@ function CreateLeaseModal({ units, persons, landlordSuggestions, presetTenantId,
         security_deposit: parseFloat(form.security_deposit || "0"),
         lease_type: form.lease_type,
         landlord_name: form.landlord_name || null,
+        landlord_email: form.landlord_email || null,
         notes: form.notes || null,
       });
 
@@ -605,6 +607,17 @@ function CreateLeaseModal({ units, persons, landlordSuggestions, presetTenantId,
           </div>
 
           <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Landlord email</label>
+            <input
+              type="email"
+              value={form.landlord_email}
+              onChange={e => set("landlord_email", e.target.value)}
+              placeholder="landlord@example.com"
+              className={inp}
+            />
+          </div>
+
+          <div>
             <label className="block text-xs font-medium text-slate-500 mb-1">Notes</label>
             <textarea value={form.notes} onChange={e => set("notes", e.target.value)} rows={2}
               className={`${inp} resize-none`} />
@@ -709,6 +722,7 @@ function EditLeaseModal({ lease, templates, landlordSuggestions, onClose, onSave
     lease_type: (lease.lease_type ?? "FIXED") as LeaseType,
     status: lease.status as LeaseStatus,
     landlord_name: lease.landlord_name ?? "",
+    landlord_email: lease.landlord_email ?? "",
     notes: lease.notes ?? "",
   });
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
@@ -732,6 +746,7 @@ function EditLeaseModal({ lease, templates, landlordSuggestions, onClose, onSave
         lease_type: form.lease_type,
         status: form.status,
         landlord_name: form.landlord_name || null,
+        landlord_email: form.landlord_email || null,
         notes: form.notes || null,
       });
 
@@ -828,6 +843,17 @@ function EditLeaseModal({ lease, templates, landlordSuggestions, onClose, onSave
             <datalist id="edit-landlord-suggestions">
               {landlordSuggestions.map(name => <option key={name} value={name} />)}
             </datalist>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Landlord email</label>
+            <input
+              type="email"
+              value={form.landlord_email}
+              onChange={e => set("landlord_email", e.target.value)}
+              placeholder="landlord@example.com"
+              className={inp}
+            />
           </div>
 
           <div>
@@ -935,6 +961,7 @@ function RenewModal({ lease, units, persons, landlordSuggestions, templates, onC
     security_deposit: String(lease.security_deposit),
     lease_type: (lease.lease_type ?? "FIXED") as LeaseType,
     landlord_name: lease.landlord_name ?? "",
+    landlord_email: lease.landlord_email ?? "",
     notes: lease.notes ?? "",
   });
   const [coTenantIds, setCoTenantIds] = useState<string[]>(lease.co_tenants?.map(t => t.id) ?? []);
@@ -963,6 +990,7 @@ function RenewModal({ lease, units, persons, landlordSuggestions, templates, onC
         security_deposit: parseFloat(form.security_deposit || "0"),
         lease_type: form.lease_type,
         landlord_name: form.landlord_name || null,
+        landlord_email: form.landlord_email || null,
         notes: form.notes || null,
       });
 
@@ -1117,6 +1145,17 @@ function RenewModal({ lease, units, persons, landlordSuggestions, templates, onC
           </div>
 
           <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Landlord email</label>
+            <input
+              type="email"
+              value={form.landlord_email}
+              onChange={e => set("landlord_email", e.target.value)}
+              placeholder="landlord@example.com"
+              className={inp}
+            />
+          </div>
+
+          <div>
             <label className="block text-xs font-medium text-slate-500 mb-1">Notes</label>
             <textarea value={form.notes} onChange={e => set("notes", e.target.value)} rows={2}
               className={`${inp} resize-none`} />
@@ -1265,15 +1304,18 @@ function DeleteLeaseDialog({ lease, onClose, onConfirm, loading }: { lease: Leas
 
 interface DocUploadProps {
   lease: LeaseRow;
+  templates: LeaseTemplateOut[];
   onUploaded: (lease: LeaseOut) => void;
 }
 
 const LEASE_DOC_ACCEPT = "application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png";
 
-function DocUploadCell({ lease, onUploaded }: DocUploadProps) {
+function DocUploadCell({ lease, templates, onUploaded }: DocUploadProps) {
   const ref = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
+  const [showTemplatePicker, setShowTemplatePicker] = useState(false);
+  const [generating, setGenerating] = useState(false);
 
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -1287,6 +1329,19 @@ function DocUploadCell({ lease, onUploaded }: DocUploadProps) {
     } finally {
       setUploading(false);
       e.target.value = "";
+    }
+  }
+
+  async function handleGenerate(templateId: string) {
+    setShowTemplatePicker(false);
+    setGenerating(true); setError("");
+    try {
+      const updated = await leasesApi.generateDocument(lease.id, templateId);
+      onUploaded(updated);
+    } catch (err: any) {
+      setError(err.message ?? "Failed to generate document");
+    } finally {
+      setGenerating(false);
     }
   }
 
@@ -1315,7 +1370,9 @@ function DocUploadCell({ lease, onUploaded }: DocUploadProps) {
       {lease.document_url ? (
         <div className="flex items-center gap-1.5">
           <a href={lease.document_url} target="_blank" rel="noopener noreferrer"
-            className="text-xs text-blue-600 hover:underline flex items-center gap-1 max-w-[100px] truncate" title={fileName ?? undefined}>
+            className={`text-xs hover:underline flex items-center gap-1 max-w-[100px] truncate ${
+              lease.signature_status === "completed" ? "text-emerald-600" : "text-blue-600"
+            }`} title={fileName ?? undefined}>
             <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
             </svg>
@@ -1325,6 +1382,36 @@ function DocUploadCell({ lease, onUploaded }: DocUploadProps) {
             className="text-slate-400 hover:text-slate-700 text-xs shrink-0 p-0.5 rounded hover:bg-slate-100" disabled={uploading || deleting}>
             ↻
           </button>
+          <div className="relative shrink-0">
+            <button onClick={() => setShowTemplatePicker(p => !p)} title="Regenerate document"
+              className="text-slate-400 hover:text-violet-600 shrink-0 p-0.5 rounded hover:bg-violet-50" disabled={generating}>
+              {generating ? <span className="text-[10px]">…</span> : (
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+              )}
+            </button>
+            {showTemplatePicker && (
+              <div className="absolute z-10 mt-1 w-56 border border-slate-200 bg-white rounded-xl shadow-lg overflow-hidden">
+                {templates.length === 0 ? (
+                  <div className="px-3 py-2.5 text-[11px] text-slate-400 text-center italic">
+                    No templates yet — go to Templates to upload or AI-generate one.
+                  </div>
+                ) : (
+                  <ul className="divide-y divide-slate-100 max-h-48 overflow-y-auto">
+                    {templates.map(t => (
+                      <li key={t.id}>
+                        <button type="button" onClick={() => handleGenerate(t.id)}
+                          className="w-full text-left px-3 py-2 hover:bg-violet-50 transition-colors text-xs text-slate-700 truncate">
+                          {t.name}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+          </div>
           <button onClick={handleDelete} title="Delete document"
             className="text-slate-400 hover:text-red-500 shrink-0 p-0.5 rounded hover:bg-red-50" disabled={uploading || deleting}>
             {deleting ? <span className="text-[10px]">…</span> : (
@@ -1335,15 +1422,128 @@ function DocUploadCell({ lease, onUploaded }: DocUploadProps) {
           </button>
         </div>
       ) : (
-        <button onClick={() => ref.current?.click()} disabled={uploading}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-dashed border-slate-300 hover:border-slate-500 text-xs text-slate-500 hover:text-slate-800 transition-colors disabled:opacity-50">
-          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-          </svg>
-          {uploading ? "Uploading…" : "Upload agreement"}
-        </button>
+        <div className="space-y-1">
+          <button onClick={() => ref.current?.click()} disabled={uploading}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-dashed border-slate-300 hover:border-slate-500 text-xs text-slate-500 hover:text-slate-800 transition-colors disabled:opacity-50">
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+            </svg>
+            {uploading ? "Uploading…" : "Upload agreement"}
+          </button>
+          <div className="relative">
+            <button onClick={() => setShowTemplatePicker(p => !p)} disabled={generating}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-dashed border-violet-300 hover:border-violet-500 text-xs text-violet-600 hover:text-violet-800 transition-colors disabled:opacity-50">
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+              {generating ? "Generating…" : "Create agreement"}
+            </button>
+            {showTemplatePicker && (
+              <div className="absolute z-10 mt-1 w-56 border border-slate-200 bg-white rounded-xl shadow-lg overflow-hidden">
+                {templates.length === 0 ? (
+                  <div className="px-3 py-2.5 text-[11px] text-slate-400 text-center italic">
+                    No templates yet — go to Templates to upload or AI-generate one.
+                  </div>
+                ) : (
+                  <ul className="divide-y divide-slate-100 max-h-48 overflow-y-auto">
+                    {templates.map(t => (
+                      <li key={t.id}>
+                        <button type="button" onClick={() => handleGenerate(t.id)}
+                          className="w-full text-left px-3 py-2 hover:bg-violet-50 transition-colors text-xs text-slate-700 truncate">
+                          {t.name}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
       )}
       <input ref={ref} type="file" accept={LEASE_DOC_ACCEPT} className="hidden" onChange={handleFile} />
+    </div>
+  );
+}
+
+// ─── E-signature ───────────────────────────────────────────────────────────────
+
+interface SignatureCellProps {
+  lease: LeaseRow;
+  onUpdated: (lease: LeaseOut) => void;
+}
+
+const SIGNATURE_STATUS_STYLES: Record<string, string> = {
+  sent: "bg-blue-100 text-blue-700",
+  delivered: "bg-blue-100 text-blue-700",
+  tenant_signed: "bg-amber-100 text-amber-700",
+  completed: "bg-emerald-100 text-emerald-700",
+  declined: "bg-red-100 text-red-600",
+  voided: "bg-slate-100 text-slate-500",
+};
+
+const SIGNATURE_STATUS_LABEL: Record<string, string> = {
+  sent: "Sent",
+  delivered: "Delivered",
+  tenant_signed: "Tenant Signed",
+  completed: "Completed ✓",
+  declined: "Declined",
+  voided: "Voided",
+};
+
+function SignatureCell({ lease, onUpdated }: SignatureCellProps) {
+  const [sending, setSending] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const [error, setError] = useState("");
+
+  async function handleSend() {
+    setSending(true); setError("");
+    try {
+      const updated = await leasesApi.sendForSignature(lease.id);
+      onUpdated(updated);
+    } catch (err: any) {
+      setError(err.message ?? "Failed to send for signature");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function handleCheckStatus() {
+    setChecking(true); setError("");
+    try {
+      const updated = await leasesApi.checkSignatureStatus(lease.id);
+      onUpdated(updated);
+    } catch (err: any) {
+      setError(err.message ?? "Failed to check status");
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  if (!lease.document_url) return null;
+
+  return (
+    <div className="mt-1 space-y-1">
+      {error && <p className="text-[10px] text-red-500 max-w-[140px]">{error}</p>}
+      {lease.docusign_envelope_id ? (
+        <div className="flex items-center gap-1">
+          <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium ${SIGNATURE_STATUS_STYLES[lease.signature_status ?? ""] ?? "bg-slate-100 text-slate-500"}`}>
+            {SIGNATURE_STATUS_LABEL[lease.signature_status ?? ""] ?? lease.signature_status ?? "Sent"}
+          </span>
+          <button onClick={handleCheckStatus} title="Check signature status" disabled={checking}
+            className="text-slate-400 hover:text-slate-700 text-xs shrink-0 p-0.5 rounded hover:bg-slate-100 disabled:opacity-50">
+            {checking ? "…" : "↻"}
+          </button>
+        </div>
+      ) : (
+        <button onClick={handleSend} disabled={sending}
+          className="flex items-center gap-1 px-2 py-1 rounded-lg border border-dashed border-blue-300 hover:border-blue-500 text-[10px] text-blue-600 hover:text-blue-800 transition-colors disabled:opacity-50">
+          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+          </svg>
+          {sending ? "Sending…" : "Send for signature"}
+        </button>
+      )}
     </div>
   );
 }
@@ -1607,7 +1807,8 @@ export default function LeasesPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3">
-                      <DocUploadCell lease={l} onUploaded={updated => handleSave(updated)} />
+                      <DocUploadCell lease={l} templates={pageTemplates} onUploaded={updated => handleSave(updated)} />
+                      <SignatureCell lease={l} onUpdated={updated => handleSave(updated)} />
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -1633,14 +1834,6 @@ export default function LeasesPage() {
                             </svg>
                           </button>
                         )}
-                        <button
-                          title="Send for signature (coming soon)"
-                          className="p-1.5 rounded-lg hover:bg-blue-50 text-slate-300 cursor-not-allowed transition-colors"
-                          disabled>
-                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                          </svg>
-                        </button>
                         <button onClick={() => setModal({ type: "delete", lease: l })}
                           title="Delete lease" className="p-1.5 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-600 transition-colors">
                           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

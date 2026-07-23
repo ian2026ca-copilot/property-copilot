@@ -1,14 +1,15 @@
 import secrets
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
 from app.core.security import hash_password
 from app.api.deps import get_current_user, require_min_role
 from app.models.user import User, OrganizationMember, UserRole
-from app.schemas.team import TeamMemberOut, TeamInvite, RoleUpdate
+from app.models.maintenance import Vendor, VendorOrganization
+from app.schemas.team import TeamMemberOut, TeamInvite
 
 router = APIRouter(prefix="/team", tags=["team"])
 
@@ -26,7 +27,7 @@ def _to_out(member: OrganizationMember, user: User) -> TeamMemberOut:
 
 @router.get("", response_model=list[TeamMemberOut])
 async def list_team(
-    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.MANAGER)),
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
     _, member = current
@@ -43,7 +44,7 @@ async def list_team(
 @router.post("", response_model=TeamMemberOut, status_code=status.HTTP_201_CREATED)
 async def invite_member(
     body: TeamInvite,
-    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.MANAGER)),
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
     _, member = current
@@ -76,36 +77,39 @@ async def invite_member(
         role=UserRole(body.role),
     )
     db.add(new_member)
+
+    if body.role == "VENDOR":
+        # Registering a vendor from the Team page always creates them as
+        # private — they only work for this organization unless the owner
+        # later marks them public from the Vendors page.
+        v_res = await db.execute(select(Vendor).where(Vendor.user_id == new_user.id))
+        vendor = v_res.scalar_one_or_none()
+        if not vendor:
+            vendor = Vendor(user_id=new_user.id, business_name=body.full_name, is_public=False)
+            db.add(vendor)
+            await db.flush()
+        elif not vendor.is_public:
+            other_link_res = await db.execute(
+                select(VendorOrganization).where(
+                    VendorOrganization.vendor_id == vendor.id,
+                    VendorOrganization.organization_id != member.organization_id,
+                )
+            )
+            if other_link_res.scalar_one_or_none():
+                raise HTTPException(status_code=403, detail="This vendor is private and cannot be added to another organization")
+
+        link_res = await db.execute(
+            select(VendorOrganization).where(
+                VendorOrganization.vendor_id == vendor.id,
+                VendorOrganization.organization_id == member.organization_id,
+            )
+        )
+        if not link_res.scalar_one_or_none():
+            db.add(VendorOrganization(vendor_id=vendor.id, organization_id=member.organization_id))
+
     await db.commit()
     await db.refresh(new_member)
     return _to_out(new_member, new_user)
-
-
-@router.put("/{member_id}", response_model=TeamMemberOut)
-async def update_member_role(
-    member_id: str,
-    body: RoleUpdate,
-    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
-    db: AsyncSession = Depends(get_db),
-):
-    caller_user, caller_member = current
-    result = await db.execute(
-        select(OrganizationMember)
-        .where(
-            OrganizationMember.id == member_id,
-            OrganizationMember.organization_id == caller_member.organization_id,
-        )
-        .options(selectinload(OrganizationMember.user))
-    )
-    target = result.scalar_one_or_none()
-    if not target:
-        raise HTTPException(status_code=404, detail="Member not found")
-    if target.role == UserRole.OWNER:
-        raise HTTPException(status_code=400, detail="Cannot change the owner's role")
-    target.role = UserRole(body.role)
-    await db.commit()
-    await db.refresh(target)
-    return _to_out(target, target.user)
 
 
 @router.delete("/{member_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -128,6 +132,13 @@ async def remove_member(
     if target.user_id == caller_user.id:
         raise HTTPException(status_code=400, detail="Cannot remove yourself")
     if target.role == UserRole.OWNER:
-        raise HTTPException(status_code=400, detail="Cannot remove the owner")
+        owner_count = await db.execute(
+            select(func.count()).select_from(OrganizationMember).where(
+                OrganizationMember.organization_id == caller_member.organization_id,
+                OrganizationMember.role == UserRole.OWNER,
+            )
+        )
+        if owner_count.scalar_one() <= 1:
+            raise HTTPException(status_code=400, detail="Cannot remove the last owner")
     await db.delete(target)
     await db.commit()

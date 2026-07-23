@@ -13,8 +13,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 
 const ROLES = [
   { value: "OWNER", label: "Owner", description: "Full control — manages properties, team, and billing" },
-  { value: "MANAGER", label: "Property Manager", description: "Manages properties and tenants, cannot change billing" },
-  { value: "AGENT", label: "Leasing Agent", description: "Views listings and handles inquiries, read-only on financials" },
   { value: "TENANT", label: "Tenant", description: "Access to personal portal, maintenance requests, and payments" },
   { value: "VENDOR", label: "Vendor / Contractor", description: "Receive assigned maintenance jobs and manage your schedule" },
 ] as const;

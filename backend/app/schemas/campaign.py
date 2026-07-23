@@ -51,6 +51,12 @@ class CampaignOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class CampaignAIGenerateOut(BaseModel):
+    title: str
+    description: str
+    suggested_rent: float | None = None
+
+
 class OrgFbSettingsUpdate(BaseModel):
     fb_page_token: str | None = None
     fb_page_id: str | None = None
@@ -59,3 +65,16 @@ class OrgFbSettingsUpdate(BaseModel):
 class OrgFbSettingsOut(BaseModel):
     fb_page_id: str | None
     fb_page_token_set: bool  # never expose the raw token to frontend
+
+
+class MarketingSiteCreate(BaseModel):
+    name: str
+    url: str
+
+
+class MarketingSiteOut(BaseModel):
+    id: uuid.UUID
+    name: str
+    url: str
+
+    model_config = {"from_attributes": True}

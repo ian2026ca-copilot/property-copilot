@@ -136,6 +136,9 @@ export interface LeaseOut {
   lease_type: "FIXED" | "MONTH_TO_MONTH";
   document_url: string | null;
   landlord_name: string | null;
+  landlord_email: string | null;
+  docusign_envelope_id: string | null;
+  signature_status: string | null;
   notes: string | null;
   tenant: TenantOut | null;
   co_tenants: TenantOut[];
@@ -204,6 +207,7 @@ export interface VendorOut {
   user_id: string;
   business_name: string;
   service_categories: string[];
+  is_public: boolean;
   full_name: string;
   email: string;
   phone: string;
@@ -332,8 +336,11 @@ export const leasesApi = {
     security_deposit?: number;
     lease_type?: string;
     landlord_name?: string | null;
+    landlord_email?: string | null;
     notes?: string | null;
   }) => api.post<LeaseOut>(`/leases/${id}/renew`, body),
+  sendForSignature: (id: string) => api.post<LeaseOut>(`/leases/${id}/send-for-signature`, {}),
+  checkSignatureStatus: (id: string) => api.post<LeaseOut>(`/leases/${id}/signature-status`, {}),
   uploadDocument: (leaseId: string, file: File) => {
     const token = typeof document !== "undefined"
       ? (document.cookie.match(/(?:^|; )token=([^;]*)/) || [])[1]
@@ -457,15 +464,13 @@ export interface TeamMemberOut {
   full_name: string;
   email: string;
   phone: string;
-  role: "OWNER" | "MANAGER" | "AGENT" | "TENANT" | "VENDOR";
+  role: "OWNER" | "TENANT" | "VENDOR";
 }
 
 export const teamApi = {
   list: () => api.get<TeamMemberOut[]>("/team"),
   invite: (body: { full_name: string; email: string; role: string }) =>
     api.post<TeamMemberOut>("/team", body),
-  updateRole: (memberId: string, role: string) =>
-    api.put<TeamMemberOut>(`/team/${memberId}`, { role }),
   remove: (memberId: string) => api.delete<void>(`/team/${memberId}`),
 };
 
@@ -513,9 +518,41 @@ export interface OrgFbSettingsOut {
   fb_page_token_set: boolean;
 }
 
+export interface CampaignAIGenerateOut {
+  title: string;
+  description: string;
+  suggested_rent: number | null;
+}
+
+export interface MarketingSiteOut {
+  id: string;
+  name: string;
+  url: string;
+}
+
 export const campaignsApi = {
   list: () => api.get<CampaignOut[]>("/campaigns"),
   create: (body: object) => api.post<CampaignOut>("/campaigns", body),
+  aiGenerate: (params: {
+    unit_id?: string; extra_instructions?: string; monthly_rent?: number; available_from?: string;
+    contact_name?: string; contact_phone?: string; contact_email?: string;
+    existing_photo_filenames?: string[]; files?: File[];
+  }) => {
+    const token = typeof document !== "undefined"
+      ? (document.cookie.match(/(?:^|; )token=([^;]*)/) || [])[1] : null;
+    const headers: Record<string, string> = {};
+    if (token) headers["Authorization"] = `Bearer ${decodeURIComponent(token)}`;
+    const body = new FormData();
+    const { existing_photo_filenames, files, ...fields } = params;
+    Object.entries(fields).forEach(([k, v]) => { if (v !== undefined) body.append(k, String(v)); });
+    if (existing_photo_filenames?.length) body.append("existing_photo_filenames", existing_photo_filenames.join(","));
+    files?.forEach(f => body.append("files", f));
+    return fetch(`${BASE_URL}/campaigns/ai-generate`, { method: "POST", headers, body })
+      .then(async r => {
+        if (!r.ok) { const e = await r.json().catch(() => ({ detail: r.statusText })); throw new Error(e.detail); }
+        return r.json() as Promise<CampaignAIGenerateOut>;
+      });
+  },
   update: (id: string, body: object) => api.put<CampaignOut>(`/campaigns/${id}`, body),
   remove: (id: string) => api.delete<void>(`/campaigns/${id}`),
   publish: (id: string) => api.post<CampaignOut>(`/campaigns/${id}/publish`, {}),
@@ -537,4 +574,10 @@ export const campaignsApi = {
   getFbSettings: () => api.get<OrgFbSettingsOut>("/campaigns/fb-settings"),
   saveFbSettings: (body: { fb_page_id?: string; fb_page_token?: string }) =>
     api.put<OrgFbSettingsOut>("/campaigns/fb-settings", body),
+  listMarketingSites: () => api.get<MarketingSiteOut[]>("/campaigns/marketing-sites"),
+  addMarketingSite: (body: { name: string; url: string }) =>
+    api.post<MarketingSiteOut>("/campaigns/marketing-sites", body),
+  updateMarketingSite: (id: string, body: { name: string; url: string }) =>
+    api.put<MarketingSiteOut>(`/campaigns/marketing-sites/${id}`, body),
+  removeMarketingSite: (id: string) => api.delete<void>(`/campaigns/marketing-sites/${id}`),
 };

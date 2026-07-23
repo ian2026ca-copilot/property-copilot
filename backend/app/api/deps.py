@@ -12,8 +12,6 @@ bearer = HTTPBearer()
 
 ROLE_LEVEL = {
     UserRole.OWNER: 4,
-    UserRole.MANAGER: 3,
-    UserRole.AGENT: 2,
     UserRole.TENANT: 1,
 }
 

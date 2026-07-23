@@ -16,6 +16,7 @@ function fmtDate(s: string) {
 function InviteModal({ onClose, onSave }: { onClose: () => void; onSave: (v: VendorOut) => void }) {
   const [form, setForm] = useState({ full_name: "", email: "", phone: "", business_name: "" });
   const [cats, setCats] = useState<string[]>([]);
+  const [isPublic, setIsPublic] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   function set(k: string, v: string) { setForm(f => ({ ...f, [k]: v })); }
@@ -26,7 +27,7 @@ function InviteModal({ onClose, onSave }: { onClose: () => void; onSave: (v: Ven
     if (!form.full_name || !form.email) { setError("Name and email required."); return; }
     setSaving(true);
     try {
-      const v = await vendorsApi.create({ ...form, service_categories: cats });
+      const v = await vendorsApi.create({ ...form, service_categories: cats, is_public: isPublic });
       onSave(v);
     } catch (err: any) { setError(err.message ?? "Failed"); } finally { setSaving(false); }
   }
@@ -69,6 +70,17 @@ function InviteModal({ onClose, onSave }: { onClose: () => void; onSave: (v: Ven
               ))}
             </div>
           </div>
+          <label className="flex items-start gap-2.5 p-3 rounded-xl border border-slate-200 cursor-pointer hover:bg-slate-50">
+            <input type="checkbox" className="mt-0.5" checked={isPublic} onChange={e => setIsPublic(e.target.checked)} />
+            <div>
+              <p className="text-sm font-medium text-slate-900">Make this vendor public</p>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                {isPublic
+                  ? "Public — other organizations can also add and share this vendor."
+                  : "Private (default) — this vendor works exclusively for your organization."}
+              </p>
+            </div>
+          </label>
           <div className="flex gap-3 pt-2">
             <button type="button" onClick={onClose} className="flex-1 px-4 py-2 border border-slate-200 rounded-lg text-sm text-slate-600 hover:bg-slate-50">Cancel</button>
             <button type="submit" disabled={saving} className="flex-1 px-4 py-2 bg-black text-white rounded-lg text-sm font-medium hover:bg-slate-800 disabled:opacity-50">
@@ -184,6 +196,7 @@ function AvailabilityPanel({ vendor, onClose }: { vendor: VendorOut; onClose: ()
 function EditVendorModal({ vendor, onClose, onSave }: { vendor: VendorOut; onClose: () => void; onSave: (v: VendorOut) => void }) {
   const [form, setForm] = useState({ business_name: vendor.business_name, phone: vendor.phone });
   const [cats, setCats] = useState<string[]>(vendor.service_categories);
+  const [isPublic, setIsPublic] = useState(vendor.is_public);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   function toggleCat(c: string) { setCats(cs => cs.includes(c) ? cs.filter(x => x !== c) : [...cs, c]); }
@@ -191,7 +204,7 @@ function EditVendorModal({ vendor, onClose, onSave }: { vendor: VendorOut; onClo
   async function submit(e: React.FormEvent) {
     e.preventDefault(); setSaving(true);
     try {
-      const v = await vendorsApi.update(vendor.id, { business_name: form.business_name, phone: form.phone, service_categories: cats });
+      const v = await vendorsApi.update(vendor.id, { business_name: form.business_name, phone: form.phone, service_categories: cats, is_public: isPublic });
       onSave(v);
     } catch (err: any) { setError(err.message ?? "Failed"); } finally { setSaving(false); }
   }
@@ -222,6 +235,17 @@ function EditVendorModal({ vendor, onClose, onSave }: { vendor: VendorOut; onClo
               ))}
             </div>
           </div>
+          <label className="flex items-start gap-2.5 p-3 rounded-xl border border-slate-200 cursor-pointer hover:bg-slate-50">
+            <input type="checkbox" className="mt-0.5" checked={isPublic} onChange={e => setIsPublic(e.target.checked)} />
+            <div>
+              <p className="text-sm font-medium text-slate-900">Make this vendor public</p>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                {isPublic
+                  ? "Public — other organizations can also add and share this vendor."
+                  : "Private — this vendor works exclusively for your organization."}
+              </p>
+            </div>
+          </label>
           <div className="flex gap-3 pt-2">
             <button type="button" onClick={onClose} className="flex-1 px-4 py-2 border border-slate-200 rounded-lg text-sm text-slate-600 hover:bg-slate-50">Cancel</button>
             <button type="submit" disabled={saving} className="flex-1 px-4 py-2 bg-black text-white rounded-lg text-sm font-medium hover:bg-slate-800 disabled:opacity-50">
@@ -302,7 +326,12 @@ export default function VendorsPage() {
                       {v.full_name.charAt(0).toUpperCase()}
                     </div>
                     <div>
-                      <p className="text-xs font-medium text-slate-900">{v.full_name}</p>
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-xs font-medium text-slate-900">{v.full_name}</p>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded ${v.is_public ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
+                          {v.is_public ? "Public" : "Private"}
+                        </span>
+                      </div>
                       {v.business_name && <p className="text-[11px] text-slate-400">{v.business_name}</p>}
                     </div>
                   </div>

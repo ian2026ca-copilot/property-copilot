@@ -14,6 +14,7 @@ from sqlalchemy.orm import selectinload
 from app.core.database import get_db
 from app.api.deps import get_current_user, require_min_role
 from app.models.user import User, OrganizationMember, UserRole, TenantDocument
+from app.models.profiles import TenantProfile
 from app.models.lease import Lease, LeaseStatus, LeaseType
 from app.models.payment import Payment
 from app.models.lease_template import LeaseTemplate
@@ -60,7 +61,21 @@ def _effective_status(lease: Lease) -> LeaseStatus:
     return lease.status
 
 
+async def _upsert_tenant_profile(db: AsyncSession, user_id, **fields) -> TenantProfile:
+    """Create or update the given user's TenantProfile with any non-None fields provided."""
+    result = await db.execute(select(TenantProfile).where(TenantProfile.user_id == user_id))
+    profile = result.scalar_one_or_none()
+    if not profile:
+        profile = TenantProfile(user_id=user_id)
+        db.add(profile)
+    for field, value in fields.items():
+        if value is not None:
+            setattr(profile, field, value)
+    return profile
+
+
 def _tenant_to_out(user: User, docs: list[TenantDocument] | None = None) -> TenantOut:
+    profile = user.tenant_profile
     return TenantOut(
         id=user.id,
         first_name=user.first_name,
@@ -68,7 +83,7 @@ def _tenant_to_out(user: User, docs: list[TenantDocument] | None = None) -> Tena
         full_name=user.display_name,
         email=user.email,
         phone=user.phone or "",
-        date_of_birth=user.date_of_birth,
+        date_of_birth=profile.date_of_birth if profile else None,
         avatar_url=_uploads_url(user.avatar_filename) if user.avatar_filename else None,
         documents=[
             TenantDocumentOut(
@@ -99,6 +114,9 @@ def _lease_to_out(lease: Lease) -> LeaseOut:
         lease_type=lease.lease_type,
         document_url=doc_url,
         landlord_name=lease.landlord_name,
+        landlord_email=lease.landlord_email,
+        docusign_envelope_id=lease.docusign_envelope_id,
+        signature_status=lease.signature_status,
         notes=lease.notes,
         tenant=_tenant_to_out(lease.tenant, docs) if lease.tenant else None,
         co_tenants=co_tenants,
@@ -113,7 +131,8 @@ async def _get_lease(lease_id: str, org_id: uuid.UUID, db: AsyncSession) -> Leas
         .where(Lease.id == lease_id, Lease.organization_id == org_id)
         .options(
             selectinload(Lease.tenant).selectinload(User.tenant_documents),
-            selectinload(Lease.co_tenants),
+            selectinload(Lease.tenant).selectinload(User.tenant_profile),
+            selectinload(Lease.co_tenants).selectinload(User.tenant_profile),
             selectinload(Lease.unit).selectinload(Unit.property),
         )
     )
@@ -162,7 +181,8 @@ async def list_leases(
         .where(Lease.organization_id == member.organization_id)
         .options(
             selectinload(Lease.tenant).selectinload(User.tenant_documents),
-            selectinload(Lease.co_tenants),
+            selectinload(Lease.tenant).selectinload(User.tenant_profile),
+            selectinload(Lease.co_tenants).selectinload(User.tenant_profile),
             selectinload(Lease.unit).selectinload(Unit.property),
         )
         .order_by(Lease.created_at.desc())
@@ -175,7 +195,7 @@ async def list_leases(
 @router.post("", response_model=LeaseOut, status_code=status.HTTP_201_CREATED)
 async def create_lease(
     body: LeaseCreate,
-    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.MANAGER)),
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
     _, member = current
@@ -247,7 +267,7 @@ def _template_url(file_path: str) -> str:
 
 @router.get("/templates", response_model=list[LeaseTemplateOut])
 async def list_lease_templates(
-    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.MANAGER)),
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
     _, member = current
@@ -275,7 +295,7 @@ async def upload_lease_template(
     file: UploadFile = File(...),
     name: str = Form(...),
     description: str = Form(""),
-    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.MANAGER)),
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
     _, member = current
@@ -317,7 +337,7 @@ async def ai_generate_lease_template(
     property_type: str = Form("Residential Apartment"),
     bedrooms: str = Form(""),
     notes: str = Form(""),
-    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.MANAGER)),
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
     """Use Gemini to generate a lease agreement template as a Word document."""
@@ -430,7 +450,7 @@ async def ai_generate_lease_template(
 @router.delete("/templates/{template_id}", status_code=204)
 async def delete_lease_template(
     template_id: str,
-    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.MANAGER)),
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
     _, member = current
@@ -467,14 +487,15 @@ async def get_lease(
 async def update_lease(
     lease_id: str,
     body: LeaseUpdate,
-    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.MANAGER)),
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
     _, member = current
     lease = await _get_lease(lease_id, member.organization_id, db)
 
     data = body.model_dump(exclude_none=True)
-    tenant_fields = {"first_name", "last_name", "phone", "date_of_birth"}
+    tenant_fields = {"first_name", "last_name", "phone"}
+    date_of_birth = data.pop("date_of_birth", None)
 
     if lease.tenant:
         for f in tenant_fields:
@@ -482,6 +503,8 @@ async def update_lease(
                 setattr(lease.tenant, f, data.pop(f))
         if lease.tenant.first_name or lease.tenant.last_name:
             lease.tenant.full_name = " ".join(filter(None, [lease.tenant.first_name, lease.tenant.last_name]))
+        if date_of_birth:
+            await _upsert_tenant_profile(db, lease.tenant.id, date_of_birth=date_of_birth)
     else:
         for f in tenant_fields:
             data.pop(f, None)
@@ -512,7 +535,7 @@ async def update_lease(
 @router.delete("/{lease_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def terminate_lease(
     lease_id: str,
-    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.MANAGER)),
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
     _, member = current
@@ -545,7 +568,7 @@ async def terminate_lease(
 @router.delete("/{lease_id}/permanent", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_lease_permanent(
     lease_id: str,
-    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.MANAGER)),
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
     _, member = current
@@ -593,7 +616,7 @@ async def delete_lease_permanent(
 async def renew_lease(
     lease_id: str,
     body: LeaseRenew,
-    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.MANAGER)),
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
     _, member = current
@@ -684,7 +707,7 @@ async def renew_lease(
 async def upload_lease_document(
     lease_id: str,
     file: UploadFile = File(...),
-    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.MANAGER)),
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
     _, member = current
@@ -718,7 +741,7 @@ async def upload_lease_document(
 @router.delete("/{lease_id}/document", status_code=204)
 async def delete_lease_document(
     lease_id: str,
-    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.MANAGER)),
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
     _, member = current
@@ -738,7 +761,7 @@ async def delete_lease_document(
 async def generate_lease_document(
     lease_id: str,
     body: dict,
-    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.MANAGER)),
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
     """Generate a lease agreement from a template using Gemini."""
@@ -793,7 +816,19 @@ async def generate_lease_document(
     if tmpl_path.suffix.lower() == ".docx":
         try:
             tmpl_doc = Document(str(tmpl_path))
-            template_text = "\n".join(p.text for p in tmpl_doc.paragraphs if p.text.strip())
+            template_lines = []
+            for p in tmpl_doc.paragraphs:
+                text = p.text.strip()
+                if not text:
+                    continue
+                # Stop before the template's own signature block so it never
+                # reaches the AI prompt and gets echoed back uncontrolled —
+                # we always append our own deterministic SIGNATURES section below.
+                lowered = text.lower()
+                if lowered.startswith("landlord:") or lowered.startswith("tenant:") or lowered.startswith("tenant(s):"):
+                    break
+                template_lines.append(p.text)
+            template_text = "\n".join(template_lines)
         except Exception:
             template_text = ""
 
@@ -950,7 +985,7 @@ async def generate_lease_document(
                 is_header = True
                 sec_num = int(parts[0].strip())
         if is_header:
-            if sec_num in (1, 2):
+            if sec_num in (1, 2) or "SIGNATURE" in stripped.upper():
                 _skip_block = True
             else:
                 _skip_block = False
@@ -960,6 +995,24 @@ async def generate_lease_document(
                 r.font.size = Pt(11)
         elif not _skip_block:
             out_doc.add_paragraph(stripped)
+
+    # --- Signatures section (always written programmatically, so DocuSign can
+    # reliably anchor sign/date tabs to these exact labels regardless of what
+    # the AI generated) ---
+    out_doc.add_paragraph()
+    sh = out_doc.add_paragraph()
+    sh.add_run("16. SIGNATURES").bold = True
+    sh.runs[0].font.size = Pt(11)
+
+    landlord_sig_p = out_doc.add_paragraph()
+    landlord_sig_p.add_run("Landlord Signature: ________________________________    Landlord Date: ____________")
+
+    if all_tenants:
+        primary_sig_p = out_doc.add_paragraph()
+        primary_sig_p.add_run("Tenant Signature: ________________________________    Tenant Date: ____________")
+        for i, t in enumerate(all_tenants[1:], 2):
+            co_sig_p = out_doc.add_paragraph()
+            co_sig_p.add_run(f"Co-Tenant {i} Signature: ________________________________    Date: ____________")
 
     buf = io.BytesIO()
     out_doc.save(buf)
@@ -995,3 +1048,108 @@ async def download_lease_document(
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Document file not found")
     return FileResponse(path=str(file_path), media_type="application/octet-stream", filename=file_path.name)
+
+
+# ── DocuSign e-signature ────────────────────────────────────────────────────
+
+@router.post("/{lease_id}/send-for-signature", response_model=LeaseOut)
+async def send_lease_for_signature(
+    lease_id: str,
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.core import docusign
+
+    _, member = current
+    lease = await _get_lease(lease_id, member.organization_id, db)
+
+    if not docusign.is_configured():
+        raise HTTPException(status_code=503, detail="DocuSign is not configured")
+    if not lease.document_path:
+        raise HTTPException(status_code=400, detail="Upload or generate a lease document first")
+    if not lease.tenant or not lease.tenant.email:
+        raise HTTPException(status_code=400, detail="Tenant has no email on file")
+    if not lease.landlord_email:
+        raise HTTPException(status_code=400, detail="Set a landlord email before sending for signature")
+
+    file_path = UPLOAD_DIR / lease.document_path
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Document file not found")
+    document_bytes = file_path.read_bytes()
+
+    landlord_name = lease.landlord_name or "Landlord"
+    tenant_name = lease.tenant.display_name
+
+    try:
+        access_token = await docusign.get_access_token()
+        envelope_id = await docusign.send_envelope(
+            access_token,
+            document_bytes,
+            file_path.name,
+            landlord_name,
+            lease.landlord_email,
+            tenant_name,
+            lease.tenant.email,
+            subject=f"Please sign: lease agreement for Unit {lease.unit.unit_number if lease.unit else ''}",
+        )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"DocuSign error: {str(e)[:300]}")
+
+    lease.docusign_envelope_id = envelope_id
+    lease.signature_status = "sent"
+    await db.commit()
+
+    return _lease_to_out(await _get_lease(lease_id, member.organization_id, db))
+
+
+@router.post("/{lease_id}/signature-status", response_model=LeaseOut)
+async def check_lease_signature_status(
+    lease_id: str,
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.core import docusign
+
+    _, member = current
+    lease = await _get_lease(lease_id, member.organization_id, db)
+
+    if not docusign.is_configured():
+        raise HTTPException(status_code=503, detail="DocuSign is not configured")
+    if not lease.docusign_envelope_id:
+        raise HTTPException(status_code=400, detail="This lease has not been sent for signature yet")
+
+    try:
+        access_token = await docusign.get_access_token()
+        envelope_status = await docusign.get_envelope_status(access_token, lease.docusign_envelope_id)
+
+        resolved_status = envelope_status
+        if envelope_status not in ("completed", "declined", "voided"):
+            # Distinguish "tenant signed, awaiting landlord" from the envelope's
+            # overall status, which stays "sent"/"delivered" until everyone signs.
+            signers = await docusign.get_signer_statuses(access_token, lease.docusign_envelope_id)
+            tenant_signer = next((s for s in signers if s.get("recipientId") == "2"), None)
+            if tenant_signer and tenant_signer.get("status") == "completed":
+                resolved_status = "tenant_signed"
+
+        if envelope_status == "completed" and lease.signature_status != "completed":
+            # DocuSign's combined-document download is always a PDF regardless of the
+            # original file type, so it gets its own .pdf path rather than overwriting
+            # the old file's bytes under whatever extension it originally had.
+            signed_bytes = await docusign.get_combined_document(access_token, lease.docusign_envelope_id)
+            old_path = lease.document_path
+            new_filename = f"leases/signed_lease_{lease.id}_{uuid.uuid4()}.pdf"
+            LEASE_DOC_DIR.mkdir(parents=True, exist_ok=True)
+            (UPLOAD_DIR / new_filename).write_bytes(signed_bytes)
+            lease.document_path = new_filename
+            if old_path:
+                try:
+                    (UPLOAD_DIR / old_path).unlink(missing_ok=True)
+                except OSError:
+                    pass
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"DocuSign error: {str(e)[:300]}")
+
+    lease.signature_status = resolved_status
+    await db.commit()
+
+    return _lease_to_out(await _get_lease(lease_id, member.organization_id, db))

@@ -4,7 +4,7 @@ export interface AuthUser {
   full_name: string;
   org_id: string;
   org_name: string;
-  role: "OWNER" | "MANAGER" | "AGENT" | "TENANT" | "VENDOR";
+  role: "OWNER" | "TENANT" | "VENDOR";
 }
 
 export function setToken(token: string) {

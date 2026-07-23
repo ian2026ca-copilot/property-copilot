@@ -13,6 +13,7 @@ from app.models.organization import Organization
 from app.models.user import User, OrganizationMember, UserRole
 from app.models.password_reset import PasswordResetToken
 from app.models.maintenance import Vendor
+from app.models.marketing_site import MarketingSite, DEFAULT_MARKETING_SITES
 from app.schemas.auth import RegisterRequest, LoginRequest, TokenResponse, UserOut, UserUpdate, ForgotPasswordRequest, ResetPasswordRequest
 from app.api.deps import get_current_user
 
@@ -43,6 +44,9 @@ async def register(body: RegisterRequest, background_tasks: BackgroundTasks, db:
     org = Organization(name=body.org_name, slug=slug)
     db.add(org)
     await db.flush()
+
+    for site_name, site_url in DEFAULT_MARKETING_SITES:
+        db.add(MarketingSite(organization_id=org.id, name=site_name, url=site_url))
 
     user = User(
         email=body.email,

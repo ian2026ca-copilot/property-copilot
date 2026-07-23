@@ -25,6 +25,7 @@ class VendorOut(BaseModel):
     user_id: uuid.UUID
     business_name: str
     service_categories: list[str]
+    is_public: bool
     full_name: str
     email: str
     phone: str
@@ -103,12 +104,14 @@ class VendorCreate(BaseModel):
     phone: str = ""
     business_name: str
     service_categories: list[str] = []
+    is_public: bool = False
 
 
 class VendorUpdate(BaseModel):
     business_name: str | None = None
     service_categories: list[str] | None = None
     phone: str | None = None
+    is_public: bool | None = None
 
 
 class VendorAvailabilityCreate(BaseModel):

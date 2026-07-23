@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
-import { teamApi, profileApi, campaignsApi, type TeamMemberOut, type OrgFbSettingsOut } from "@/lib/api";
+import { teamApi, profileApi, campaignsApi, vendorsApi, type TeamMemberOut, type MarketingSiteOut, type VendorOut } from "@/lib/api";
 import { can, hasMinRole } from "@/lib/roles";
 import { MOCK_MODE } from "@/lib/useApiData";
 
@@ -10,33 +11,27 @@ import { MOCK_MODE } from "@/lib/useApiData";
 
 const MOCK_TEAM: TeamMemberOut[] = [
   { member_id: "m1", user_id: "u1", full_name: "Jordan Ellis", email: "jordan@propertyco.com", phone: "", role: "OWNER" },
-  { member_id: "m2", user_id: "u2", full_name: "Alex Morgan", email: "alex@propertyco.com", phone: "", role: "MANAGER" },
-  { member_id: "m3", user_id: "u3", full_name: "Taylor Brooks", email: "taylor@propertyco.com", phone: "", role: "AGENT" },
-  { member_id: "m4", user_id: "u4", full_name: "Casey Liu", email: "casey@propertyco.com", phone: "", role: "AGENT" },
+  { member_id: "m2", user_id: "u2", full_name: "Alex Morgan", email: "alex@propertyco.com", phone: "", role: "OWNER" },
+  { member_id: "m3", user_id: "u3", full_name: "Taylor Brooks", email: "taylor@propertyco.com", phone: "", role: "OWNER" },
+  { member_id: "m4", user_id: "u4", full_name: "Casey Liu", email: "casey@propertyco.com", phone: "", role: "OWNER" },
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const ROLE_LABELS: Record<string, string> = {
   OWNER:   "Property Owner",
-  MANAGER: "Property Manager",
-  AGENT:   "Leasing Agent",
   TENANT:  "Tenant",
   VENDOR:  "Vendor / Contractor",
 };
 
 const ROLE_STYLES: Record<string, string> = {
   OWNER:   "bg-violet-100 text-violet-700",
-  MANAGER: "bg-blue-100 text-blue-700",
-  AGENT:   "bg-emerald-100 text-emerald-700",
   TENANT:  "bg-slate-100 text-slate-600",
   VENDOR:  "bg-orange-100 text-orange-700",
 };
 
 const ROLE_DESCRIPTIONS: Record<string, string> = {
   OWNER:   "Full access — can delete properties, manage team roles, and all operations",
-  MANAGER: "Can create/edit properties, tenants, payments — cannot delete properties or change roles",
-  AGENT:   "Read-only on most data — can view properties, tenants, vacancy, maintenance",
   TENANT:  "Portal access only — sees their own lease, payments, and maintenance requests",
   VENDOR:  "Assigned maintenance portal — receives jobs, updates status, uploads photos, and manages availability",
 };
@@ -48,7 +43,7 @@ function initials(name: string) {
 // ─── Invite modal ─────────────────────────────────────────────────────────────
 
 function InviteModal({ onClose, onSave }: { onClose: () => void; onSave: (m: TeamMemberOut) => void }) {
-  const [form, setForm] = useState({ full_name: "", email: "", role: "AGENT" });
+  const [form, setForm] = useState({ full_name: "", email: "", role: "OWNER" });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const set = (f: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
@@ -98,11 +93,15 @@ function InviteModal({ onClose, onSave }: { onClose: () => void; onSave: (m: Tea
           <div>
             <label className="block text-xs font-medium text-slate-700 mb-1">Role</label>
             <select value={form.role} onChange={set("role")} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black bg-white">
-              <option value="MANAGER">Property Manager</option>
-              <option value="AGENT">Leasing Agent</option>
+              <option value="OWNER">Property Owner</option>
               <option value="VENDOR">Vendor / Contractor</option>
             </select>
             <p className="text-[11px] text-slate-400 mt-1">{ROLE_DESCRIPTIONS[form.role]}</p>
+            {form.role === "VENDOR" && (
+              <p className="text-[11px] text-slate-400 mt-1">
+                Registered as a private vendor — works exclusively for your organization. Manage business details or make them public from the Vendors page.
+              </p>
+            )}
           </div>
         </div>
         <div className="flex gap-3 px-6 py-4 border-t border-slate-100">
@@ -113,60 +112,6 @@ function InviteModal({ onClose, onSave }: { onClose: () => void; onSave: (m: Tea
             className="flex-1 py-2 text-sm bg-black text-white rounded-lg hover:bg-slate-800 font-medium disabled:opacity-50"
           >
             {saving ? "Inviting…" : "Send invite"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── Change role modal ────────────────────────────────────────────────────────
-
-function ChangeRoleModal({ member, onClose, onSave }: {
-  member: TeamMemberOut; onClose: () => void; onSave: (m: TeamMemberOut) => void;
-}) {
-  const [role, setRole] = useState(member.role === "OWNER" ? "MANAGER" : member.role);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-
-  async function handleSubmit() {
-    setSaving(true); setError("");
-    if (MOCK_MODE) {
-      onSave({ ...member, role: role as TeamMemberOut["role"] });
-      return;
-    }
-    try {
-      const saved = await teamApi.updateRole(member.member_id, role);
-      onSave(saved);
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed");
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-          <h2 className="text-sm font-semibold text-slate-900">Change role — {member.full_name}</h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-700 text-lg leading-none">✕</button>
-        </div>
-        <div className="px-6 py-5 space-y-3">
-          {error && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
-          {(["MANAGER", "AGENT"] as const).map((r) => (
-            <label key={r} className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${role === r ? "border-black bg-slate-50" : "border-slate-200 hover:bg-slate-50"}`}>
-              <input type="radio" className="mt-0.5 shrink-0" checked={role === r} onChange={() => setRole(r)} />
-              <div>
-                <p className="text-sm font-medium text-slate-900">{ROLE_LABELS[r]}</p>
-                <p className="text-[11px] text-slate-500 mt-0.5">{ROLE_DESCRIPTIONS[r]}</p>
-              </div>
-            </label>
-          ))}
-        </div>
-        <div className="flex gap-3 px-6 py-4 border-t border-slate-100">
-          <button onClick={onClose} className="flex-1 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Cancel</button>
-          <button onClick={handleSubmit} disabled={saving} className="flex-1 py-2 text-sm bg-black text-white rounded-lg hover:bg-slate-800 font-medium disabled:opacity-50">
-            {saving ? "Saving…" : "Save"}
           </button>
         </div>
       </div>
@@ -185,6 +130,90 @@ function ConfirmDialog({ message, onConfirm, onCancel }: { message: string; onCo
           <button onClick={onCancel} className="flex-1 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Cancel</button>
           <button onClick={onConfirm} className="flex-1 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium">Remove</button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Create vendor modal ──────────────────────────────────────────────────────
+
+const VENDOR_CATEGORIES = ["Plumbing", "Electrical", "HVAC", "Appliance", "Structural", "Painting", "Pest Control", "Cleaning", "Landscaping", "Other"];
+
+function CreateVendorModal({ onClose, onSave }: { onClose: () => void; onSave: (v: VendorOut) => void }) {
+  const [form, setForm] = useState({ full_name: "", email: "", phone: "", business_name: "" });
+  const [cats, setCats] = useState<string[]>([]);
+  const [isPublic, setIsPublic] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  function set(k: string, v: string) { setForm(f => ({ ...f, [k]: v })); }
+  function toggleCat(c: string) { setCats(cs => cs.includes(c) ? cs.filter(x => x !== c) : [...cs, c]); }
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!form.full_name || !form.email) { setError("Name and email are required."); return; }
+    setSaving(true); setError("");
+    try {
+      const v = await vendorsApi.create({ ...form, service_categories: cats, is_public: isPublic });
+      onSave(v);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to create vendor");
+    } finally { setSaving(false); }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+          <h2 className="text-sm font-semibold text-slate-900">Create vendor</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-700 text-lg leading-none">✕</button>
+        </div>
+        <form onSubmit={submit} className="px-6 py-5 space-y-4">
+          {error && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
+          <div>
+            <label className="block text-xs font-medium text-slate-700 mb-1">Full name *</label>
+            <input value={form.full_name} onChange={e => set("full_name", e.target.value)} placeholder="Taylor Brooks" className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-700 mb-1">Email *</label>
+            <input type="email" value={form.email} onChange={e => set("email", e.target.value)} placeholder="taylor@company.com" className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-700 mb-1">Phone</label>
+            <input value={form.phone} onChange={e => set("phone", e.target.value)} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-700 mb-1">Business name</label>
+            <input value={form.business_name} onChange={e => set("business_name", e.target.value)} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-700 mb-2">Service categories</label>
+            <div className="flex flex-wrap gap-1.5">
+              {VENDOR_CATEGORIES.map(c => (
+                <button key={c} type="button" onClick={() => toggleCat(c)}
+                  className={`px-2.5 py-1 rounded-full text-xs border transition-colors ${cats.includes(c) ? "bg-black text-white border-black" : "border-slate-200 text-slate-600 hover:border-slate-400"}`}>
+                  {c}
+                </button>
+              ))}
+            </div>
+          </div>
+          <label className="flex items-start gap-2.5 p-3 rounded-xl border border-slate-200 cursor-pointer hover:bg-slate-50">
+            <input type="checkbox" className="mt-0.5" checked={isPublic} onChange={e => setIsPublic(e.target.checked)} />
+            <div>
+              <p className="text-sm font-medium text-slate-900">Make this vendor public</p>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                {isPublic
+                  ? "Public — other organizations can also add and share this vendor."
+                  : "Private (default) — this vendor works exclusively for your organization."}
+              </p>
+            </div>
+          </label>
+          <div className="flex gap-3 pt-2">
+            <button type="button" onClick={onClose} className="flex-1 px-4 py-2 border border-slate-200 rounded-lg text-sm text-slate-600 hover:bg-slate-50">Cancel</button>
+            <button type="submit" disabled={saving} className="flex-1 px-4 py-2 bg-black text-white rounded-lg text-sm font-medium hover:bg-slate-800 disabled:opacity-50">
+              {saving ? "Creating…" : "Create vendor"}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );
@@ -278,32 +307,62 @@ function ProfileTab() {
 // ─── Marketing / Facebook Settings Tab ────────────────────────────────────────
 
 function MarketingTab() {
-  const [fbSettings, setFbSettings] = useState<OrgFbSettingsOut | null>(null);
-  const [form, setForm] = useState({ fb_page_id: "", fb_page_token: "" });
-  const [saving, setSaving] = useState(false);
-  const [success, setSuccess] = useState(false);
-  const [error, setError] = useState("");
+  const [sites, setSites] = useState<MarketingSiteOut[]>([]);
+  const [loadingSites, setLoadingSites] = useState(true);
+  const [siteForm, setSiteForm] = useState({ name: "", url: "" });
+  const [addingSite, setAddingSite] = useState(false);
+  const [siteError, setSiteError] = useState("");
+  const [removingSiteId, setRemovingSiteId] = useState<string | null>(null);
+  const [editingSiteId, setEditingSiteId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState({ name: "", url: "" });
+  const [savingEditId, setSavingEditId] = useState<string | null>(null);
 
   useEffect(() => {
-    campaignsApi.getFbSettings()
-      .then(s => { setFbSettings(s); setForm(f => ({ ...f, fb_page_id: s.fb_page_id ?? "" })); })
-      .catch(() => {});
+    campaignsApi.listMarketingSites()
+      .then(setSites)
+      .catch(() => {})
+      .finally(() => setLoadingSites(false));
   }, []);
 
-  async function handleSave(e: React.FormEvent) {
+  async function handleAddSite(e: React.FormEvent) {
     e.preventDefault();
-    setSaving(true); setError(""); setSuccess(false);
+    if (!siteForm.name.trim() || !siteForm.url.trim()) return;
+    setAddingSite(true); setSiteError("");
     try {
-      const body: { fb_page_id?: string; fb_page_token?: string } = { fb_page_id: form.fb_page_id || undefined };
-      if (form.fb_page_token) body.fb_page_token = form.fb_page_token;
-      const updated = await campaignsApi.saveFbSettings(body);
-      setFbSettings(updated);
-      setForm(f => ({ ...f, fb_page_token: "" }));
-      setSuccess(true);
-      setTimeout(() => setSuccess(false), 3000);
+      const site = await campaignsApi.addMarketingSite({ name: siteForm.name.trim(), url: siteForm.url.trim() });
+      setSites(s => [...s, site]);
+      setSiteForm({ name: "", url: "" });
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Save failed");
-    } finally { setSaving(false); }
+      setSiteError(e instanceof Error ? e.message : "Failed to add site");
+    } finally { setAddingSite(false); }
+  }
+
+  async function handleRemoveSite(id: string) {
+    setRemovingSiteId(id); setSiteError("");
+    try {
+      await campaignsApi.removeMarketingSite(id);
+      setSites(s => s.filter(site => site.id !== id));
+    } catch (e: unknown) {
+      setSiteError(e instanceof Error ? e.message : "Failed to remove site");
+    } finally { setRemovingSiteId(null); }
+  }
+
+  function startEditSite(site: MarketingSiteOut) {
+    setEditingSiteId(site.id);
+    setEditForm({ name: site.name, url: site.url });
+    setSiteError("");
+  }
+
+  async function handleSaveEditSite(id: string) {
+    if (!editForm.name.trim() || !editForm.url.trim()) return;
+    setSavingEditId(id); setSiteError("");
+    try {
+      const updated = await campaignsApi.updateMarketingSite(id, { name: editForm.name.trim(), url: editForm.url.trim() });
+      setSites(s => s.map(site => site.id === id ? updated : site));
+      setEditingSiteId(null);
+    } catch (e: unknown) {
+      setSiteError(e instanceof Error ? e.message : "Failed to save changes");
+    } finally { setSavingEditId(null); }
   }
 
   const inp = "w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black";
@@ -312,50 +371,76 @@ function MarketingTab() {
     <div className="max-w-lg space-y-6">
       <div className="bg-white rounded-xl border border-slate-200 p-6 space-y-5">
         <div>
-          <h3 className="text-sm font-semibold text-slate-900">Facebook Page</h3>
-          <p className="text-xs text-slate-400 mt-0.5">Connect your Facebook Page to post rental campaigns directly from Property Copilot.</p>
+          <h3 className="text-sm font-semibold text-slate-900">Posting Websites</h3>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Every site available in the "Post" dropdown on your campaigns. Edit or remove any of them, or add more below.
+          </p>
         </div>
 
-        <div className="bg-slate-50 rounded-lg p-4 space-y-1 text-xs text-slate-600">
-          <p className="font-medium text-slate-700">How to get your Page Access Token</p>
-          <ol className="list-decimal list-inside space-y-0.5 text-slate-500">
-            <li>Go to <strong>Meta for Developers</strong> → Graph API Explorer</li>
-            <li>Select your Facebook Page from the dropdown</li>
-            <li>Add permissions: <code className="bg-slate-200 px-1 rounded">pages_manage_posts</code>, <code className="bg-slate-200 px-1 rounded">pages_read_engagement</code></li>
-            <li>Click <strong>Generate Access Token</strong> and copy it here</li>
-          </ol>
-        </div>
+        <ul className="space-y-2">
+          {sites.map(site => (
+            <li key={site.id} className="border border-slate-100 rounded-lg px-3 py-2">
+              {editingSiteId === site.id ? (
+                <div className="flex items-end gap-2">
+                  <div className="flex-1">
+                    <label className="block text-[11px] font-medium text-slate-500 mb-0.5">Site name</label>
+                    <input value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))} className={inp} />
+                  </div>
+                  <div className="flex-1">
+                    <label className="block text-[11px] font-medium text-slate-500 mb-0.5">URL</label>
+                    <input value={editForm.url} onChange={e => setEditForm(f => ({ ...f, url: e.target.value }))} className={inp} />
+                  </div>
+                  <button type="button" onClick={() => handleSaveEditSite(site.id)}
+                    disabled={savingEditId === site.id || !editForm.name.trim() || !editForm.url.trim()}
+                    className="shrink-0 px-3 py-2 text-xs bg-black text-white rounded-lg hover:bg-slate-800 disabled:opacity-50">
+                    {savingEditId === site.id ? "Saving…" : "Save"}
+                  </button>
+                  <button type="button" onClick={() => setEditingSiteId(null)} disabled={savingEditId === site.id}
+                    className="shrink-0 px-3 py-2 text-xs text-slate-500 hover:text-slate-700 disabled:opacity-50">
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-slate-900 truncate">{site.name}</p>
+                    <a href={site.url} target="_blank" rel="noopener noreferrer" className="text-xs text-slate-400 hover:text-blue-600 hover:underline truncate block">
+                      {site.url}
+                    </a>
+                  </div>
+                  <div className="shrink-0 flex items-center gap-3">
+                    <button type="button" onClick={() => startEditSite(site)} className="text-xs text-slate-500 hover:text-black">
+                      Edit
+                    </button>
+                    <button type="button" onClick={() => handleRemoveSite(site.id)} disabled={removingSiteId === site.id}
+                      className="text-xs text-red-500 hover:text-red-700 disabled:opacity-50">
+                      {removingSiteId === site.id ? "Removing…" : "Remove"}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+        {loadingSites && <p className="text-xs text-slate-400">Loading…</p>}
 
-        {fbSettings?.fb_page_token_set && (
-          <div className="flex items-center gap-2 text-xs text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2">
-            <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-            Page Access Token is set. Paste a new one below to replace it.
+        <form onSubmit={handleAddSite} className="flex items-end gap-2">
+          <div className="flex-1">
+            <label className="block text-xs font-medium text-slate-700 mb-1">Site name</label>
+            <input value={siteForm.name} onChange={e => setSiteForm(f => ({ ...f, name: e.target.value }))}
+              placeholder="e.g. Craigslist" className={inp} />
           </div>
-        )}
-
-        <form onSubmit={handleSave} className="space-y-3">
-          <div>
-            <label className="block text-xs font-medium text-slate-700 mb-1">Facebook Page ID</label>
-            <input value={form.fb_page_id} onChange={e => setForm(f => ({ ...f, fb_page_id: e.target.value }))}
-              placeholder="e.g. 123456789012345" className={inp} />
-            <p className="text-[11px] text-slate-400 mt-1">Found in your Page settings → About → Page ID</p>
+          <div className="flex-1">
+            <label className="block text-xs font-medium text-slate-700 mb-1">URL</label>
+            <input value={siteForm.url} onChange={e => setSiteForm(f => ({ ...f, url: e.target.value }))}
+              placeholder="e.g. craigslist.org/post" className={inp} />
           </div>
-          <div>
-            <label className="block text-xs font-medium text-slate-700 mb-1">
-              Page Access Token {fbSettings?.fb_page_token_set ? "(leave blank to keep existing)" : "*"}
-            </label>
-            <input type="password" value={form.fb_page_token}
-              onChange={e => setForm(f => ({ ...f, fb_page_token: e.target.value }))}
-              placeholder={fbSettings?.fb_page_token_set ? "••••••••••••••••" : "Paste token here"}
-              className={inp} />
-          </div>
-          {error && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
-          {success && <p className="text-xs text-emerald-600 bg-emerald-50 rounded-lg px-3 py-2">Facebook settings saved.</p>}
-          <button type="submit" disabled={saving}
-            className="px-4 py-2 text-sm bg-black text-white rounded-lg hover:bg-slate-800 font-medium disabled:opacity-50">
-            {saving ? "Saving…" : "Save Facebook settings"}
+          <button type="submit" disabled={addingSite || !siteForm.name.trim() || !siteForm.url.trim()}
+            className="px-4 py-2 text-sm bg-black text-white rounded-lg hover:bg-slate-800 font-medium disabled:opacity-50 shrink-0">
+            {addingSite ? "Adding…" : "Add site"}
           </button>
         </form>
+        {siteError && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{siteError}</p>}
       </div>
     </div>
   );
@@ -366,15 +451,21 @@ function MarketingTab() {
 type Modal =
   | { type: "none" }
   | { type: "invite" }
-  | { type: "changeRole"; member: TeamMemberOut }
+  | { type: "createVendor" }
   | { type: "remove"; member: TeamMemberOut };
 
 export default function SettingsPage() {
   const { user } = useAuth();
   const perms = can(user?.role);
+  const searchParams = useSearchParams();
   const [tab, setTab] = useState<"profile" | "team" | "roles" | "marketing">("profile");
   const [team, setTeam] = useState<TeamMemberOut[]>(MOCK_TEAM);
   const [modal, setModal] = useState<Modal>({ type: "none" });
+
+  useEffect(() => {
+    const t = searchParams.get("tab");
+    if (t === "team" || t === "roles" || t === "marketing" || t === "profile") setTab(t);
+  }, [searchParams]);
 
   useEffect(() => {
     if (MOCK_MODE) return;
@@ -386,9 +477,9 @@ export default function SettingsPage() {
     setModal({ type: "none" });
   }
 
-  function handleRoleChanged(m: TeamMemberOut) {
-    setTeam(prev => prev.map(x => x.member_id === m.member_id ? m : x));
+  function handleVendorCreated(_v: VendorOut) {
     setModal({ type: "none" });
+    if (!MOCK_MODE) teamApi.list().then(setTeam).catch(() => {});
   }
 
   async function handleRemove(m: TeamMemberOut) {
@@ -404,8 +495,8 @@ export default function SettingsPage() {
       {modal.type === "invite" && (
         <InviteModal onClose={() => setModal({ type: "none" })} onSave={handleInvited} />
       )}
-      {modal.type === "changeRole" && (
-        <ChangeRoleModal member={modal.member} onClose={() => setModal({ type: "none" })} onSave={handleRoleChanged} />
+      {modal.type === "createVendor" && (
+        <CreateVendorModal onClose={() => setModal({ type: "none" })} onSave={handleVendorCreated} />
       )}
       {modal.type === "remove" && (
         <ConfirmDialog
@@ -448,20 +539,26 @@ export default function SettingsPage() {
           <div className="flex items-center justify-between">
             <p className="text-sm text-slate-500">{team.length} member{team.length !== 1 ? "s" : ""}</p>
             {perms.inviteStaff && (
-              <button
-                onClick={() => setModal({ type: "invite" })}
-                className="px-3 py-1.5 bg-black text-white text-xs font-medium rounded-lg hover:bg-slate-800 transition-colors"
-              >
-                + Invite member
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setModal({ type: "createVendor" })}
+                  className="px-3 py-1.5 border border-slate-200 text-slate-600 text-xs font-medium rounded-lg hover:bg-slate-50 transition-colors"
+                >
+                  + Create vendor
+                </button>
+                <button
+                  onClick={() => setModal({ type: "invite" })}
+                  className="px-3 py-1.5 bg-black text-white text-xs font-medium rounded-lg hover:bg-slate-800 transition-colors"
+                >
+                  + Invite member
+                </button>
+              </div>
             )}
           </div>
 
           <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100">
             {team.map((m) => {
               const isCurrentUser = m.user_id === user?.id;
-              const isOwner = m.role === "OWNER";
-              const isVendor = m.role === "VENDOR";
               return (
                 <div key={m.member_id} className="flex items-center gap-4 px-5 py-4">
                   <div className="w-9 h-9 rounded-full bg-black text-white text-xs font-bold flex items-center justify-center shrink-0">
@@ -478,27 +575,16 @@ export default function SettingsPage() {
                   <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full ${ROLE_STYLES[m.role]}`}>
                     {ROLE_LABELS[m.role]}
                   </span>
-                  {perms.changeRoles && !isCurrentUser && !isOwner && !isVendor && (
-                    <div className="flex gap-1">
-                      <button
-                        onClick={() => setModal({ type: "changeRole", member: m })}
-                        className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100 transition-colors"
-                        title="Change role"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                        </svg>
-                      </button>
-                      <button
-                        onClick={() => setModal({ type: "remove", member: m })}
-                        className="p-1.5 text-red-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors"
-                        title="Remove member"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                      </button>
-                    </div>
+                  {perms.removeMembers && !isCurrentUser && (
+                    <button
+                      onClick={() => setModal({ type: "remove", member: m })}
+                      className="p-1.5 text-red-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors"
+                      title="Remove member"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
                   )}
                 </div>
               );
@@ -510,7 +596,7 @@ export default function SettingsPage() {
       {/* Role guide tab */}
       {tab === "roles" && (
         <div className="space-y-3">
-          {(["OWNER", "MANAGER", "AGENT", "TENANT", "VENDOR"] as const).map((r) => (
+          {(["OWNER", "TENANT", "VENDOR"] as const).map((r) => (
             <div key={r} className="bg-white rounded-xl border border-slate-200 p-5">
               <div className="flex items-center gap-3 mb-3">
                 <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full ${ROLE_STYLES[r]}`}>
@@ -545,32 +631,7 @@ const PERMISSION_MATRIX: Record<string, { label: string; allowed: boolean }[]> =
     { label: "Manage payments", allowed: true },
     { label: "Assign maintenance", allowed: true },
     { label: "Invite team members", allowed: true },
-    { label: "Change member roles", allowed: true },
     { label: "Remove team members", allowed: true },
-    { label: "View all data", allowed: true },
-  ],
-  MANAGER: [
-    { label: "Create / edit properties", allowed: true },
-    { label: "Delete properties", allowed: false },
-    { label: "Add / edit tenants", allowed: true },
-    { label: "Terminate leases", allowed: false },
-    { label: "Manage payments", allowed: true },
-    { label: "Assign maintenance", allowed: true },
-    { label: "Invite team members", allowed: true },
-    { label: "Change member roles", allowed: false },
-    { label: "Remove team members", allowed: false },
-    { label: "View all data", allowed: true },
-  ],
-  AGENT: [
-    { label: "Create / edit properties", allowed: false },
-    { label: "Delete properties", allowed: false },
-    { label: "Add / edit tenants", allowed: false },
-    { label: "Terminate leases", allowed: false },
-    { label: "Manage payments", allowed: false },
-    { label: "Assign maintenance", allowed: false },
-    { label: "Invite team members", allowed: false },
-    { label: "Change member roles", allowed: false },
-    { label: "Remove team members", allowed: false },
     { label: "View all data", allowed: true },
   ],
   TENANT: [
@@ -581,7 +642,6 @@ const PERMISSION_MATRIX: Record<string, { label: string; allowed: boolean }[]> =
     { label: "Manage payments", allowed: false },
     { label: "Assign maintenance", allowed: false },
     { label: "Invite team members", allowed: false },
-    { label: "Change member roles", allowed: false },
     { label: "Remove team members", allowed: false },
     { label: "View own lease / portal", allowed: true },
   ],

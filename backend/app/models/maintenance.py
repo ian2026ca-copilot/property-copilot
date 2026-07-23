@@ -83,6 +83,9 @@ class Vendor(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), unique=True, index=True)
     business_name: Mapped[str] = mapped_column(String(255), nullable=False)
     service_categories: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    # Private (default): only the organization that added this vendor can use them.
+    # Public: other organizations may also add/link this same vendor by email.
+    is_public: Mapped[bool] = mapped_column(default=False, nullable=False)
     created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     user: Mapped["User"] = relationship()  # noqa: F821

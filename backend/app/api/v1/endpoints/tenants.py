@@ -13,6 +13,7 @@ from app.core.database import get_db
 from app.core.security import hash_password
 from app.api.deps import get_current_user, require_min_role
 from app.models.user import User, OrganizationMember, UserRole, TenantDocument
+from app.models.profiles import TenantProfile
 from app.models.lease import Lease, LeaseStatus
 from app.models.property import Unit, Property, UnitStatus
 from app.schemas.lease import TenantCreate, TenantUpdate, TenantInvite, LeaseUpdate, LeaseOut, TenantOut, TenantDocumentOut
@@ -51,7 +52,24 @@ def _doc_to_out(doc: TenantDocument) -> TenantDocumentOut:
     )
 
 
+PROFILE_FIELDS = ("date_of_birth", "street_address", "city", "province", "postal_code", "country")
+
+
+async def _upsert_tenant_profile(db: AsyncSession, user_id, **fields) -> TenantProfile:
+    """Create or update the given user's TenantProfile with any non-None fields provided."""
+    result = await db.execute(select(TenantProfile).where(TenantProfile.user_id == user_id))
+    profile = result.scalar_one_or_none()
+    if not profile:
+        profile = TenantProfile(user_id=user_id)
+        db.add(profile)
+    for field, value in fields.items():
+        if value is not None:
+            setattr(profile, field, value)
+    return profile
+
+
 def _tenant_to_out(user: User, docs: list[TenantDocument] | None = None) -> TenantOut:
+    profile = user.tenant_profile
     return TenantOut(
         id=user.id,
         first_name=user.first_name,
@@ -59,13 +77,13 @@ def _tenant_to_out(user: User, docs: list[TenantDocument] | None = None) -> Tena
         full_name=user.display_name,
         email=user.email,
         phone=user.phone or "",
-        date_of_birth=user.date_of_birth,
+        date_of_birth=profile.date_of_birth if profile else None,
         avatar_url=_uploads_url(user.avatar_filename) if user.avatar_filename else None,
-        street_address=user.street_address,
-        city=user.city,
-        province=user.province,
-        postal_code=user.postal_code,
-        country=user.country,
+        street_address=profile.street_address if profile else None,
+        city=profile.city if profile else None,
+        province=profile.province if profile else None,
+        postal_code=profile.postal_code if profile else None,
+        country=profile.country if profile else None,
         documents=[_doc_to_out(d) for d in (docs or [])],
     )
 
@@ -107,6 +125,7 @@ async def list_tenants(
         )
         .options(
             selectinload(Lease.tenant).selectinload(User.tenant_documents),
+            selectinload(Lease.tenant).selectinload(User.tenant_profile),
             selectinload(Lease.unit).selectinload(Unit.property),
         )
         .order_by(Lease.created_at.desc())
@@ -117,7 +136,7 @@ async def list_tenants(
 @router.post("", response_model=LeaseOut, status_code=status.HTTP_201_CREATED)
 async def create_tenant(
     body: TenantInvite,
-    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.MANAGER)),
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
     _, member = current
@@ -132,7 +151,6 @@ async def create_tenant(
             first_name=body.first_name,
             last_name=body.last_name,
             phone=body.phone or "",
-            date_of_birth=body.date_of_birth,
             hashed_password=hash_password(secrets.token_urlsafe(16)),
         )
         db.add(tenant_user)
@@ -144,8 +162,9 @@ async def create_tenant(
         tenant_user.full_name = f"{body.first_name} {body.last_name}".strip()
         if body.phone:
             tenant_user.phone = body.phone
-        if body.date_of_birth:
-            tenant_user.date_of_birth = body.date_of_birth
+
+    if body.date_of_birth:
+        await _upsert_tenant_profile(db, tenant_user.id, date_of_birth=body.date_of_birth)
 
     mem_result = await db.execute(
         select(OrganizationMember).where(
@@ -193,6 +212,7 @@ async def create_tenant(
         select(Lease).where(Lease.id == lease.id)
         .options(
             selectinload(Lease.tenant).selectinload(User.tenant_documents),
+            selectinload(Lease.tenant).selectinload(User.tenant_profile),
             selectinload(Lease.unit).selectinload(Unit.property),
         )
     )
@@ -203,7 +223,7 @@ async def create_tenant(
 async def update_tenant(
     lease_id: str,
     body: LeaseUpdate,
-    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.MANAGER)),
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
     _, member = current
@@ -211,6 +231,7 @@ async def update_tenant(
         select(Lease).where(Lease.id == lease_id, Lease.organization_id == member.organization_id)
         .options(
             selectinload(Lease.tenant).selectinload(User.tenant_documents),
+            selectinload(Lease.tenant).selectinload(User.tenant_profile),
             selectinload(Lease.unit).selectinload(Unit.property),
         )
     )
@@ -219,14 +240,17 @@ async def update_tenant(
         raise HTTPException(status_code=404, detail="Lease not found")
 
     # Update tenant user profile fields
-    tenant_fields = {"first_name", "last_name", "phone", "date_of_birth"}
+    tenant_fields = {"first_name", "last_name", "phone"}
     data = body.model_dump(exclude_none=True)
+    date_of_birth = data.pop("date_of_birth", None)
     if lease.tenant:
         for field in tenant_fields:
             if field in data:
                 setattr(lease.tenant, field, data.pop(field))
         if lease.tenant.first_name or lease.tenant.last_name:
             lease.tenant.full_name = " ".join(filter(None, [lease.tenant.first_name, lease.tenant.last_name]))
+        if date_of_birth:
+            await _upsert_tenant_profile(db, lease.tenant.id, date_of_birth=date_of_birth)
     else:
         for field in tenant_fields:
             data.pop(field, None)
@@ -241,6 +265,7 @@ async def update_tenant(
         select(Lease).where(Lease.id == lease.id)
         .options(
             selectinload(Lease.tenant).selectinload(User.tenant_documents),
+            selectinload(Lease.tenant).selectinload(User.tenant_profile),
             selectinload(Lease.unit).selectinload(Unit.property),
         )
     )
@@ -284,7 +309,7 @@ async def terminate_tenant(
 @router.post("/person", response_model=TenantOut, status_code=status.HTTP_201_CREATED)
 async def create_person(
     body: TenantCreate,
-    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.MANAGER)),
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
     """Create a tenant person record without a lease."""
@@ -300,9 +325,7 @@ async def create_person(
             first_name=body.first_name,
             last_name=body.last_name,
             phone=body.phone or "",
-            date_of_birth=body.date_of_birth,
             hashed_password=hash_password(secrets.token_urlsafe(16)),
-            **{f: getattr(body, f) for f in address_fields},
         )
         db.add(tenant_user)
         await db.flush()
@@ -313,12 +336,12 @@ async def create_person(
         tenant_user.is_active = True  # re-activate if previously deleted
         if body.phone:
             tenant_user.phone = body.phone
-        if body.date_of_birth:
-            tenant_user.date_of_birth = body.date_of_birth
-        for f in address_fields:
-            val = getattr(body, f)
-            if val is not None:
-                setattr(tenant_user, f, val)
+
+    await _upsert_tenant_profile(
+        db, tenant_user.id,
+        date_of_birth=body.date_of_birth,
+        **{f: getattr(body, f) for f in address_fields},
+    )
 
     mem_result = await db.execute(
         select(OrganizationMember).where(
@@ -336,7 +359,7 @@ async def create_person(
     await db.commit()
     result = await db.execute(
         select(User).where(User.id == tenant_user.id)
-        .options(selectinload(User.tenant_documents))
+        .options(selectinload(User.tenant_documents), selectinload(User.tenant_profile))
     )
     u = result.scalar_one()
     return _tenant_to_out(u, u.tenant_documents)
@@ -418,7 +441,7 @@ async def list_persons(
             OrganizationMember.role == UserRole.TENANT,
             User.is_active == True,
         )
-        .options(selectinload(User.tenant_documents))
+        .options(selectinload(User.tenant_documents), selectinload(User.tenant_profile))
         .order_by(User.full_name)
     )
     users = result.scalars().all()
@@ -434,7 +457,7 @@ async def get_person(
     result = await db.execute(
         select(User)
         .where(User.id == tenant_user_id)
-        .options(selectinload(User.tenant_documents))
+        .options(selectinload(User.tenant_documents), selectinload(User.tenant_profile))
     )
     user = result.scalar_one_or_none()
     if not user:
@@ -446,7 +469,7 @@ async def get_person(
 async def update_person(
     tenant_user_id: str,
     body: TenantUpdate,
-    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.MANAGER)),
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
     """Update tenant person info."""
@@ -455,13 +478,17 @@ async def update_person(
     tenant = result.scalar_one_or_none()
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant not found")
-    for field, value in body.model_dump(exclude_none=True).items():
+    data = body.model_dump(exclude_none=True)
+    profile_data = {f: data.pop(f, None) for f in PROFILE_FIELDS}
+    for field, value in data.items():
         setattr(tenant, field, value)
+    if any(v is not None for v in profile_data.values()):
+        await _upsert_tenant_profile(db, tenant.id, **profile_data)
     if tenant.first_name or tenant.last_name:
         tenant.full_name = " ".join(filter(None, [tenant.first_name, tenant.last_name]))
     await db.commit()
     result = await db.execute(
-        select(User).where(User.id == tenant_user_id).options(selectinload(User.tenant_documents))
+        select(User).where(User.id == tenant_user_id).options(selectinload(User.tenant_documents), selectinload(User.tenant_profile))
     )
     u = result.scalar_one()
     return _tenant_to_out(u, u.tenant_documents)
@@ -470,7 +497,7 @@ async def update_person(
 @router.delete("/person/{tenant_user_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def deactivate_person(
     tenant_user_id: str,
-    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.MANAGER)),
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
     """Soft-deactivate a tenant person."""
@@ -491,8 +518,8 @@ AVATAR_EXTENSIONS = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".
 
 async def _resolve_tenant(tenant_user_id: str, current: tuple[User, OrganizationMember], db: AsyncSession) -> User:
     user, member = current
-    # Allow self-upload (tenant updating own avatar) or manager+
-    if str(user.id) != tenant_user_id and member.role not in (UserRole.OWNER, UserRole.MANAGER, UserRole.AGENT):
+    # Allow self-upload (tenant updating own avatar) or owner
+    if str(user.id) != tenant_user_id and member.role != UserRole.OWNER:
         raise HTTPException(status_code=403, detail="Not authorized")
     result = await db.execute(select(User).where(User.id == tenant_user_id, User.is_active == True))
     tenant = result.scalar_one_or_none()
@@ -530,7 +557,7 @@ async def upload_avatar(
     # Reload documents for response
     result = await db.execute(
         select(User).where(User.id == tenant_user_id)
-        .options(selectinload(User.tenant_documents))
+        .options(selectinload(User.tenant_documents), selectinload(User.tenant_profile))
     )
     tenant = result.scalar_one()
     return _tenant_to_out(tenant, tenant.tenant_documents)
@@ -560,7 +587,7 @@ async def upload_tenant_document(
     tenant_user_id: str,
     doc_type: str = Query(..., pattern="^(id_document|reference_letter)$"),
     file: UploadFile = File(...),
-    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.MANAGER)),
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
     _, member = current
@@ -607,7 +634,7 @@ async def list_tenant_documents(
 async def delete_tenant_document(
     tenant_user_id: str,
     doc_id: str,
-    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.MANAGER)),
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
     _, member = current

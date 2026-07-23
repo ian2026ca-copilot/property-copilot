@@ -4,7 +4,7 @@ import pathlib
 from datetime import datetime, timezone
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -14,12 +14,20 @@ from app.api.deps import get_current_user, require_min_role
 from app.models.user import User, OrganizationMember, UserRole
 from app.models.campaign import Campaign, CampaignStatus
 from app.models.organization import Organization
-from app.models.property import Unit  # noqa: F401
-from app.schemas.campaign import CampaignCreate, CampaignUpdate, CampaignOut, OrgFbSettingsUpdate, OrgFbSettingsOut
+from app.models.property import Unit, Property
+from app.models.image import UnitImage
+from app.models.marketing_site import MarketingSite, DEFAULT_MARKETING_SITES
+from app.schemas.campaign import (
+    CampaignCreate, CampaignUpdate, CampaignOut,
+    CampaignAIGenerateOut,
+    OrgFbSettingsUpdate, OrgFbSettingsOut,
+    MarketingSiteCreate, MarketingSiteOut,
+)
 
 router = APIRouter(prefix="/campaigns", tags=["campaigns"])
 
 UPLOAD_DIR = pathlib.Path("/app/uploads/campaigns")
+ROOT_UPLOAD_DIR = UPLOAD_DIR.parent  # where property/unit images are stored
 MAX_SIZE_MB = 20
 ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp"}
 
@@ -72,7 +80,7 @@ async def _get_campaign(campaign_id: str, org_id: uuid.UUID, db: AsyncSession) -
 
 @router.get("", response_model=list[CampaignOut])
 async def list_campaigns(
-    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.AGENT)),
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
     _, member = current
@@ -90,10 +98,30 @@ async def list_campaigns(
 @router.post("", response_model=CampaignOut, status_code=status.HTTP_201_CREATED)
 async def create_campaign(
     body: CampaignCreate,
-    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.MANAGER)),
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
     _, member = current
+
+    # Auto-add the unit's own photos as the campaign's starting photo set.
+    # Unit images live at the shared uploads root (/app/uploads/{filename}), so
+    # each one is copied into the campaigns subfolder under a fresh filename —
+    # campaign photos are independently deletable without touching the unit's.
+    photos: list[str] = []
+    if body.unit_id:
+        img_result = await db.execute(
+            select(UnitImage).where(UnitImage.unit_id == body.unit_id)
+            .order_by(UnitImage.sort_order, UnitImage.created_at)
+        )
+        for img in img_result.scalars().all():
+            src = ROOT_UPLOAD_DIR / img.filename
+            if not src.exists():
+                continue
+            new_filename = f"{uuid.uuid4()}{src.suffix}"
+            UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+            (UPLOAD_DIR / new_filename).write_bytes(src.read_bytes())
+            photos.append(new_filename)
+
     c = Campaign(
         organization_id=member.organization_id,
         unit_id=body.unit_id,
@@ -104,11 +132,152 @@ async def create_campaign(
         contact_email=body.contact_email,
         available_from=body.available_from,
         monthly_rent=body.monthly_rent,
-        photos=[],
+        photos=photos,
     )
     db.add(c)
     await db.commit()
     return _to_out(await _get_campaign(str(c.id), member.organization_id, db))
+
+
+# ── AI generate ────────────────────────────────────────────────────────────────
+
+MAX_AI_PHOTOS = 6
+
+
+@router.post("/ai-generate", response_model=CampaignAIGenerateOut)
+async def ai_generate_campaign(
+    unit_id: str | None = Form(None),
+    extra_instructions: str | None = Form(None),
+    monthly_rent: str | None = Form(None),
+    available_from: str | None = Form(None),
+    contact_name: str | None = Form(None),
+    contact_phone: str | None = Form(None),
+    contact_email: str | None = Form(None),
+    existing_photo_filenames: str | None = Form(None),
+    files: list[UploadFile] = File(default=[]),
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Use Gemini (with vision) to draft a campaign title, description, and suggested asking rent."""
+    import json
+    import google.generativeai as genai
+
+    _, member = current
+
+    api_key = os.environ.get("GEMINI_API_KEY", "")
+    if not api_key:
+        raise HTTPException(status_code=503, detail="Gemini API key not configured")
+
+    unit_details = ""
+    if unit_id:
+        result = await db.execute(
+            select(Unit).join(Property).where(
+                Unit.id == unit_id,
+                Property.organization_id == member.organization_id,
+            )
+            .options(selectinload(Unit.property))
+        )
+        unit = result.scalar_one_or_none()
+        if not unit:
+            raise HTTPException(status_code=404, detail="Unit not found")
+        prop = unit.property
+        unit_details = (
+            f"UNIT DETAILS:\n"
+            f"Unit Number: {unit.unit_number}\n"
+            f"Bedrooms: {unit.bedrooms}\n"
+            f"Bathrooms: {unit.bathrooms}\n"
+            + (f"Square Feet: {unit.square_feet}\n" if unit.square_feet else "")
+            + f"Current Monthly Rent: ${unit.monthly_rent:,.2f}\n"
+            + (
+                f"Property Name: {prop.name}\n"
+                f"Address: {prop.address}, {prop.city}, {prop.state} {prop.zip_code}\n"
+                f"Property Type: {prop.property_type.value if hasattr(prop.property_type, 'value') else prop.property_type}\n"
+                if prop else ""
+            )
+        )
+
+    form_details = ""
+    if monthly_rent:
+        try:
+            form_details += f"Asking Monthly Rent: ${float(monthly_rent):,.2f}\n"
+        except ValueError:
+            pass
+    if available_from:
+        form_details += f"Available From: {available_from}\n"
+    if contact_name or contact_phone or contact_email:
+        form_details += "Contact for inquiries: " + ", ".join(
+            v for v in [contact_name, contact_phone, contact_email] if v
+        ) + "\n"
+
+    # Gather photo bytes for vision input: newly-staged uploads (create mode) +
+    # already-uploaded campaign photos (edit mode), capped to keep the prompt light.
+    image_parts: list[dict] = []
+    for fname in [f.strip() for f in (existing_photo_filenames or "").split(",") if f.strip()]:
+        if len(image_parts) >= MAX_AI_PHOTOS:
+            break
+        path = UPLOAD_DIR / fname
+        if path.is_file():
+            ext = path.suffix.lower()
+            mime = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}.get(ext, "image/jpeg")
+            image_parts.append({"mime_type": mime, "data": path.read_bytes()})
+    for upload in files:
+        if len(image_parts) >= MAX_AI_PHOTOS:
+            break
+        content = await upload.read()
+        if content:
+            image_parts.append({"mime_type": upload.content_type or "image/jpeg", "data": content})
+
+    if not unit_details and not extra_instructions and not form_details and not image_parts:
+        raise HTTPException(status_code=400, detail="Select a unit or add some instructions first")
+
+    prompt = (
+        "You are a rental property marketing copywriter. Draft a rental listing based on the details below.\n\n"
+        + (unit_details or "No specific unit was selected — write generic but compelling rental listing copy.\n")
+        + (f"\nCURRENT CAMPAIGN FORM VALUES (use these as the source of truth — they may override the unit's defaults above; weave availability and contact info naturally into the description where relevant):\n{form_details}" if form_details else "")
+        + (f"\nADDITIONAL INSTRUCTIONS FROM THE LANDLORD:\n{extra_instructions}\n" if extra_instructions else "")
+        + (
+            f"\n{len(image_parts)} PHOTO(S) OF THE UNIT ARE ATTACHED — look at them and weave in specific, "
+            "accurate visual details (finishes, layout, natural light, staging, condition) that you can actually "
+            "see. Do not invent or assume anything not visible in the photos or stated in the details above.\n"
+            if image_parts else ""
+        )
+        + "\nReturn ONLY a JSON object with these exact keys:\n"
+        "title (a short, catchy listing headline, under 80 characters),\n"
+        "description (2-3 short paragraphs of engaging rental marketing copy, plain text, no markdown),\n"
+        "suggested_rent (a realistic competitive monthly rent as a plain number reasoned from the unit details "
+        "provided; use null if an asking rent was already given in the current campaign form values above, "
+        "or if no unit details were given and there isn't enough information to estimate).\n"
+        "No explanation, no markdown fences, just the JSON object."
+    )
+
+    try:
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel("gemini-2.5-flash")
+        response = model.generate_content([prompt, *image_parts] if image_parts else prompt)
+        raw = response.text or ""
+    except Exception as e:
+        err_str = str(e)
+        if "quota" in err_str.lower() or "429" in err_str:
+            raise HTTPException(status_code=402, detail="Gemini quota exceeded — check your API key at aistudio.google.com")
+        raise HTTPException(status_code=502, detail=f"Gemini error: {err_str[:200]}")
+
+    raw = raw.strip()
+    if raw.startswith("```"):
+        raw = raw.split("```")[1]
+        if raw.startswith("json"):
+            raw = raw[4:]
+    raw = raw.strip()
+
+    try:
+        data = json.loads(raw)
+    except Exception:
+        raise HTTPException(status_code=422, detail=f"Could not parse AI response: {raw[:200]}")
+
+    return CampaignAIGenerateOut(
+        title=data.get("title") or "",
+        description=data.get("description") or "",
+        suggested_rent=data.get("suggested_rent"),
+    )
 
 
 # ── Update ─────────────────────────────────────────────────────────────────────
@@ -117,7 +286,7 @@ async def create_campaign(
 async def update_campaign(
     campaign_id: str,
     body: CampaignUpdate,
-    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.MANAGER)),
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
     _, member = current
@@ -133,7 +302,7 @@ async def update_campaign(
 @router.delete("/{campaign_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_campaign(
     campaign_id: str,
-    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.MANAGER)),
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
     _, member = current
@@ -156,7 +325,7 @@ async def delete_campaign(
 async def upload_photo(
     campaign_id: str,
     file: UploadFile = File(...),
-    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.MANAGER)),
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
     _, member = current
@@ -181,7 +350,7 @@ async def upload_photo(
 async def delete_photo(
     campaign_id: str,
     filename: str,
-    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.MANAGER)),
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
     _, member = current
@@ -202,7 +371,7 @@ async def delete_photo(
 @router.post("/{campaign_id}/publish", response_model=CampaignOut)
 async def publish_campaign(
     campaign_id: str,
-    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.MANAGER)),
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
     _, member = current
@@ -298,7 +467,7 @@ async def publish_campaign(
 @router.post("/{campaign_id}/archive", response_model=CampaignOut)
 async def archive_campaign(
     campaign_id: str,
-    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.MANAGER)),
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
     _, member = current
@@ -312,7 +481,7 @@ async def archive_campaign(
 
 @router.get("/fb-settings", response_model=OrgFbSettingsOut)
 async def get_fb_settings(
-    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.MANAGER)),
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
     _, member = current
@@ -327,7 +496,7 @@ async def get_fb_settings(
 @router.put("/fb-settings", response_model=OrgFbSettingsOut)
 async def update_fb_settings(
     body: OrgFbSettingsUpdate,
-    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.MANAGER)),
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
     _, member = current
@@ -341,3 +510,96 @@ async def update_fb_settings(
         org.fb_page_id = body.fb_page_id or None
     await db.commit()
     return OrgFbSettingsOut(fb_page_id=org.fb_page_id, fb_page_token_set=bool(org.fb_page_token))
+
+
+# ── Marketing sites (org-level, custom posting websites) ───────────────────────
+
+@router.get("/marketing-sites", response_model=list[MarketingSiteOut])
+async def list_marketing_sites(
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
+    db: AsyncSession = Depends(get_db),
+):
+    _, member = current
+    result = await db.execute(
+        select(MarketingSite)
+        .where(MarketingSite.organization_id == member.organization_id)
+        .order_by(MarketingSite.created_at)
+    )
+    existing = result.scalars().all()
+    if not existing:
+        # Orgs created before this feature shipped never got the default
+        # sites seeded at registration — bootstrap them lazily, once.
+        for site_name, site_url in DEFAULT_MARKETING_SITES:
+            db.add(MarketingSite(organization_id=member.organization_id, name=site_name, url=site_url))
+        await db.commit()
+        result = await db.execute(
+            select(MarketingSite)
+            .where(MarketingSite.organization_id == member.organization_id)
+            .order_by(MarketingSite.created_at)
+        )
+        existing = result.scalars().all()
+    return existing
+
+
+@router.post("/marketing-sites", response_model=MarketingSiteOut, status_code=status.HTTP_201_CREATED)
+async def create_marketing_site(
+    body: MarketingSiteCreate,
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
+    db: AsyncSession = Depends(get_db),
+):
+    _, member = current
+    name = body.name.strip()
+    url = body.url.strip()
+    if not name or not url:
+        raise HTTPException(status_code=400, detail="Name and URL are required")
+    if not url.startswith("http://") and not url.startswith("https://"):
+        url = f"https://{url}"
+    site = MarketingSite(organization_id=member.organization_id, name=name, url=url)
+    db.add(site)
+    await db.commit()
+    await db.refresh(site)
+    return site
+
+
+@router.put("/marketing-sites/{site_id}", response_model=MarketingSiteOut)
+async def update_marketing_site(
+    site_id: str,
+    body: MarketingSiteCreate,
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
+    db: AsyncSession = Depends(get_db),
+):
+    _, member = current
+    result = await db.execute(
+        select(MarketingSite).where(MarketingSite.id == site_id, MarketingSite.organization_id == member.organization_id)
+    )
+    site = result.scalar_one_or_none()
+    if not site:
+        raise HTTPException(status_code=404, detail="Marketing site not found")
+    name = body.name.strip()
+    url = body.url.strip()
+    if not name or not url:
+        raise HTTPException(status_code=400, detail="Name and URL are required")
+    if not url.startswith("http://") and not url.startswith("https://"):
+        url = f"https://{url}"
+    site.name = name
+    site.url = url
+    await db.commit()
+    await db.refresh(site)
+    return site
+
+
+@router.delete("/marketing-sites/{site_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_marketing_site(
+    site_id: str,
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
+    db: AsyncSession = Depends(get_db),
+):
+    _, member = current
+    result = await db.execute(
+        select(MarketingSite).where(MarketingSite.id == site_id, MarketingSite.organization_id == member.organization_id)
+    )
+    site = result.scalar_one_or_none()
+    if not site:
+        raise HTTPException(status_code=404, detail="Marketing site not found")
+    await db.delete(site)
+    await db.commit()

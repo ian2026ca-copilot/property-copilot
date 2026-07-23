@@ -76,7 +76,7 @@ async def list_property_images(
 async def upload_property_image(
     property_id: str,
     file: UploadFile = File(...),
-    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.MANAGER)),
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
     _, member = current
@@ -98,7 +98,7 @@ async def upload_property_image(
 async def delete_property_image(
     property_id: str,
     image_id: str,
-    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.MANAGER)),
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
     _, member = current
@@ -140,7 +140,7 @@ async def upload_unit_image(
     property_id: str,
     unit_id: str,
     file: UploadFile = File(...),
-    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.MANAGER)),
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
     _, member = current
@@ -163,7 +163,7 @@ async def delete_unit_image(
     property_id: str,
     unit_id: str,
     image_id: str,
-    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.MANAGER)),
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
     _, member = current

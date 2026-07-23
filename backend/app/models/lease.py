@@ -50,6 +50,9 @@ class Lease(Base, TimestampMixin):
     lease_type: Mapped[LeaseType] = mapped_column(SAEnum(LeaseType, name="leasetype"), nullable=False, default=LeaseType.FIXED)
     document_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     landlord_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    landlord_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    docusign_envelope_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    signature_status: Mapped[str | None] = mapped_column(String(30), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     unit: Mapped["Unit"] = relationship(back_populates="leases")  # noqa: F821

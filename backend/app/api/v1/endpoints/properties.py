@@ -65,7 +65,7 @@ async def list_properties(
 @router.post("", response_model=PropertyOut, status_code=status.HTTP_201_CREATED)
 async def create_property(
     body: PropertyCreate,
-    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.MANAGER)),
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
     _, member = current
@@ -92,7 +92,7 @@ async def get_property(
 async def update_property(
     property_id: str,
     body: PropertyUpdate,
-    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.MANAGER)),
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
     _, member = current
@@ -111,7 +111,7 @@ async def update_property(
 async def set_cover_image(
     property_id: str,
     body: dict,
-    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.MANAGER)),
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
     _, member = current
@@ -246,7 +246,7 @@ async def list_units(
 async def create_unit(
     property_id: str,
     body: UnitCreate,
-    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.MANAGER)),
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
     _, member = current
@@ -263,7 +263,7 @@ async def update_unit(
     property_id: str,
     unit_id: str,
     body: UnitUpdate,
-    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.MANAGER)),
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
     _, member = current
@@ -285,7 +285,7 @@ async def update_unit(
 async def delete_unit(
     property_id: str,
     unit_id: str,
-    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.MANAGER)),
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
     _, member = current

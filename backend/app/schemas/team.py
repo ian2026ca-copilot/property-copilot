@@ -18,8 +18,4 @@ class TeamMemberOut(BaseModel):
 class TeamInvite(BaseModel):
     full_name: str
     email: EmailStr
-    role: Literal["MANAGER", "AGENT"]
-
-
-class RoleUpdate(BaseModel):
-    role: Literal["MANAGER", "AGENT"]
+    role: Literal["OWNER", "VENDOR"]

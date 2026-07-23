@@ -187,7 +187,7 @@ async def update_request(
 async def review_request(
     request_id: str,
     body: MaintenanceReview,
-    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.AGENT)),
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
     _, member = current
@@ -206,7 +206,7 @@ async def review_request(
 async def schedule_request(
     request_id: str,
     body: MaintenanceSchedule,
-    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.AGENT)),
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
     _, member = current

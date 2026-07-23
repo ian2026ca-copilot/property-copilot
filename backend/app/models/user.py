@@ -1,8 +1,7 @@
 import uuid
 import enum
-from datetime import date
 
-from sqlalchemy import String, ForeignKey, Enum as SAEnum, Date
+from sqlalchemy import String, ForeignKey, Enum as SAEnum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -12,8 +11,6 @@ from app.models.base import TimestampMixin, new_uuid
 
 class UserRole(str, enum.Enum):
     OWNER = "OWNER"
-    MANAGER = "MANAGER"
-    AGENT = "AGENT"
     TENANT = "TENANT"
     VENDOR = "VENDOR"
 
@@ -26,19 +23,15 @@ class User(Base, TimestampMixin):
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
     first_name: Mapped[str | None] = mapped_column(String(150), nullable=True)
     last_name: Mapped[str | None] = mapped_column(String(150), nullable=True)
-    date_of_birth: Mapped[date | None] = mapped_column(Date, nullable=True)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     phone: Mapped[str] = mapped_column(String(30), nullable=False, default="")
     avatar_filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    street_address: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    city: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    province: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    postal_code: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    country: Mapped[str | None] = mapped_column(String(100), nullable=True)
     is_active: Mapped[bool] = mapped_column(default=True)
 
     memberships: Mapped[list["OrganizationMember"]] = relationship(back_populates="user")
     tenant_documents: Mapped[list["TenantDocument"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    tenant_profile: Mapped["TenantProfile | None"] = relationship(back_populates="user", uselist=False, cascade="all, delete-orphan")  # noqa: F821
+    owner_profile: Mapped["OwnerProfile | None"] = relationship(back_populates="user", uselist=False, cascade="all, delete-orphan")  # noqa: F821
 
     @property
     def display_name(self) -> str:

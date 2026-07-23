@@ -88,6 +88,7 @@ class LeaseCreate(BaseModel):
     security_deposit: float = 0.0
     lease_type: LeaseType = LeaseType.FIXED
     landlord_name: str | None = None
+    landlord_email: str | None = None
     notes: str | None = None
 
 
@@ -106,6 +107,7 @@ class LeaseUpdate(BaseModel):
     lease_type: LeaseType | None = None
     status: LeaseStatus | None = None
     landlord_name: str | None = None
+    landlord_email: str | None = None
     notes: str | None = None
 
 
@@ -119,6 +121,7 @@ class LeaseRenew(BaseModel):
     security_deposit: float | None = None
     lease_type: LeaseType | None = None
     landlord_name: str | None = None
+    landlord_email: str | None = None
     notes: str | None = None
 
 
@@ -142,6 +145,9 @@ class LeaseOut(BaseModel):
     lease_type: LeaseType = LeaseType.FIXED
     document_url: str | None = None
     landlord_name: str | None = None
+    landlord_email: str | None = None
+    docusign_envelope_id: str | None = None
+    signature_status: str | None = None
     notes: str | None
     tenant: TenantOut | None = None
     co_tenants: list[TenantOut] = []

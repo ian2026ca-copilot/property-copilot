@@ -18,15 +18,11 @@ const tabs = [
 
 const ROLE_COLORS: Record<string, string> = {
   OWNER: "bg-violet-600",
-  MANAGER: "bg-emerald-600",
-  AGENT: "bg-sky-600",
   TENANT: "bg-amber-600",
 };
 
 const ROLE_LABELS: Record<string, string> = {
   OWNER: "Property Owner",
-  MANAGER: "Property Manager",
-  AGENT: "Leasing Agent",
   TENANT: "Tenant",
 };
 
@@ -92,10 +88,10 @@ export default function Topbar() {
             <button
               onClick={() => setShowUserMenu((v) => !v)}
               className={`px-2.5 py-1 rounded text-white text-xs font-medium transition-colors ${
-                ROLE_COLORS[user?.role ?? "MANAGER"] ?? "bg-white/20"
+                ROLE_COLORS[user?.role ?? "OWNER"] ?? "bg-white/20"
               }`}
             >
-              {ROLE_LABELS[user?.role ?? "MANAGER"] ?? user?.role}
+              {ROLE_LABELS[user?.role ?? "OWNER"] ?? user?.role}
             </button>
             {showUserMenu && (
               <div className="absolute right-0 top-full mt-1 w-44 bg-white rounded-lg shadow-lg border border-slate-100 py-1 z-50">

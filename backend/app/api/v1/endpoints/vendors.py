@@ -28,6 +28,7 @@ def _vendor_to_out(vendor: Vendor) -> VendorOut:
         user_id=vendor.user_id,
         business_name=vendor.business_name,
         service_categories=vendor.service_categories or [],
+        is_public=vendor.is_public,
         full_name=vendor.user.full_name,
         email=vendor.user.email,
         phone=vendor.user.phone or "",
@@ -68,7 +69,7 @@ async def list_vendors(
 @router.post("", response_model=VendorOut, status_code=status.HTTP_201_CREATED)
 async def create_vendor(
     body: VendorCreate,
-    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.MANAGER)),
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
     _, member = current
@@ -110,10 +111,22 @@ async def create_vendor(
             user_id=user.id,
             business_name=body.business_name,
             service_categories=body.service_categories,
+            is_public=body.is_public,
         )
         db.add(vendor)
         await db.flush()
     else:
+        # A private vendor only works for the organization that added them —
+        # block any other organization from linking to this same vendor record.
+        if not vendor.is_public:
+            other_link_res = await db.execute(
+                select(VendorOrganization).where(
+                    VendorOrganization.vendor_id == vendor.id,
+                    VendorOrganization.organization_id != member.organization_id,
+                )
+            )
+            if other_link_res.scalar_one_or_none():
+                raise HTTPException(status_code=403, detail="This vendor is private and cannot be added to another organization")
         vendor.business_name = body.business_name
         vendor.service_categories = body.service_categories
 
@@ -140,7 +153,7 @@ async def create_vendor(
 async def update_vendor(
     vendor_id: str,
     body: VendorUpdate,
-    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.MANAGER)),
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
     vendor = await _get_vendor(vendor_id, db)
@@ -158,7 +171,7 @@ async def update_vendor(
 @router.delete("/{vendor_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def remove_vendor(
     vendor_id: str,
-    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.MANAGER)),
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
     _, member = current
