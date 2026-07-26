@@ -29,9 +29,11 @@ function fmtDate(s: string) {
 // ─── Job Card ─────────────────────────────────────────────────────────────────
 
 function JobCard({ req, onUpdate }: { req: MaintenanceOut; onUpdate: (r: MaintenanceOut) => void }) {
+  const { user } = useAuth();
   const [expanded, setExpanded] = useState(false);
-  const [notes, setNotes] = useState(req.resolution_notes ?? "");
+  const [newNote, setNewNote] = useState("");
   const [saving, setSaving] = useState(false);
+  const [addingNote, setAddingNote] = useState(false);
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -41,10 +43,16 @@ function JobCard({ req, onUpdate }: { req: MaintenanceOut; onUpdate: (r: Mainten
     finally { setSaving(false); }
   }
 
-  async function saveNotes() {
-    setSaving(true);
-    try { onUpdate(await maintenanceApi.update(req.id, { resolution_notes: notes || null })); }
-    finally { setSaving(false); }
+  async function addNote() {
+    if (!newNote.trim()) return;
+    setAddingNote(true);
+    try { onUpdate(await maintenanceApi.addNote(req.id, newNote.trim())); setNewNote(""); }
+    finally { setAddingNote(false); }
+  }
+
+  async function deleteNote(noteId: string) {
+    await maintenanceApi.removeNote(req.id, noteId);
+    onUpdate({ ...req, notes: req.notes.filter(n => n.id !== noteId) });
   }
 
   async function handlePhoto(e: React.ChangeEvent<HTMLInputElement>) {
@@ -137,17 +145,37 @@ function JobCard({ req, onUpdate }: { req: MaintenanceOut; onUpdate: (r: Mainten
             </div>
           )}
 
-          {/* Resolution notes */}
-          {!isDone && (
-            <div>
-              <label className="block text-xs font-medium text-slate-500 mb-1">Resolution notes</label>
-              <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3}
-                className={`${inp} resize-none`} placeholder="Describe what was done…" />
-              <button onClick={saveNotes} disabled={saving} className="mt-1.5 text-xs text-black hover:underline disabled:opacity-50">
-                {saving ? "Saving…" : "Save notes"}
-              </button>
-            </div>
-          )}
+          {/* Notes log */}
+          <div>
+            <p className="text-xs font-medium text-slate-500 mb-2">Notes ({req.notes.length})</p>
+            {req.notes.length > 0 && (
+              <div className="space-y-2 mb-2 max-h-48 overflow-y-auto pr-1">
+                {req.notes.map(n => (
+                  <div key={n.id} className="bg-slate-50 rounded-lg px-3 py-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs font-medium text-slate-700">{n.author_name}</p>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <p className="text-[11px] text-slate-400">{fmtDt(n.created_at)}</p>
+                        {n.author_user_id === user?.id && (
+                          <button onClick={() => deleteNote(n.id)} className="text-[11px] text-slate-400 hover:text-red-500">Delete</button>
+                        )}
+                      </div>
+                    </div>
+                    <p className="text-sm text-slate-700 whitespace-pre-wrap mt-0.5">{n.note}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+            {!isDone && (
+              <div>
+                <textarea value={newNote} onChange={e => setNewNote(e.target.value)} rows={2}
+                  className={`${inp} resize-none`} placeholder="Describe what was done…" />
+                <button onClick={addNote} disabled={addingNote || !newNote.trim()} className="mt-1.5 text-xs text-black hover:underline disabled:opacity-50">
+                  {addingNote ? "Adding…" : "Add note"}
+                </button>
+              </div>
+            )}
+          </div>
 
           {/* Photo upload (in progress only) */}
           {canComplete && (

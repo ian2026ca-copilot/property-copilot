@@ -29,6 +29,11 @@ def _vendor_to_out(vendor: Vendor) -> VendorOut:
         business_name=vendor.business_name,
         service_categories=vendor.service_categories or [],
         is_public=vendor.is_public,
+        street_address=vendor.street_address,
+        city=vendor.city,
+        province=vendor.province,
+        postal_code=vendor.postal_code,
+        country=vendor.country,
         full_name=vendor.user.full_name,
         email=vendor.user.email,
         phone=vendor.user.phone or "",
@@ -104,6 +109,7 @@ async def create_vendor(
         ))
 
     # Upsert vendor profile
+    address_fields = ("street_address", "city", "province", "postal_code", "country")
     v_res = await db.execute(select(Vendor).where(Vendor.user_id == user.id))
     vendor = v_res.scalar_one_or_none()
     if not vendor:
@@ -112,6 +118,7 @@ async def create_vendor(
             business_name=body.business_name,
             service_categories=body.service_categories,
             is_public=body.is_public,
+            **{f: getattr(body, f) for f in address_fields},
         )
         db.add(vendor)
         await db.flush()
@@ -129,6 +136,10 @@ async def create_vendor(
                 raise HTTPException(status_code=403, detail="This vendor is private and cannot be added to another organization")
         vendor.business_name = body.business_name
         vendor.service_categories = body.service_categories
+        for f in address_fields:
+            val = getattr(body, f)
+            if val is not None:
+                setattr(vendor, f, val)
 
     # Link vendor to org
     link_res = await db.execute(

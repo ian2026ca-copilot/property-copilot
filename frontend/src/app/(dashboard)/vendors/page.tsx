@@ -5,6 +5,13 @@ import { vendorsApi, type VendorOut, type VendorAvailabilityOut } from "@/lib/ap
 
 const CATEGORIES = ["Plumbing","Electrical","HVAC","Appliance","Structural","Painting","Pest Control","Cleaning","Landscaping","Other"];
 
+const COUNTRIES = ["Canada", "USA"] as const;
+type Country = typeof COUNTRIES[number];
+const PROVINCES: Record<Country, string[]> = {
+  Canada: ["AB","BC","MB","NB","NL","NS","NT","NU","ON","PE","QC","SK","YT"],
+  USA: ["AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA","KS","KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ","NM","NY","NC","ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT","VA","WA","WV","WI","WY"],
+};
+
 const inp = "w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black";
 
 function fmtDate(s: string) {
@@ -14,13 +21,17 @@ function fmtDate(s: string) {
 // ─── Invite Modal ─────────────────────────────────────────────────────────────
 
 function InviteModal({ onClose, onSave }: { onClose: () => void; onSave: (v: VendorOut) => void }) {
-  const [form, setForm] = useState({ full_name: "", email: "", phone: "", business_name: "" });
+  const [form, setForm] = useState({
+    full_name: "", email: "", phone: "", business_name: "",
+    street_address: "", city: "", postal_code: "", country: "", province: "",
+  });
   const [cats, setCats] = useState<string[]>([]);
   const [isPublic, setIsPublic] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  function set(k: string, v: string) { setForm(f => ({ ...f, [k]: v })); }
+  function set(k: string, v: string) { setForm(f => ({ ...f, [k]: v, ...(k === "country" ? { province: "" } : {}) })); }
   function toggleCat(c: string) { setCats(cs => cs.includes(c) ? cs.filter(x => x !== c) : [...cs, c]); }
+  const provinceList = form.country ? PROVINCES[form.country as Country] ?? [] : [];
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -57,6 +68,28 @@ function InviteModal({ onClose, onSave }: { onClose: () => void; onSave: (v: Ven
             <div className="col-span-2">
               <label className="block text-xs font-medium text-slate-500 mb-1">Business name</label>
               <input value={form.business_name} onChange={e => set("business_name", e.target.value)} className={inp} />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-2">Address (optional)</label>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="col-span-2">
+                <input value={form.street_address} onChange={e => set("street_address", e.target.value)} placeholder="Street address" className={inp} />
+              </div>
+              <input value={form.city} onChange={e => set("city", e.target.value)} placeholder="City" className={inp} />
+              <input value={form.postal_code} onChange={e => set("postal_code", e.target.value)} placeholder="Postal / ZIP code" className={inp} />
+              <div>
+                <select value={form.country} onChange={e => set("country", e.target.value)} className={inp}>
+                  <option value="">— select country —</option>
+                  {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+              <div>
+                <select value={form.province} onChange={e => set("province", e.target.value)} disabled={!form.country} className={`${inp} disabled:opacity-50`}>
+                  <option value="">— select province/state —</option>
+                  {provinceList.map(p => <option key={p} value={p}>{p}</option>)}
+                </select>
+              </div>
             </div>
           </div>
           <div>
@@ -194,17 +227,23 @@ function AvailabilityPanel({ vendor, onClose }: { vendor: VendorOut; onClose: ()
 // ─── Edit Vendor Modal ────────────────────────────────────────────────────────
 
 function EditVendorModal({ vendor, onClose, onSave }: { vendor: VendorOut; onClose: () => void; onSave: (v: VendorOut) => void }) {
-  const [form, setForm] = useState({ business_name: vendor.business_name, phone: vendor.phone });
+  const [form, setForm] = useState({
+    business_name: vendor.business_name, phone: vendor.phone,
+    street_address: vendor.street_address ?? "", city: vendor.city ?? "",
+    postal_code: vendor.postal_code ?? "", country: vendor.country ?? "", province: vendor.province ?? "",
+  });
   const [cats, setCats] = useState<string[]>(vendor.service_categories);
   const [isPublic, setIsPublic] = useState(vendor.is_public);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  function set(k: string, v: string) { setForm(f => ({ ...f, [k]: v, ...(k === "country" ? { province: "" } : {}) })); }
   function toggleCat(c: string) { setCats(cs => cs.includes(c) ? cs.filter(x => x !== c) : [...cs, c]); }
+  const provinceList = form.country ? PROVINCES[form.country as Country] ?? [] : [];
 
   async function submit(e: React.FormEvent) {
     e.preventDefault(); setSaving(true);
     try {
-      const v = await vendorsApi.update(vendor.id, { business_name: form.business_name, phone: form.phone, service_categories: cats, is_public: isPublic });
+      const v = await vendorsApi.update(vendor.id, { ...form, service_categories: cats, is_public: isPublic });
       onSave(v);
     } catch (err: any) { setError(err.message ?? "Failed"); } finally { setSaving(false); }
   }
@@ -223,6 +262,28 @@ function EditVendorModal({ vendor, onClose, onSave }: { vendor: VendorOut; onClo
           </div>
           <div><label className="block text-xs font-medium text-slate-500 mb-1">Phone</label>
             <input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} className={inp} />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-2">Address</label>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="col-span-2">
+                <input value={form.street_address} onChange={e => set("street_address", e.target.value)} placeholder="Street address" className={inp} />
+              </div>
+              <input value={form.city} onChange={e => set("city", e.target.value)} placeholder="City" className={inp} />
+              <input value={form.postal_code} onChange={e => set("postal_code", e.target.value)} placeholder="Postal / ZIP code" className={inp} />
+              <div>
+                <select value={form.country} onChange={e => set("country", e.target.value)} className={inp}>
+                  <option value="">— select country —</option>
+                  {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+              <div>
+                <select value={form.province} onChange={e => set("province", e.target.value)} disabled={!form.country} className={`${inp} disabled:opacity-50`}>
+                  <option value="">— select province/state —</option>
+                  {provinceList.map(p => <option key={p} value={p}>{p}</option>)}
+                </select>
+              </div>
+            </div>
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-500 mb-2">Service categories</label>

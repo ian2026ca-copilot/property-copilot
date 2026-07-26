@@ -169,8 +169,17 @@ export interface MaintenanceAttachmentOut {
   url: string;
 }
 
+export interface MaintenanceNoteOut {
+  id: string;
+  note: string;
+  author_name: string;
+  author_user_id: string;
+  created_at: string | null;
+}
+
 export type MaintenanceStatus = "SUBMITTED" | "UNDER_REVIEW" | "SCHEDULED" | "IN_PROGRESS" | "COMPLETED" | "CLOSED" | "CANCELLED";
 export type MaintenancePriority = "LOW" | "MEDIUM" | "HIGH" | "EMERGENCY";
+export type PaymentStatus = "UNPAID" | "PAID";
 
 export interface MaintenanceOut {
   id: string;
@@ -181,6 +190,10 @@ export interface MaintenanceOut {
   priority: MaintenancePriority;
   status: MaintenanceStatus;
   assignee_name: string | null;
+  price: number | null;
+  tax: number | null;
+  total: number | null;
+  payment_status: PaymentStatus;
   submitted_by_name: string | null;
   submitted_by_user_id: string | null;
   tenant_email: string | null;
@@ -198,8 +211,8 @@ export interface MaintenanceOut {
   vendor_name: string | null;
   scheduled_start: string | null;
   scheduled_end: string | null;
-  resolution_notes: string | null;
   attachments: MaintenanceAttachmentOut[];
+  notes: MaintenanceNoteOut[];
 }
 
 export interface VendorOut {
@@ -208,6 +221,11 @@ export interface VendorOut {
   business_name: string;
   service_categories: string[];
   is_public: boolean;
+  street_address: string | null;
+  city: string | null;
+  province: string | null;
+  postal_code: string | null;
+  country: string | null;
   full_name: string;
   email: string;
   phone: string;
@@ -423,14 +441,22 @@ export const paymentsApi = {
   void: (id: string) => api.delete<void>(`/payments/${id}`),
 };
 
+export interface MaintenanceAIGenerateOut {
+  title: string;
+  description: string;
+}
+
 export const maintenanceApi = {
   list: () => api.get<MaintenanceOut[]>("/maintenance"),
+  aiGenerate: (body: { unit_id?: string; category?: string; priority?: string; extra_instructions?: string }) =>
+    api.post<MaintenanceAIGenerateOut>("/maintenance/ai-generate", body),
   listAssigned: () => api.get<MaintenanceOut[]>("/maintenance/assigned/me"),
   get: (id: string) => api.get<MaintenanceOut>(`/maintenance/${id}`),
   create: (body: object) => api.post<MaintenanceOut>("/maintenance", body),
   update: (id: string, body: object) => api.patch<MaintenanceOut>(`/maintenance/${id}`, body),
   review: (id: string, body: object) => api.put<MaintenanceOut>(`/maintenance/${id}/review`, body),
   schedule: (id: string, body: object) => api.put<MaintenanceOut>(`/maintenance/${id}/schedule`, body),
+  remove: (id: string) => api.delete<void>(`/maintenance/${id}`),
   uploadAttachment: (id: string, file: File) => {
     const token = typeof document !== "undefined"
       ? (document.cookie.match(/(?:^|; )token=([^;]*)/) || [])[1] : null;
@@ -445,6 +471,8 @@ export const maintenanceApi = {
       });
   },
   deleteAttachment: (id: string, attId: string) => api.delete<void>(`/maintenance/${id}/attachments/${attId}`),
+  addNote: (id: string, note: string) => api.post<MaintenanceOut>(`/maintenance/${id}/notes`, { note }),
+  removeNote: (id: string, noteId: string) => api.delete<void>(`/maintenance/${id}/notes/${noteId}`),
 };
 
 export const vendorsApi = {
@@ -465,12 +493,35 @@ export interface TeamMemberOut {
   email: string;
   phone: string;
   role: "OWNER" | "TENANT" | "VENDOR";
+  business_name: string | null;
+  service_categories: string[];
+  is_public: boolean | null;
+  street_address: string | null;
+  city: string | null;
+  province: string | null;
+  postal_code: string | null;
+  country: string | null;
+}
+
+export interface TeamMemberUpdateIn {
+  full_name?: string;
+  phone?: string;
+  business_name?: string;
+  service_categories?: string[];
+  is_public?: boolean;
+  street_address?: string;
+  city?: string;
+  province?: string;
+  postal_code?: string;
+  country?: string;
 }
 
 export const teamApi = {
   list: () => api.get<TeamMemberOut[]>("/team"),
   invite: (body: { full_name: string; email: string; role: string }) =>
     api.post<TeamMemberOut>("/team", body),
+  update: (memberId: string, body: TeamMemberUpdateIn) =>
+    api.patch<TeamMemberOut>(`/team/${memberId}`, body),
   remove: (memberId: string) => api.delete<void>(`/team/${memberId}`),
 };
 

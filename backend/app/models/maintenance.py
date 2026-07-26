@@ -27,6 +27,11 @@ class MaintenanceStatus(str, enum.Enum):
     CANCELLED = "CANCELLED"
 
 
+class MaintenancePaymentStatus(str, enum.Enum):
+    UNPAID = "UNPAID"
+    PAID = "PAID"
+
+
 class MaintenanceRequest(Base, TimestampMixin):
     __tablename__ = "maintenance_requests"
 
@@ -41,6 +46,10 @@ class MaintenanceRequest(Base, TimestampMixin):
     priority: Mapped[MaintenancePriority] = mapped_column(SAEnum(MaintenancePriority), nullable=False, default=MaintenancePriority.MEDIUM)
     status: Mapped[MaintenanceStatus] = mapped_column(SAEnum(MaintenanceStatus), nullable=False, default=MaintenanceStatus.SUBMITTED)
     assignee_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    tax: Mapped[float | None] = mapped_column(Float, nullable=True)
+    total: Mapped[float | None] = mapped_column(Float, nullable=True)
+    payment_status: Mapped[MaintenancePaymentStatus] = mapped_column(SAEnum(MaintenancePaymentStatus, name="maintenance_payment_status"), nullable=False, default=MaintenancePaymentStatus.UNPAID)
 
     # Tenant preferred time window
     preferred_time_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -56,12 +65,12 @@ class MaintenanceRequest(Base, TimestampMixin):
     vendor_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     scheduled_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     scheduled_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    resolution_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     unit: Mapped["Unit"] = relationship(back_populates="maintenance_requests")  # noqa: F821
     submitted_by: Mapped["User"] = relationship(foreign_keys=[submitted_by_user_id])  # noqa: F821
     vendor: Mapped["User | None"] = relationship(foreign_keys=[vendor_id])  # noqa: F821
     attachments: Mapped[list["MaintenanceAttachment"]] = relationship(back_populates="request", cascade="all, delete-orphan")
+    notes: Mapped[list["MaintenanceNote"]] = relationship(back_populates="request", cascade="all, delete-orphan", order_by="MaintenanceNote.created_at")
 
 
 class MaintenanceAttachment(Base):
@@ -76,6 +85,19 @@ class MaintenanceAttachment(Base):
     request: Mapped["MaintenanceRequest"] = relationship(back_populates="attachments")
 
 
+class MaintenanceNote(Base):
+    __tablename__ = "maintenance_notes"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
+    request_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("maintenance_requests.id", ondelete="CASCADE"), index=True)
+    author_user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"))
+    note: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    request: Mapped["MaintenanceRequest"] = relationship(back_populates="notes")
+    author: Mapped["User"] = relationship()  # noqa: F821
+
+
 class Vendor(Base):
     __tablename__ = "vendors"
 
@@ -86,6 +108,11 @@ class Vendor(Base):
     # Private (default): only the organization that added this vendor can use them.
     # Public: other organizations may also add/link this same vendor by email.
     is_public: Mapped[bool] = mapped_column(default=False, nullable=False)
+    street_address: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    city: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    province: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    postal_code: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    country: Mapped[str | None] = mapped_column(String(100), nullable=True)
     created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     user: Mapped["User"] = relationship()  # noqa: F821

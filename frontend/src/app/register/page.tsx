@@ -22,10 +22,19 @@ const SERVICE_OPTIONS = [
   "Cleaning", "Landscaping", "Roofing", "Appliance Repair", "General Maintenance",
 ];
 
+const COUNTRIES = ["Canada", "USA"] as const;
+type Country = typeof COUNTRIES[number];
+const PROVINCES: Record<Country, string[]> = {
+  Canada: ["AB","BC","MB","NB","NL","NS","NT","NU","ON","PE","QC","SK","YT"],
+  USA: ["AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA","KS","KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ","NM","NY","NC","ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT","VA","WA","WV","WI","WY"],
+};
+const selectClass = "h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50";
+
 export default function RegisterPage() {
   const [form, setForm] = useState({
     first_name: "", last_name: "", email: "", password: "", org_name: "", role: "OWNER", phone: "",
     business_name: "", service_categories: [] as string[],
+    street_address: "", city: "", postal_code: "", country: "", province: "",
   });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -34,6 +43,11 @@ export default function RegisterPage() {
 
   const set = (field: string) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm((f) => ({ ...f, [field]: e.target.value }));
+
+  function setField(field: string, value: string) {
+    setForm((f) => ({ ...f, [field]: value, ...(field === "country" ? { province: "" } : {}) }));
+  }
+  const provinceList = form.country ? PROVINCES[form.country as Country] ?? [] : [];
 
   function toggleCategory(cat: string) {
     setForm(f => ({
@@ -182,6 +196,25 @@ export default function RegisterPage() {
               <div className="space-y-1.5">
                 <Label htmlFor="password">Password</Label>
                 <Input id="password" type="password" placeholder="At least 8 characters" value={form.password} onChange={set("password")} required minLength={8} />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Address <span className="text-slate-400 font-normal">(optional)</span></Label>
+                <Input placeholder="Street address" value={form.street_address} onChange={set("street_address")} />
+                <div className="grid grid-cols-2 gap-2">
+                  <Input placeholder="City" value={form.city} onChange={set("city")} />
+                  <Input placeholder="Postal / ZIP code" value={form.postal_code} onChange={set("postal_code")} />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <select className={selectClass} value={form.country} onChange={(e) => setField("country", e.target.value)}>
+                    <option value="">— select country —</option>
+                    {COUNTRIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                  <select className={selectClass} value={form.province} disabled={!form.country} onChange={(e) => setField("province", e.target.value)}>
+                    <option value="">— select province/state —</option>
+                    {provinceList.map((p) => <option key={p} value={p}>{p}</option>)}
+                  </select>
+                </div>
               </div>
 
               {error && <p className="text-sm text-red-600">{error}</p>}

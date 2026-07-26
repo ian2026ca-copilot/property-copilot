@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, date, time
 from pydantic import BaseModel
-from app.models.maintenance import MaintenancePriority, MaintenanceStatus
+from app.models.maintenance import MaintenancePriority, MaintenanceStatus, MaintenancePaymentStatus
 
 
 class AttachmentOut(BaseModel):
@@ -10,6 +10,19 @@ class AttachmentOut(BaseModel):
     original_name: str
     url: str
     model_config = {"from_attributes": True}
+
+
+class MaintenanceNoteOut(BaseModel):
+    id: uuid.UUID
+    note: str
+    author_name: str
+    author_user_id: uuid.UUID
+    created_at: datetime | None = None
+    model_config = {"from_attributes": True}
+
+
+class MaintenanceNoteCreate(BaseModel):
+    note: str
 
 
 class VendorSlotOut(BaseModel):
@@ -26,11 +39,28 @@ class VendorOut(BaseModel):
     business_name: str
     service_categories: list[str]
     is_public: bool
+    street_address: str | None = None
+    city: str | None = None
+    province: str | None = None
+    postal_code: str | None = None
+    country: str | None = None
     full_name: str
     email: str
     phone: str
     avatar_url: str | None = None
     model_config = {"from_attributes": True}
+
+
+class MaintenanceAIGenerateIn(BaseModel):
+    unit_id: uuid.UUID | None = None
+    category: str | None = None
+    priority: MaintenancePriority | None = None
+    extra_instructions: str | None = None
+
+
+class MaintenanceAIGenerateOut(BaseModel):
+    title: str
+    description: str
 
 
 class MaintenanceCreate(BaseModel):
@@ -39,6 +69,10 @@ class MaintenanceCreate(BaseModel):
     description: str
     category: str
     priority: MaintenancePriority = MaintenancePriority.MEDIUM
+    price: float | None = None
+    tax: float | None = None
+    total: float | None = None
+    payment_status: MaintenancePaymentStatus = MaintenancePaymentStatus.UNPAID
     preferred_time_start: datetime | None = None
     preferred_time_end: datetime | None = None
 
@@ -63,7 +97,17 @@ class MaintenanceUpdate(BaseModel):
     status: MaintenanceStatus | None = None
     assignee_name: str | None = None
     priority: MaintenancePriority | None = None
-    resolution_notes: str | None = None
+    unit_id: uuid.UUID | None = None
+    title: str | None = None
+    description: str | None = None
+    category: str | None = None
+    price: float | None = None
+    tax: float | None = None
+    total: float | None = None
+    payment_status: MaintenancePaymentStatus | None = None
+    preferred_time_start: datetime | None = None
+    preferred_time_end: datetime | None = None
+    vendor_id: uuid.UUID | None = None
 
 
 class MaintenanceOut(BaseModel):
@@ -75,6 +119,10 @@ class MaintenanceOut(BaseModel):
     priority: MaintenancePriority
     status: MaintenanceStatus
     assignee_name: str | None
+    price: float | None = None
+    tax: float | None = None
+    total: float | None = None
+    payment_status: MaintenancePaymentStatus = MaintenancePaymentStatus.UNPAID
     submitted_by_name: str | None = None
     submitted_by_user_id: uuid.UUID | None = None
     tenant_email: str | None = None
@@ -92,8 +140,8 @@ class MaintenanceOut(BaseModel):
     vendor_name: str | None = None
     scheduled_start: datetime | None = None
     scheduled_end: datetime | None = None
-    resolution_notes: str | None = None
     attachments: list[AttachmentOut] = []
+    notes: list[MaintenanceNoteOut] = []
     model_config = {"from_attributes": True}
 
 
@@ -105,6 +153,11 @@ class VendorCreate(BaseModel):
     business_name: str
     service_categories: list[str] = []
     is_public: bool = False
+    street_address: str | None = None
+    city: str | None = None
+    province: str | None = None
+    postal_code: str | None = None
+    country: str | None = None
 
 
 class VendorUpdate(BaseModel):
@@ -112,6 +165,11 @@ class VendorUpdate(BaseModel):
     service_categories: list[str] | None = None
     phone: str | None = None
     is_public: bool | None = None
+    street_address: str | None = None
+    city: str | None = None
+    province: str | None = None
+    postal_code: str | None = None
+    country: str | None = None
 
 
 class VendorAvailabilityCreate(BaseModel):

@@ -13,6 +13,7 @@ from app.models.organization import Organization
 from app.models.user import User, OrganizationMember, UserRole
 from app.models.password_reset import PasswordResetToken
 from app.models.maintenance import Vendor
+from app.models.profiles import OwnerProfile, TenantProfile
 from app.models.marketing_site import MarketingSite, DEFAULT_MARKETING_SITES
 from app.schemas.auth import RegisterRequest, LoginRequest, TokenResponse, UserOut, UserUpdate, ForgotPasswordRequest, ResetPasswordRequest
 from app.api.deps import get_current_user
@@ -65,13 +66,26 @@ async def register(body: RegisterRequest, background_tasks: BackgroundTasks, db:
     )
     db.add(member)
 
+    address_fields = {
+        "street_address": body.street_address,
+        "city": body.city,
+        "province": body.province,
+        "postal_code": body.postal_code,
+        "country": body.country,
+    }
+
     if role == UserRole.VENDOR:
         vendor = Vendor(
             user_id=user.id,
             business_name=body.business_name or body.full_name,
             service_categories=body.service_categories,
+            **address_fields,
         )
         db.add(vendor)
+    elif role == UserRole.TENANT:
+        db.add(TenantProfile(user_id=user.id, **address_fields))
+    else:
+        db.add(OwnerProfile(user_id=user.id, **address_fields))
 
     await db.commit()
 

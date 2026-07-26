@@ -3,18 +3,8 @@
 import { useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
-import { teamApi, profileApi, campaignsApi, vendorsApi, type TeamMemberOut, type MarketingSiteOut, type VendorOut } from "@/lib/api";
-import { can, hasMinRole } from "@/lib/roles";
+import { profileApi, campaignsApi, type MarketingSiteOut } from "@/lib/api";
 import { MOCK_MODE } from "@/lib/useApiData";
-
-// ─── Mock data ────────────────────────────────────────────────────────────────
-
-const MOCK_TEAM: TeamMemberOut[] = [
-  { member_id: "m1", user_id: "u1", full_name: "Jordan Ellis", email: "jordan@propertyco.com", phone: "", role: "OWNER" },
-  { member_id: "m2", user_id: "u2", full_name: "Alex Morgan", email: "alex@propertyco.com", phone: "", role: "OWNER" },
-  { member_id: "m3", user_id: "u3", full_name: "Taylor Brooks", email: "taylor@propertyco.com", phone: "", role: "OWNER" },
-  { member_id: "m4", user_id: "u4", full_name: "Casey Liu", email: "casey@propertyco.com", phone: "", role: "OWNER" },
-];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -35,191 +25,6 @@ const ROLE_DESCRIPTIONS: Record<string, string> = {
   TENANT:  "Portal access only — sees their own lease, payments, and maintenance requests",
   VENDOR:  "Assigned maintenance portal — receives jobs, updates status, uploads photos, and manages availability",
 };
-
-function initials(name: string) {
-  return name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase();
-}
-
-// ─── Invite modal ─────────────────────────────────────────────────────────────
-
-function InviteModal({ onClose, onSave }: { onClose: () => void; onSave: (m: TeamMemberOut) => void }) {
-  const [form, setForm] = useState({ full_name: "", email: "", role: "OWNER" });
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-  const set = (f: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
-    setForm(v => ({ ...v, [f]: e.target.value }));
-
-  async function handleSubmit() {
-    if (!form.full_name || !form.email) { setError("Name and email are required."); return; }
-    setSaving(true); setError("");
-    try {
-      const saved = await teamApi.invite(form as { full_name: string; email: string; role: string });
-      onSave(saved);
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Invite failed");
-    } finally { setSaving(false); }
-  }
-
-  // Mock mode: fake the save
-  async function handleMockSubmit() {
-    if (!form.full_name || !form.email) { setError("Name and email are required."); return; }
-    onSave({
-      member_id: `mock-${Date.now()}`,
-      user_id: `mock-u-${Date.now()}`,
-      full_name: form.full_name,
-      email: form.email,
-      phone: "",
-      role: form.role as TeamMemberOut["role"],
-    });
-  }
-
-  return (
-    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-          <h2 className="text-sm font-semibold text-slate-900">Invite team member</h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-700 text-lg leading-none">✕</button>
-        </div>
-        <div className="px-6 py-5 space-y-4">
-          {error && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
-          <div>
-            <label className="block text-xs font-medium text-slate-700 mb-1">Full name *</label>
-            <input value={form.full_name} onChange={set("full_name")} placeholder="Taylor Brooks" className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black" />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-slate-700 mb-1">Email *</label>
-            <input type="email" value={form.email} onChange={set("email")} placeholder="taylor@company.com" className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black" />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-slate-700 mb-1">Role</label>
-            <select value={form.role} onChange={set("role")} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black bg-white">
-              <option value="OWNER">Property Owner</option>
-              <option value="VENDOR">Vendor / Contractor</option>
-            </select>
-            <p className="text-[11px] text-slate-400 mt-1">{ROLE_DESCRIPTIONS[form.role]}</p>
-            {form.role === "VENDOR" && (
-              <p className="text-[11px] text-slate-400 mt-1">
-                Registered as a private vendor — works exclusively for your organization. Manage business details or make them public from the Vendors page.
-              </p>
-            )}
-          </div>
-        </div>
-        <div className="flex gap-3 px-6 py-4 border-t border-slate-100">
-          <button onClick={onClose} className="flex-1 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Cancel</button>
-          <button
-            onClick={MOCK_MODE ? handleMockSubmit : handleSubmit}
-            disabled={saving}
-            className="flex-1 py-2 text-sm bg-black text-white rounded-lg hover:bg-slate-800 font-medium disabled:opacity-50"
-          >
-            {saving ? "Inviting…" : "Send invite"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── Confirm dialog ───────────────────────────────────────────────────────────
-
-function ConfirmDialog({ message, onConfirm, onCancel }: { message: string; onConfirm: () => void; onCancel: () => void }) {
-  return (
-    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
-        <p className="text-sm text-slate-700 mb-6">{message}</p>
-        <div className="flex gap-3">
-          <button onClick={onCancel} className="flex-1 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Cancel</button>
-          <button onClick={onConfirm} className="flex-1 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium">Remove</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── Create vendor modal ──────────────────────────────────────────────────────
-
-const VENDOR_CATEGORIES = ["Plumbing", "Electrical", "HVAC", "Appliance", "Structural", "Painting", "Pest Control", "Cleaning", "Landscaping", "Other"];
-
-function CreateVendorModal({ onClose, onSave }: { onClose: () => void; onSave: (v: VendorOut) => void }) {
-  const [form, setForm] = useState({ full_name: "", email: "", phone: "", business_name: "" });
-  const [cats, setCats] = useState<string[]>([]);
-  const [isPublic, setIsPublic] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-  function set(k: string, v: string) { setForm(f => ({ ...f, [k]: v })); }
-  function toggleCat(c: string) { setCats(cs => cs.includes(c) ? cs.filter(x => x !== c) : [...cs, c]); }
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!form.full_name || !form.email) { setError("Name and email are required."); return; }
-    setSaving(true); setError("");
-    try {
-      const v = await vendorsApi.create({ ...form, service_categories: cats, is_public: isPublic });
-      onSave(v);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to create vendor");
-    } finally { setSaving(false); }
-  }
-
-  return (
-    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-          <h2 className="text-sm font-semibold text-slate-900">Create vendor</h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-700 text-lg leading-none">✕</button>
-        </div>
-        <form onSubmit={submit} className="px-6 py-5 space-y-4">
-          {error && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
-          <div>
-            <label className="block text-xs font-medium text-slate-700 mb-1">Full name *</label>
-            <input value={form.full_name} onChange={e => set("full_name", e.target.value)} placeholder="Taylor Brooks" className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black" />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-slate-700 mb-1">Email *</label>
-            <input type="email" value={form.email} onChange={e => set("email", e.target.value)} placeholder="taylor@company.com" className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black" />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-slate-700 mb-1">Phone</label>
-            <input value={form.phone} onChange={e => set("phone", e.target.value)} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black" />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-slate-700 mb-1">Business name</label>
-            <input value={form.business_name} onChange={e => set("business_name", e.target.value)} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black" />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-slate-700 mb-2">Service categories</label>
-            <div className="flex flex-wrap gap-1.5">
-              {VENDOR_CATEGORIES.map(c => (
-                <button key={c} type="button" onClick={() => toggleCat(c)}
-                  className={`px-2.5 py-1 rounded-full text-xs border transition-colors ${cats.includes(c) ? "bg-black text-white border-black" : "border-slate-200 text-slate-600 hover:border-slate-400"}`}>
-                  {c}
-                </button>
-              ))}
-            </div>
-          </div>
-          <label className="flex items-start gap-2.5 p-3 rounded-xl border border-slate-200 cursor-pointer hover:bg-slate-50">
-            <input type="checkbox" className="mt-0.5" checked={isPublic} onChange={e => setIsPublic(e.target.checked)} />
-            <div>
-              <p className="text-sm font-medium text-slate-900">Make this vendor public</p>
-              <p className="text-[11px] text-slate-500 mt-0.5">
-                {isPublic
-                  ? "Public — other organizations can also add and share this vendor."
-                  : "Private (default) — this vendor works exclusively for your organization."}
-              </p>
-            </div>
-          </label>
-          <div className="flex gap-3 pt-2">
-            <button type="button" onClick={onClose} className="flex-1 px-4 py-2 border border-slate-200 rounded-lg text-sm text-slate-600 hover:bg-slate-50">Cancel</button>
-            <button type="submit" disabled={saving} className="flex-1 px-4 py-2 bg-black text-white rounded-lg text-sm font-medium hover:bg-slate-800 disabled:opacity-50">
-              {saving ? "Creating…" : "Create vendor"}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}
-
-// ─── Page ─────────────────────────────────────────────────────────────────────
 
 // ─── Profile tab ──────────────────────────────────────────────────────────────
 
@@ -448,64 +253,17 @@ function MarketingTab() {
 
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 
-type Modal =
-  | { type: "none" }
-  | { type: "invite" }
-  | { type: "createVendor" }
-  | { type: "remove"; member: TeamMemberOut };
-
 export default function SettingsPage() {
-  const { user } = useAuth();
-  const perms = can(user?.role);
   const searchParams = useSearchParams();
-  const [tab, setTab] = useState<"profile" | "team" | "roles" | "marketing">("profile");
-  const [team, setTeam] = useState<TeamMemberOut[]>(MOCK_TEAM);
-  const [modal, setModal] = useState<Modal>({ type: "none" });
+  const [tab, setTab] = useState<"profile" | "roles" | "marketing">("profile");
 
   useEffect(() => {
     const t = searchParams.get("tab");
-    if (t === "team" || t === "roles" || t === "marketing" || t === "profile") setTab(t);
+    if (t === "roles" || t === "marketing" || t === "profile") setTab(t);
   }, [searchParams]);
-
-  useEffect(() => {
-    if (MOCK_MODE) return;
-    teamApi.list().then(setTeam).catch(() => {});
-  }, []);
-
-  function handleInvited(m: TeamMemberOut) {
-    setTeam(prev => [...prev, m]);
-    setModal({ type: "none" });
-  }
-
-  function handleVendorCreated(_v: VendorOut) {
-    setModal({ type: "none" });
-    if (!MOCK_MODE) teamApi.list().then(setTeam).catch(() => {});
-  }
-
-  async function handleRemove(m: TeamMemberOut) {
-    if (!MOCK_MODE) {
-      try { await teamApi.remove(m.member_id); } catch { return; }
-    }
-    setTeam(prev => prev.filter(x => x.member_id !== m.member_id));
-    setModal({ type: "none" });
-  }
 
   return (
     <div className="max-w-[960px] mx-auto px-6 py-6 space-y-6">
-      {modal.type === "invite" && (
-        <InviteModal onClose={() => setModal({ type: "none" })} onSave={handleInvited} />
-      )}
-      {modal.type === "createVendor" && (
-        <CreateVendorModal onClose={() => setModal({ type: "none" })} onSave={handleVendorCreated} />
-      )}
-      {modal.type === "remove" && (
-        <ConfirmDialog
-          message={`Remove ${modal.member.full_name} from the team? They will lose all access.`}
-          onConfirm={() => handleRemove(modal.member)}
-          onCancel={() => setModal({ type: "none" })}
-        />
-      )}
-
       {/* Header */}
       <div>
         <p className="text-[11px] uppercase tracking-widest text-slate-400 font-medium">Account</p>
@@ -514,7 +272,7 @@ export default function SettingsPage() {
 
       {/* Tabs */}
       <div className="flex gap-1 border-b border-slate-200">
-        {(["profile", "team", "roles", "marketing"] as const).map((t) => (
+        {(["profile", "roles", "marketing"] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -522,7 +280,7 @@ export default function SettingsPage() {
               tab === t ? "border-black text-slate-900" : "border-transparent text-slate-500 hover:text-slate-700"
             }`}
           >
-            {t === "profile" ? "My profile" : t === "team" ? "Team members" : t === "roles" ? "Role guide" : "Marketing"}
+            {t === "profile" ? "My profile" : t === "roles" ? "Role guide" : "Marketing"}
           </button>
         ))}
       </div>
@@ -532,66 +290,6 @@ export default function SettingsPage() {
 
       {/* Marketing tab */}
       {tab === "marketing" && <MarketingTab />}
-
-      {/* Team tab */}
-      {tab === "team" && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-slate-500">{team.length} member{team.length !== 1 ? "s" : ""}</p>
-            {perms.inviteStaff && (
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setModal({ type: "createVendor" })}
-                  className="px-3 py-1.5 border border-slate-200 text-slate-600 text-xs font-medium rounded-lg hover:bg-slate-50 transition-colors"
-                >
-                  + Create vendor
-                </button>
-                <button
-                  onClick={() => setModal({ type: "invite" })}
-                  className="px-3 py-1.5 bg-black text-white text-xs font-medium rounded-lg hover:bg-slate-800 transition-colors"
-                >
-                  + Invite member
-                </button>
-              </div>
-            )}
-          </div>
-
-          <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100">
-            {team.map((m) => {
-              const isCurrentUser = m.user_id === user?.id;
-              return (
-                <div key={m.member_id} className="flex items-center gap-4 px-5 py-4">
-                  <div className="w-9 h-9 rounded-full bg-black text-white text-xs font-bold flex items-center justify-center shrink-0">
-                    {initials(m.full_name)}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium text-slate-900">{m.full_name}</p>
-                      {isCurrentUser && <span className="text-[10px] text-slate-400 font-medium">(you)</span>}
-                    </div>
-                    <p className="text-xs text-slate-500">{m.email}</p>
-                    {m.phone && <p className="text-xs text-slate-400">{m.phone}</p>}
-                  </div>
-                  <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full ${ROLE_STYLES[m.role]}`}>
-                    {ROLE_LABELS[m.role]}
-                  </span>
-                  {perms.removeMembers && !isCurrentUser && (
-                    <button
-                      onClick={() => setModal({ type: "remove", member: m })}
-                      className="p-1.5 text-red-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors"
-                      title="Remove member"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                      </svg>
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
 
       {/* Role guide tab */}
       {tab === "roles" && (

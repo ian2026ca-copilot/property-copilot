@@ -20,6 +20,11 @@ class RegisterRequest(BaseModel):
     phone: str
     business_name: str | None = None
     service_categories: list[str] = []
+    street_address: str | None = None
+    city: str | None = None
+    province: str | None = None
+    postal_code: str | None = None
+    country: str | None = None
 
     @field_validator("phone")
     @classmethod
