@@ -4,6 +4,7 @@ export interface AuthUser {
   full_name: string;
   org_id: string;
   org_name: string;
+  org_slug: string;
   role: "OWNER" | "TENANT" | "VENDOR";
 }
 

@@ -33,6 +33,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         full_name: "Alex Morgan",
         org_id: "org-1",
         org_name: "Copilot Demo Co.",
+        org_slug: "copilot-demo-co",
         role: "OWNER",
       });
       setLoading(false);

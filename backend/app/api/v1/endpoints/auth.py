@@ -12,10 +12,13 @@ from app.core.email import send_reset_email, send_welcome_email
 from app.models.organization import Organization
 from app.models.user import User, OrganizationMember, UserRole
 from app.models.password_reset import PasswordResetToken
-from app.models.maintenance import Vendor
+from app.models.maintenance import Vendor, VendorOrganization
 from app.models.profiles import OwnerProfile, TenantProfile
 from app.models.marketing_site import MarketingSite, DEFAULT_MARKETING_SITES
-from app.schemas.auth import RegisterRequest, LoginRequest, TokenResponse, UserOut, UserUpdate, ForgotPasswordRequest, ResetPasswordRequest
+from app.schemas.auth import (
+    RegisterRequest, LoginRequest, TokenResponse, UserOut, UserUpdate,
+    ForgotPasswordRequest, ResetPasswordRequest, OrganizationPublicOut,
+)
 from app.api.deps import get_current_user
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -25,6 +28,15 @@ def slugify(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
 
 
+@router.get("/org-by-slug/{slug}", response_model=OrganizationPublicOut)
+async def get_org_by_slug(slug: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Organization).where(Organization.slug == slug))
+    org = result.scalar_one_or_none()
+    if not org:
+        raise HTTPException(status_code=404, detail="Sign-up link not found")
+    return OrganizationPublicOut(name=org.name, slug=org.slug)
+
+
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
 async def register(body: RegisterRequest, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
     body.email = body.email.lower().strip()
@@ -32,22 +44,35 @@ async def register(body: RegisterRequest, background_tasks: BackgroundTasks, db:
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Email already registered")
 
-    base_slug = slugify(body.org_name)
-    slug = base_slug
-    counter = 1
-    while True:
-        taken = await db.execute(select(Organization).where(Organization.slug == slug))
-        if not taken.scalar_one_or_none():
-            break
-        slug = f"{base_slug}-{counter}"
-        counter += 1
+    role = UserRole(body.role) if body.role in UserRole._value2member_map_ else UserRole.OWNER
+    joining_existing_org = bool(body.org_slug)
 
-    org = Organization(name=body.org_name, slug=slug)
-    db.add(org)
-    await db.flush()
+    if joining_existing_org:
+        if role == UserRole.OWNER:
+            raise HTTPException(status_code=400, detail="Owners must create their own organization")
+        org_res = await db.execute(select(Organization).where(Organization.slug == body.org_slug))
+        org = org_res.scalar_one_or_none()
+        if not org:
+            raise HTTPException(status_code=404, detail="Sign-up link not found")
+    else:
+        if not body.org_name:
+            raise HTTPException(status_code=400, detail="Organization name is required")
+        base_slug = slugify(body.org_name)
+        slug = base_slug
+        counter = 1
+        while True:
+            taken = await db.execute(select(Organization).where(Organization.slug == slug))
+            if not taken.scalar_one_or_none():
+                break
+            slug = f"{base_slug}-{counter}"
+            counter += 1
 
-    for site_name, site_url in DEFAULT_MARKETING_SITES:
-        db.add(MarketingSite(organization_id=org.id, name=site_name, url=site_url))
+        org = Organization(name=body.org_name, slug=slug)
+        db.add(org)
+        await db.flush()
+
+        for site_name, site_url in DEFAULT_MARKETING_SITES:
+            db.add(MarketingSite(organization_id=org.id, name=site_name, url=site_url))
 
     user = User(
         email=body.email,
@@ -58,7 +83,6 @@ async def register(body: RegisterRequest, background_tasks: BackgroundTasks, db:
     db.add(user)
     await db.flush()
 
-    role = UserRole(body.role) if body.role in UserRole._value2member_map_ else UserRole.OWNER
     member = OrganizationMember(
         organization_id=org.id,
         user_id=user.id,
@@ -82,6 +106,9 @@ async def register(body: RegisterRequest, background_tasks: BackgroundTasks, db:
             **address_fields,
         )
         db.add(vendor)
+        if joining_existing_org:
+            await db.flush()
+            db.add(VendorOrganization(vendor_id=vendor.id, organization_id=org.id))
     elif role == UserRole.TENANT:
         db.add(TenantProfile(user_id=user.id, **address_fields))
     else:
@@ -179,6 +206,7 @@ async def me(
         phone=user.phone,
         org_id=str(org.id),
         org_name=org.name,
+        org_slug=org.slug,
         role=member.role,
     )
 
@@ -205,5 +233,6 @@ async def update_me(
         phone=user.phone,
         org_id=str(org.id),
         org_name=org.name,
+        org_slug=org.slug,
         role=member.role,
     )

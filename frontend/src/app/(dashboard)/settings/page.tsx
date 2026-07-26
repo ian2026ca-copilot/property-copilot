@@ -34,6 +34,19 @@ function ProfileTab() {
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState("");
+  const [linkCopied, setLinkCopied] = useState(false);
+
+  const signupLink = user?.org_slug && typeof window !== "undefined"
+    ? `${window.location.origin}/join/${user.org_slug}`
+    : "";
+
+  function copySignupLink() {
+    if (!signupLink) return;
+    navigator.clipboard.writeText(signupLink).then(() => {
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 2000);
+    });
+  }
 
   useEffect(() => {
     if (MOCK_MODE) return;
@@ -105,6 +118,30 @@ function ProfileTab() {
         <p className="text-sm text-slate-500">{user?.org_name}</p>
         <p className="text-[11px] text-slate-400 mt-1">Role: {user?.role}</p>
       </div>
+
+      {user?.role === "OWNER" && (
+        <div className="bg-white rounded-xl border border-slate-200 p-6">
+          <h3 className="text-sm font-semibold text-slate-900 mb-1">Tenant &amp; vendor sign-up page</h3>
+          <p className="text-[11px] text-slate-400 mb-3">
+            Share this link so tenants and vendors can create their own account under {user?.org_name}.
+          </p>
+          <div className="flex items-center gap-2">
+            <input
+              readOnly
+              value={signupLink}
+              onFocus={(e) => e.target.select()}
+              className="flex-1 text-sm border border-slate-200 rounded-lg px-3 py-2 bg-slate-50 text-slate-600 outline-none"
+            />
+            <button
+              type="button"
+              onClick={copySignupLink}
+              className="px-3 py-2 text-sm bg-black text-white rounded-lg hover:bg-slate-800 font-medium transition-colors shrink-0"
+            >
+              {linkCopied ? "Copied!" : "Copy"}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

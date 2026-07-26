@@ -15,7 +15,8 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     full_name: str
     password: str
-    org_name: str
+    org_name: str | None = None
+    org_slug: str | None = None
     role: str = "OWNER"
     phone: str
     business_name: str | None = None
@@ -58,10 +59,16 @@ class UserOut(BaseModel):
     phone: str
     org_id: str
     org_name: str
+    org_slug: str
     role: str
 
     class Config:
         from_attributes = True
+
+
+class OrganizationPublicOut(BaseModel):
+    name: str
+    slug: str
 
 
 class UserUpdate(BaseModel):

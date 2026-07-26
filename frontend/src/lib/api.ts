@@ -532,6 +532,7 @@ export interface UserOut {
   phone: string;
   org_id: string;
   org_name: string;
+  org_slug: string;
   role: string;
 }
 
@@ -539,6 +540,15 @@ export const profileApi = {
   me: () => api.get<UserOut>("/auth/me"),
   update: (body: { full_name?: string; phone?: string }) =>
     api.patch<UserOut>("/auth/me", body),
+};
+
+export interface OrganizationPublicOut {
+  name: string;
+  slug: string;
+}
+
+export const orgsApi = {
+  bySlug: (slug: string) => api.get<OrganizationPublicOut>(`/auth/org-by-slug/${encodeURIComponent(slug)}`),
 };
 
 export type CampaignStatus = "DRAFT" | "PUBLISHED" | "ARCHIVED";
