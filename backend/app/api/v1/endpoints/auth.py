@@ -14,6 +14,10 @@ from app.models.user import User, OrganizationMember, UserRole
 from app.models.password_reset import PasswordResetToken
 from app.models.maintenance import Vendor, VendorOrganization
 from app.models.profiles import OwnerProfile, TenantProfile
+from app.models.tenant_application import (
+    TenantAddressHistory, TenantEmployment, TenantIncomeSource,
+    TenantOccupant, TenantCosigner, TenantPet, TenantVehicle,
+)
 from app.models.marketing_site import MarketingSite, DEFAULT_MARKETING_SITES
 from app.schemas.auth import (
     RegisterRequest, LoginRequest, TokenResponse, UserOut, UserUpdate,
@@ -77,6 +81,8 @@ async def register(body: RegisterRequest, background_tasks: BackgroundTasks, db:
     user = User(
         email=body.email,
         full_name=body.full_name,
+        first_name=body.first_name,
+        last_name=body.last_name,
         phone=body.phone,
         hashed_password=hash_password(body.password),
     )
@@ -110,7 +116,39 @@ async def register(body: RegisterRequest, background_tasks: BackgroundTasks, db:
             await db.flush()
             db.add(VendorOrganization(vendor_id=vendor.id, organization_id=org.id))
     elif role == UserRole.TENANT:
-        db.add(TenantProfile(user_id=user.id, **address_fields))
+        db.add(TenantProfile(
+            user_id=user.id,
+            date_of_birth=body.date_of_birth,
+            middle_name=body.middle_name,
+            ssn_sin=body.ssn_sin,
+            drivers_licence=body.drivers_licence,
+            personal_income_annual=body.personal_income_annual,
+            household_income_annual=body.household_income_annual,
+            personal_message=body.personal_message,
+            smoke_vape=body.smoke_vape,
+            given_notice_to_landlord=body.given_notice_to_landlord,
+            refused_rent=body.refused_rent,
+            evicted=body.evicted,
+            criminal_record=body.criminal_record,
+            screening_notes=body.screening_notes,
+            **address_fields,
+        ))
+
+        now = datetime.now(timezone.utc)
+        for a in body.address_history:
+            db.add(TenantAddressHistory(user_id=user.id, created_at=now, **a.model_dump()))
+        for e in body.employment_history:
+            db.add(TenantEmployment(user_id=user.id, created_at=now, **e.model_dump()))
+        for i in body.income_sources:
+            db.add(TenantIncomeSource(user_id=user.id, created_at=now, **i.model_dump()))
+        for o in body.occupants:
+            db.add(TenantOccupant(user_id=user.id, created_at=now, **o.model_dump()))
+        for c in body.cosigners:
+            db.add(TenantCosigner(user_id=user.id, created_at=now, **c.model_dump()))
+        for p in body.pets:
+            db.add(TenantPet(user_id=user.id, created_at=now, **p.model_dump()))
+        for v in body.vehicles:
+            db.add(TenantVehicle(user_id=user.id, created_at=now, **v.model_dump()))
     else:
         db.add(OwnerProfile(user_id=user.id, **address_fields))
 

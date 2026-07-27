@@ -1,7 +1,7 @@
 import uuid
 from datetime import date
 
-from sqlalchemy import String, ForeignKey, Date
+from sqlalchemy import String, ForeignKey, Date, Float, Boolean, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -21,6 +21,20 @@ class TenantProfile(Base, TimestampMixin):
     province: Mapped[str | None] = mapped_column(String(100), nullable=True)
     postal_code: Mapped[str | None] = mapped_column(String(20), nullable=True)
     country: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+    # Rental application fields
+    middle_name: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    ssn_sin: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    drivers_licence: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    personal_income_annual: Mapped[float | None] = mapped_column(Float, nullable=True)
+    household_income_annual: Mapped[float | None] = mapped_column(Float, nullable=True)
+    personal_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    smoke_vape: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    given_notice_to_landlord: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    refused_rent: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    evicted: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    criminal_record: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    screening_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     user: Mapped["User"] = relationship(back_populates="tenant_profile")  # noqa: F821
 

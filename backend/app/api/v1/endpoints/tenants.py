@@ -582,6 +582,29 @@ async def delete_avatar(
 
 # ── Document upload endpoints ──────────────────────────────────────────────────
 
+@router.post("/me/documents", response_model=TenantDocumentOut, status_code=status.HTTP_201_CREATED)
+async def upload_my_document(
+    doc_type: str = Query(..., pattern="^(id_document|paystub|bank_statement|other)$"),
+    file: UploadFile = File(...),
+    current: tuple[User, OrganizationMember] = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Self-service upload for a tenant's own supporting documents (rental application)."""
+    user, member = current
+    filename = await _save_file(file)
+    doc = TenantDocument(
+        user_id=user.id,
+        organization_id=member.organization_id,
+        doc_type=doc_type,
+        filename=filename,
+        original_name=file.filename or filename,
+    )
+    db.add(doc)
+    await db.commit()
+    await db.refresh(doc)
+    return _doc_to_out(doc)
+
+
 @router.post("/{tenant_user_id}/documents", response_model=TenantDocumentOut, status_code=status.HTTP_201_CREATED)
 async def upload_tenant_document(
     tenant_user_id: str,

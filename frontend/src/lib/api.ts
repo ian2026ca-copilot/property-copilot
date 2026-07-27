@@ -101,7 +101,7 @@ export interface UnitOut {
 
 export interface TenantDocumentOut {
   id: string;
-  doc_type: "id_document" | "reference_letter";
+  doc_type: "id_document" | "reference_letter" | "paystub" | "bank_statement" | "other";
   filename: string;
   original_name: string;
   url: string;
@@ -423,6 +423,25 @@ export const tenantsApi = {
     body.append("file", file);
     return fetch(
       `${BASE_URL}/tenants/${tenantUserId}/documents?doc_type=${docType}`,
+      { method: "POST", headers, body }
+    ).then(async (r) => {
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({ detail: r.statusText }));
+        throw new Error(err.detail ?? "Upload failed");
+      }
+      return r.json() as Promise<TenantDocumentOut>;
+    });
+  },
+  uploadMyDocument: (docType: string, file: File) => {
+    const token = typeof document !== "undefined"
+      ? (document.cookie.match(/(?:^|; )token=([^;]*)/) || [])[1]
+      : null;
+    const headers: Record<string, string> = {};
+    if (token) headers["Authorization"] = `Bearer ${decodeURIComponent(token)}`;
+    const body = new FormData();
+    body.append("file", file);
+    return fetch(
+      `${BASE_URL}/tenants/me/documents?doc_type=${docType}`,
       { method: "POST", headers, body }
     ).then(async (r) => {
       if (!r.ok) {
