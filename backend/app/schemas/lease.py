@@ -2,11 +2,12 @@ import uuid
 from datetime import date
 from pydantic import BaseModel, EmailStr
 from app.models.lease import LeaseStatus, LeaseType
+from app.schemas.tenant_application import RentalApplicationFields
 
 
 # ── Tenant (person) schemas ────────────────────────────────────────────────────
 
-class TenantCreate(BaseModel):
+class TenantCreate(RentalApplicationFields):
     first_name: str
     last_name: str
     email: EmailStr
@@ -19,7 +20,7 @@ class TenantCreate(BaseModel):
     country: str | None = None
 
 
-class TenantUpdate(BaseModel):
+class TenantUpdate(RentalApplicationFields):
     first_name: str | None = None
     last_name: str | None = None
     phone: str | None = None

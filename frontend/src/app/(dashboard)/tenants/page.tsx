@@ -4,6 +4,9 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { tenantsApi, leasesApi, type TenantOut, type LeaseOut, type TenantDocumentOut } from "@/lib/api";
 import { MOCK_MODE } from "@/lib/useApiData";
+import {
+  useRentalApplicationState, buildRentalApplicationPayload, RentalApplicationSections,
+} from "@/components/rental-application/RentalApplicationFields";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -387,22 +390,17 @@ interface AddPersonModalProps {
 
 function AddPersonModal({ onClose, onAdded }: AddPersonModalProps) {
   const [form, setForm] = useState({
-    first_name: "", last_name: "", email: "", phone: "", date_of_birth: "",
-    street_address: "", city: "", province: "", postal_code: "", country: "" as Country | "",
+    first_name: "", last_name: "", middle_name: "", email: "", phone: "", date_of_birth: "",
+    ssn_sin: "", drivers_licence: "",
   });
+  const app = useRentalApplicationState();
   const [saved, setSaved] = useState<TenantOut | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
   function set(k: string, v: string) {
-    setForm(f => {
-      const next = { ...f, [k]: v };
-      if (k === "country") next.province = "";
-      return next;
-    });
+    setForm(f => ({ ...f, [k]: v }));
   }
-
-  const provinceList = form.country ? PROVINCES[form.country as Country] ?? [] : [];
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -418,11 +416,10 @@ function AddPersonModal({ onClose, onAdded }: AddPersonModalProps) {
         email: form.email,
         phone: form.phone,
         date_of_birth: form.date_of_birth || null,
-        street_address: form.street_address || null,
-        city: form.city || null,
-        province: form.province || null,
-        postal_code: form.postal_code || null,
-        country: form.country || null,
+        middle_name: form.middle_name || null,
+        ssn_sin: form.ssn_sin || null,
+        drivers_licence: form.drivers_licence || null,
+        ...buildRentalApplicationPayload(app),
       });
       setSaved(person);
       onAdded(person);
@@ -437,7 +434,7 @@ function AddPersonModal({ onClose, onAdded }: AddPersonModalProps) {
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl w-full max-w-md shadow-xl max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-2xl w-full max-w-2xl shadow-xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
           <h2 className="text-base font-semibold text-slate-900">Add tenant</h2>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
@@ -452,64 +449,38 @@ function AddPersonModal({ onClose, onAdded }: AddPersonModalProps) {
               <input value={form.first_name} onChange={e => set("first_name", e.target.value)} disabled={!!saved} className={`${input} disabled:opacity-60`} />
             </div>
             <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">Middle name</label>
+              <input value={form.middle_name} onChange={e => set("middle_name", e.target.value)} disabled={!!saved} className={`${input} disabled:opacity-60`} />
+            </div>
+            <div>
               <label className="block text-xs font-medium text-slate-500 mb-1">Last name *</label>
               <input value={form.last_name} onChange={e => set("last_name", e.target.value)} disabled={!!saved} className={`${input} disabled:opacity-60`} />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">Email *</label>
-            <input type="email" value={form.email} onChange={e => set("email", e.target.value)} disabled={!!saved} className={`${input} disabled:opacity-60`} />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-slate-500 mb-1">Phone</label>
-              <input value={form.phone} onChange={e => set("phone", e.target.value)} placeholder="(555) 000-0000" disabled={!!saved} className={`${input} disabled:opacity-60`} />
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-500 mb-1">Date of birth</label>
               <input type="date" value={form.date_of_birth} onChange={e => set("date_of_birth", e.target.value)} disabled={!!saved} className={`${input} disabled:opacity-60`} />
             </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">SSN / SIN</label>
+              <input value={form.ssn_sin} onChange={e => set("ssn_sin", e.target.value)} placeholder="Optional" disabled={!!saved} className={`${input} disabled:opacity-60`} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">Driver's licence</label>
+              <input value={form.drivers_licence} onChange={e => set("drivers_licence", e.target.value)} placeholder="Optional" disabled={!!saved} className={`${input} disabled:opacity-60`} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">Email *</label>
+              <input type="email" value={form.email} onChange={e => set("email", e.target.value)} disabled={!!saved} className={`${input} disabled:opacity-60`} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">Phone</label>
+              <input value={form.phone} onChange={e => set("phone", e.target.value)} placeholder="(555) 000-0000" disabled={!!saved} className={`${input} disabled:opacity-60`} />
+            </div>
           </div>
 
-          {/* Address section */}
-          <div className="pt-1 border-t border-slate-100">
-            <p className="text-[11px] uppercase tracking-wider font-medium text-slate-400 mb-3">Address (optional)</p>
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1">Street address</label>
-                <input value={form.street_address} onChange={e => set("street_address", e.target.value)}
-                  placeholder="123 Main St" disabled={!!saved} className={`${input} disabled:opacity-60`} />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-slate-500 mb-1">City</label>
-                  <input value={form.city} onChange={e => set("city", e.target.value)} disabled={!!saved} className={`${input} disabled:opacity-60`} />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-500 mb-1">Postal / ZIP code</label>
-                  <input value={form.postal_code} onChange={e => set("postal_code", e.target.value)} disabled={!!saved} className={`${input} disabled:opacity-60`} />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-slate-500 mb-1">Country</label>
-                  <select value={form.country} onChange={e => set("country", e.target.value)} disabled={!!saved} className={`${input} disabled:opacity-60`}>
-                    <option value="">— select —</option>
-                    {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-500 mb-1">Province / State</label>
-                  <select value={form.province} onChange={e => set("province", e.target.value)}
-                    disabled={!form.country || !!saved} className={`${input} disabled:opacity-60`}>
-                    <option value="">— select —</option>
-                    {provinceList.map(p => <option key={p} value={p}>{p}</option>)}
-                  </select>
-                </div>
-              </div>
-            </div>
+          {/* Address history, employment, income, occupants, co-signer, pets, vehicles, screening — same fields as the public tenant application */}
+          <div className={saved ? "opacity-60 pointer-events-none space-y-4" : "space-y-4"}>
+            <RentalApplicationSections state={app} />
           </div>
 
           {/* Identity documents — locked until tenant is saved */}
@@ -686,15 +657,15 @@ function EditPersonModal({ person, onClose, onSave }: EditPersonModalProps) {
   const [form, setForm] = useState({
     first_name: person.first_name ?? "",
     last_name: person.last_name ?? "",
+    middle_name: "",
     phone: person.phone ?? "",
     date_of_birth: person.date_of_birth ?? "",
-    street_address: person.street_address ?? "",
-    city: person.city ?? "",
-    province: person.province ?? "",
-    postal_code: person.postal_code ?? "",
-    country: (person.country ?? "") as Country | "",
+    ssn_sin: "",
+    drivers_licence: "",
   });
+  const app = useRentalApplicationState();
   const [docs, setDocs] = useState<TenantDocumentOut[]>(person.documents ?? []);
+  const [loadingApp, setLoadingApp] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -703,15 +674,86 @@ function EditPersonModal({ person, onClose, onSave }: EditPersonModalProps) {
     tenantsApi.listDocuments(person.id).then(setDocs).catch(() => {});
   }, [person.id]);
 
-  function set(k: string, v: string) {
-    setForm(f => {
-      const next = { ...f, [k]: v };
-      if (k === "country") next.province = "";
-      return next;
-    });
-  }
+  // Pre-fill the rental-application sections from whatever was saved previously
+  useEffect(() => {
+    let cancelled = false;
+    tenantsApi.getApplication(person.id).then((data: any) => {
+      if (cancelled) return;
+      setForm(f => ({
+        ...f,
+        middle_name: data.middle_name ?? "",
+        ssn_sin: data.ssn_sin ?? "",
+        drivers_licence: data.drivers_licence ?? "",
+      }));
+      if (data.address_history?.length) {
+        app.setAddresses(data.address_history.map((a: any) => ({
+          is_current: a.is_current, residential_status: a.residential_status ?? "Rent",
+          street_address: a.street_address ?? "", city: a.city ?? "", postal_code: a.postal_code ?? "",
+          country: a.country ?? "", province: a.province ?? "",
+          move_in_date: a.move_in_date ?? "", move_out_date: a.move_out_date ?? "",
+          monthly_rent: a.monthly_rent != null ? String(a.monthly_rent) : "",
+          reason_for_moving: a.reason_for_moving ?? "",
+          landlord_name: a.landlord_name ?? "", landlord_phone: a.landlord_phone ?? "", landlord_email: a.landlord_email ?? "",
+        })));
+      }
+      if (data.employment_history?.length) {
+        app.setEmployments(data.employment_history.map((e: any) => ({
+          is_current: e.is_current, employment_type: e.employment_type ?? "Full time employment",
+          company: e.company ?? "", position: e.position ?? "", employment_length: e.employment_length ?? "",
+          company_website: e.company_website ?? "", company_linkedin_url: e.company_linkedin_url ?? "",
+          additional_notes: e.additional_notes ?? "",
+          employer_reference_name: e.employer_reference_name ?? "", employer_reference_phone: e.employer_reference_phone ?? "",
+          employer_reference_email: e.employer_reference_email ?? "",
+        })));
+      }
+      app.setPersonalIncome(data.personal_income_annual != null ? String(data.personal_income_annual) : "");
+      app.setHouseholdIncome(data.household_income_annual != null ? String(data.household_income_annual) : "");
+      if (data.income_sources?.length) {
+        app.setIncomeSources(data.income_sources.map((s: any) => ({ source_name: s.source_name, amount_annual: String(s.amount_annual) })));
+      }
+      if (data.occupants?.length) {
+        app.setOccupants(data.occupants.map((o: any) => ({
+          name: o.name, relationship_label: o.relationship_label ?? "", email: o.email ?? "", phone: o.phone ?? "",
+          share_of_rent: o.share_of_rent != null ? String(o.share_of_rent) : "", is_dependent: !!o.is_dependent,
+        })));
+      }
+      if (data.cosigners?.length) {
+        app.setHasCosigner(true);
+        app.setCosigners(data.cosigners.map((c: any) => ({
+          name: c.name, relationship_label: c.relationship_label ?? "", email: c.email ?? "", phone: c.phone ?? "",
+        })));
+      }
+      if (data.pets?.length) {
+        app.setHasPets(true);
+        app.setPets(data.pets.map((p: any) => ({
+          animal_type: p.animal_type, breed: p.breed ?? "",
+          weight_lbs: p.weight_lbs != null ? String(p.weight_lbs) : "", sex: p.sex ?? "",
+          age: p.age != null ? String(p.age) : "", is_fixed: !!p.is_fixed,
+        })));
+      }
+      if (data.vehicles?.length) {
+        app.setHasVehicle(true);
+        app.setVehicles(data.vehicles.map((v: any) => ({
+          make: v.make, model: v.model, year: v.year != null ? String(v.year) : "", license_plate: v.license_plate ?? "",
+        })));
+      }
+      app.setScreening({
+        smoke_vape: data.smoke_vape ?? null,
+        given_notice_to_landlord: data.given_notice_to_landlord ?? null,
+        refused_rent: data.refused_rent ?? null,
+        evicted: data.evicted ?? null,
+        criminal_record: data.criminal_record ?? null,
+      });
+      app.setScreeningNotes(data.screening_notes ?? "");
+      app.setPersonalMessage(data.personal_message ?? "");
+    }).catch(() => {}).finally(() => { if (!cancelled) setLoadingApp(false); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [person.id]);
 
-  const provinceList = form.country ? PROVINCES[form.country as Country] ?? [] : [];
+  function set(k: string, v: string) {
+    setForm(f => ({ ...f, [k]: v }));
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -720,13 +762,12 @@ function EditPersonModal({ person, onClose, onSave }: EditPersonModalProps) {
       const updated = await tenantsApi.updatePerson(person.id, {
         first_name: form.first_name,
         last_name: form.last_name,
+        middle_name: form.middle_name || null,
         phone: form.phone || null,
         date_of_birth: form.date_of_birth || null,
-        street_address: form.street_address || null,
-        city: form.city || null,
-        province: form.province || null,
-        postal_code: form.postal_code || null,
-        country: form.country || null,
+        ssn_sin: form.ssn_sin || null,
+        drivers_licence: form.drivers_licence || null,
+        ...buildRentalApplicationPayload(app),
       });
       onSave({ ...updated, documents: docs });
     } catch (err: any) {
@@ -740,7 +781,7 @@ function EditPersonModal({ person, onClose, onSave }: EditPersonModalProps) {
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl w-full max-w-md shadow-xl max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-2xl w-full max-w-2xl shadow-xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
           <h2 className="text-base font-semibold text-slate-900">Edit tenant</h2>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
@@ -753,59 +794,39 @@ function EditPersonModal({ person, onClose, onSave }: EditPersonModalProps) {
               <input value={form.first_name} onChange={e => set("first_name", e.target.value)} className={input} />
             </div>
             <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">Middle name</label>
+              <input value={form.middle_name} onChange={e => set("middle_name", e.target.value)} className={input} />
+            </div>
+            <div>
               <label className="block text-xs font-medium text-slate-500 mb-1">Last name</label>
               <input value={form.last_name} onChange={e => set("last_name", e.target.value)} className={input} />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-slate-500 mb-1">Phone</label>
-              <input value={form.phone} onChange={e => set("phone", e.target.value)} className={input} />
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-500 mb-1">Date of birth</label>
               <input type="date" value={form.date_of_birth} onChange={e => set("date_of_birth", e.target.value)} className={input} />
             </div>
-          </div>
-
-          {/* Address section */}
-          <div className="pt-1 border-t border-slate-100">
-            <p className="text-[11px] uppercase tracking-wider font-medium text-slate-400 mb-3">Address</p>
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1">Street address</label>
-                <input value={form.street_address} onChange={e => set("street_address", e.target.value)}
-                  placeholder="123 Main St" className={input} />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-slate-500 mb-1">City</label>
-                  <input value={form.city} onChange={e => set("city", e.target.value)} className={input} />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-500 mb-1">Postal / ZIP code</label>
-                  <input value={form.postal_code} onChange={e => set("postal_code", e.target.value)} className={input} />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-slate-500 mb-1">Country</label>
-                  <select value={form.country} onChange={e => set("country", e.target.value)} className={input}>
-                    <option value="">— select —</option>
-                    {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-500 mb-1">Province / State</label>
-                  <select value={form.province} onChange={e => set("province", e.target.value)}
-                    disabled={!form.country} className={`${input} disabled:opacity-50`}>
-                    <option value="">— select —</option>
-                    {provinceList.map(p => <option key={p} value={p}>{p}</option>)}
-                  </select>
-                </div>
-              </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">SSN / SIN</label>
+              <input value={form.ssn_sin} onChange={e => set("ssn_sin", e.target.value)} placeholder="Optional" className={input} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">Driver's licence</label>
+              <input value={form.drivers_licence} onChange={e => set("drivers_licence", e.target.value)} placeholder="Optional" className={input} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">Phone</label>
+              <input value={form.phone} onChange={e => set("phone", e.target.value)} className={input} />
             </div>
           </div>
+
+          {/* Address history, employment, income, occupants, co-signer, pets, vehicles, screening — same fields as the public tenant application */}
+          {loadingApp ? (
+            <p className="text-xs text-slate-400 py-2">Loading application details…</p>
+          ) : (
+            <div className="space-y-4">
+              <RentalApplicationSections state={app} />
+            </div>
+          )}
 
           {/* Identity documents */}
           <InlineDocSection

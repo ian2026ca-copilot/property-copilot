@@ -116,6 +116,18 @@ async def register(body: RegisterRequest, background_tasks: BackgroundTasks, db:
             await db.flush()
             db.add(VendorOrganization(vendor_id=vendor.id, organization_id=org.id))
     elif role == UserRole.TENANT:
+        # The "current" entry in address_history (if the rental application supplied one)
+        # takes priority over the legacy flat address fields for the tenant's profile address.
+        current_addr = next((a for a in body.address_history if a.is_current), None) \
+            or (body.address_history[0] if body.address_history else None)
+        if current_addr:
+            address_fields = {
+                "street_address": current_addr.street_address,
+                "city": current_addr.city,
+                "province": current_addr.province,
+                "postal_code": current_addr.postal_code,
+                "country": current_addr.country,
+            }
         db.add(TenantProfile(
             user_id=user.id,
             date_of_birth=body.date_of_birth,

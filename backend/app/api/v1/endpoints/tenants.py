@@ -2,11 +2,11 @@ import os
 import secrets
 import uuid
 import pathlib
-from datetime import date
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from sqlalchemy.orm import selectinload, joinedload
 
 from app.core.database import get_db
@@ -16,8 +16,17 @@ from app.models.user import User, OrganizationMember, UserRole, TenantDocument
 from app.models.profiles import TenantProfile
 from app.models.lease import Lease, LeaseStatus
 from app.models.property import Unit, Property, UnitStatus
+from app.models.tenant_application import (
+    TenantAddressHistory, TenantEmployment, TenantIncomeSource,
+    TenantOccupant, TenantCosigner, TenantPet, TenantVehicle,
+)
 from app.schemas.lease import TenantCreate, TenantUpdate, TenantInvite, LeaseUpdate, LeaseOut, TenantOut, TenantDocumentOut
 from app.schemas.property import UnitOut
+from app.schemas.tenant_application import (
+    TenantApplicationOut, AddressHistoryIn, EmploymentIn, IncomeSourceIn,
+    OccupantIn, CosignerIn, PetIn, VehicleIn,
+    RENTAL_APP_PROFILE_FIELDS, RENTAL_APP_LIST_FIELDS,
+)
 from app.api.v1.endpoints.payments import generate_monthly_payments
 
 router = APIRouter(prefix="/tenants", tags=["tenants"])
@@ -337,11 +346,48 @@ async def create_person(
         if body.phone:
             tenant_user.phone = body.phone
 
+    # The "current" entry in address_history (if supplied) takes priority over the
+    # legacy flat address fields for the tenant's profile address.
+    current_addr = next((a for a in body.address_history if a.is_current), None) \
+        or (body.address_history[0] if body.address_history else None)
+    address_field_values = (
+        {f: getattr(current_addr, f) for f in address_fields}
+        if current_addr else {f: getattr(body, f) for f in address_fields}
+    )
+
     await _upsert_tenant_profile(
         db, tenant_user.id,
         date_of_birth=body.date_of_birth,
-        **{f: getattr(body, f) for f in address_fields},
+        middle_name=body.middle_name,
+        ssn_sin=body.ssn_sin,
+        drivers_licence=body.drivers_licence,
+        personal_income_annual=body.personal_income_annual,
+        household_income_annual=body.household_income_annual,
+        personal_message=body.personal_message,
+        smoke_vape=body.smoke_vape,
+        given_notice_to_landlord=body.given_notice_to_landlord,
+        refused_rent=body.refused_rent,
+        evicted=body.evicted,
+        criminal_record=body.criminal_record,
+        screening_notes=body.screening_notes,
+        **address_field_values,
     )
+
+    now = datetime.now(timezone.utc)
+    for a in body.address_history:
+        db.add(TenantAddressHistory(user_id=tenant_user.id, created_at=now, **a.model_dump()))
+    for e in body.employment_history:
+        db.add(TenantEmployment(user_id=tenant_user.id, created_at=now, **e.model_dump()))
+    for i in body.income_sources:
+        db.add(TenantIncomeSource(user_id=tenant_user.id, created_at=now, **i.model_dump()))
+    for o in body.occupants:
+        db.add(TenantOccupant(user_id=tenant_user.id, created_at=now, **o.model_dump()))
+    for c in body.cosigners:
+        db.add(TenantCosigner(user_id=tenant_user.id, created_at=now, **c.model_dump()))
+    for p in body.pets:
+        db.add(TenantPet(user_id=tenant_user.id, created_at=now, **p.model_dump()))
+    for v in body.vehicles:
+        db.add(TenantVehicle(user_id=tenant_user.id, created_at=now, **v.model_dump()))
 
     mem_result = await db.execute(
         select(OrganizationMember).where(
@@ -465,6 +511,43 @@ async def get_person(
     return _tenant_to_out(user, user.tenant_documents)
 
 
+@router.get("/person/{tenant_user_id}/application", response_model=TenantApplicationOut)
+async def get_tenant_application(
+    tenant_user_id: str,
+    current: tuple[User, OrganizationMember] = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Full rental-application detail for one tenant — used to pre-fill the Edit tenant form."""
+    _, member = current
+    mem_res = await db.execute(
+        select(OrganizationMember).where(
+            OrganizationMember.organization_id == member.organization_id,
+            OrganizationMember.user_id == tenant_user_id,
+            OrganizationMember.role == UserRole.TENANT,
+        )
+    )
+    if not mem_res.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    profile_res = await db.execute(select(TenantProfile).where(TenantProfile.user_id == tenant_user_id))
+    profile = profile_res.scalar_one_or_none()
+
+    async def _fetch(model):
+        res = await db.execute(select(model).where(model.user_id == tenant_user_id))
+        return res.scalars().all()
+
+    return TenantApplicationOut(
+        **{f: getattr(profile, f, None) for f in RENTAL_APP_PROFILE_FIELDS},
+        address_history=[AddressHistoryIn.model_validate(a, from_attributes=True) for a in await _fetch(TenantAddressHistory)],
+        employment_history=[EmploymentIn.model_validate(e, from_attributes=True) for e in await _fetch(TenantEmployment)],
+        income_sources=[IncomeSourceIn.model_validate(i, from_attributes=True) for i in await _fetch(TenantIncomeSource)],
+        occupants=[OccupantIn.model_validate(o, from_attributes=True) for o in await _fetch(TenantOccupant)],
+        cosigners=[CosignerIn.model_validate(c, from_attributes=True) for c in await _fetch(TenantCosigner)],
+        pets=[PetIn.model_validate(p, from_attributes=True) for p in await _fetch(TenantPet)],
+        vehicles=[VehicleIn.model_validate(v, from_attributes=True) for v in await _fetch(TenantVehicle)],
+    )
+
+
 @router.put("/person/{tenant_user_id}", response_model=TenantOut)
 async def update_person(
     tenant_user_id: str,
@@ -479,13 +562,54 @@ async def update_person(
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant not found")
     data = body.model_dump(exclude_none=True)
+    list_data = {f: data.pop(f, []) for f in RENTAL_APP_LIST_FIELDS}
     profile_data = {f: data.pop(f, None) for f in PROFILE_FIELDS}
+    rental_profile_data = {f: data.pop(f, None) for f in RENTAL_APP_PROFILE_FIELDS}
     for field, value in data.items():
         setattr(tenant, field, value)
-    if any(v is not None for v in profile_data.values()):
-        await _upsert_tenant_profile(db, tenant.id, **profile_data)
+
+    # The "current" entry in address_history (if the client sent one) takes priority
+    # over the legacy flat address fields for the tenant's profile address.
+    if "address_history" in body.model_fields_set and list_data["address_history"]:
+        current_addr = next((a for a in list_data["address_history"] if a.get("is_current")), list_data["address_history"][0])
+        for f in ("street_address", "city", "province", "postal_code", "country"):
+            profile_data[f] = current_addr.get(f)
+
+    combined_profile_data = {**profile_data, **rental_profile_data}
+    if any(v is not None for v in combined_profile_data.values()):
+        await _upsert_tenant_profile(db, tenant.id, **combined_profile_data)
     if tenant.first_name or tenant.last_name:
         tenant.full_name = " ".join(filter(None, [tenant.first_name, tenant.last_name]))
+
+    if "address_history" in body.model_fields_set:
+        await db.execute(delete(TenantAddressHistory).where(TenantAddressHistory.user_id == tenant.id))
+        for a in list_data["address_history"]:
+            db.add(TenantAddressHistory(user_id=tenant.id, created_at=datetime.now(timezone.utc), **a))
+    if "employment_history" in body.model_fields_set:
+        await db.execute(delete(TenantEmployment).where(TenantEmployment.user_id == tenant.id))
+        for e in list_data["employment_history"]:
+            db.add(TenantEmployment(user_id=tenant.id, created_at=datetime.now(timezone.utc), **e))
+    if "income_sources" in body.model_fields_set:
+        await db.execute(delete(TenantIncomeSource).where(TenantIncomeSource.user_id == tenant.id))
+        for i in list_data["income_sources"]:
+            db.add(TenantIncomeSource(user_id=tenant.id, created_at=datetime.now(timezone.utc), **i))
+    if "occupants" in body.model_fields_set:
+        await db.execute(delete(TenantOccupant).where(TenantOccupant.user_id == tenant.id))
+        for o in list_data["occupants"]:
+            db.add(TenantOccupant(user_id=tenant.id, created_at=datetime.now(timezone.utc), **o))
+    if "cosigners" in body.model_fields_set:
+        await db.execute(delete(TenantCosigner).where(TenantCosigner.user_id == tenant.id))
+        for c in list_data["cosigners"]:
+            db.add(TenantCosigner(user_id=tenant.id, created_at=datetime.now(timezone.utc), **c))
+    if "pets" in body.model_fields_set:
+        await db.execute(delete(TenantPet).where(TenantPet.user_id == tenant.id))
+        for p in list_data["pets"]:
+            db.add(TenantPet(user_id=tenant.id, created_at=datetime.now(timezone.utc), **p))
+    if "vehicles" in body.model_fields_set:
+        await db.execute(delete(TenantVehicle).where(TenantVehicle.user_id == tenant.id))
+        for v in list_data["vehicles"]:
+            db.add(TenantVehicle(user_id=tenant.id, created_at=datetime.now(timezone.utc), **v))
+
     await db.commit()
     result = await db.execute(
         select(User).where(User.id == tenant_user_id).options(selectinload(User.tenant_documents), selectinload(User.tenant_profile))

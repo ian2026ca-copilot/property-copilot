@@ -387,6 +387,7 @@ export const tenantsApi = {
   // Person-only (decoupled)
   listPersons: () => api.get<TenantOut[]>("/tenants/persons"),
   getPerson: (id: string) => api.get<TenantOut>(`/tenants/person/${id}`),
+  getApplication: (id: string) => api.get<Record<string, any>>(`/tenants/person/${id}/application`),
   aiExtract: (file: File) => upload<Record<string, string | null>>("/tenants/ai-extract", file),
   createPerson: (body: object) => api.post<TenantOut>("/tenants/person", body),
   updatePerson: (id: string, body: object) => api.put<TenantOut>(`/tenants/person/${id}`, body),
