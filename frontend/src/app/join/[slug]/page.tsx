@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Section, Field, selectClass, useRentalApplicationState, buildRentalApplicationPayload,
-  RentalApplicationSections, updateAt, removeAt,
+  RentalApplicationSections, updateAt, removeAt, COUNTRIES, PROVINCES, type Country,
 } from "@/components/rental-application/RentalApplicationFields";
 
 type Role = "TENANT" | "VENDOR";
@@ -47,6 +47,7 @@ export default function JoinLandlordPage() {
     first_name: "", middle_name: "", last_name: "", email: "", password: "", phone: "",
     date_of_birth: "", ssn_sin: "", drivers_licence: "",
     business_name: "", service_categories: [] as string[],
+    street_address: "", city: "", postal_code: "", country: "" as Country | "", province: "",
   });
 
   const app = useRentalApplicationState();
@@ -64,6 +65,11 @@ export default function JoinLandlordPage() {
 
   const set = (field: string) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm((f) => ({ ...f, [field]: e.target.value }));
+
+  function setField(field: string, value: string) {
+    setForm((f) => ({ ...f, [field]: value, ...(field === "country" ? { province: "" } : {}) }));
+  }
+  const provinceList = form.country ? PROVINCES[form.country as Country] ?? [] : [];
 
   function toggleCategory(cat: string) {
     setForm(f => ({
@@ -113,6 +119,11 @@ export default function JoinLandlordPage() {
       if (role === "VENDOR") {
         body.business_name = form.business_name;
         body.service_categories = form.service_categories;
+        body.street_address = form.street_address || null;
+        body.city = form.city || null;
+        body.province = form.province || null;
+        body.postal_code = form.postal_code || null;
+        body.country = form.country || null;
       }
 
       if (role === "TENANT") {
@@ -260,6 +271,26 @@ export default function JoinLandlordPage() {
                   <Label htmlFor="password">Password</Label>
                   <Input id="password" type="password" placeholder="At least 8 characters" value={form.password} onChange={set("password")} required minLength={8} />
                 </div>
+
+                <div className="space-y-1.5">
+                  <Label>Address <span className="text-slate-400 font-normal">(optional)</span></Label>
+                  <Input placeholder="Street address" value={form.street_address} onChange={set("street_address")} />
+                  <div className="grid grid-cols-2 gap-2">
+                    <Input placeholder="City" value={form.city} onChange={set("city")} />
+                    <Input placeholder="Postal / ZIP code" value={form.postal_code} onChange={set("postal_code")} />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <select className={selectClass} value={form.country} onChange={(e) => setField("country", e.target.value)}>
+                      <option value="">— select country —</option>
+                      {COUNTRIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                    <select className={selectClass} value={form.province} disabled={!form.country} onChange={(e) => setField("province", e.target.value)}>
+                      <option value="">— select province/state —</option>
+                      {provinceList.map((p) => <option key={p} value={p}>{p}</option>)}
+                    </select>
+                  </div>
+                </div>
+
                 {error && <p className="text-sm text-red-600">{error}</p>}
                 <div className="flex gap-2">
                   <Button type="button" variant="outline" onClick={() => setRole(null)} disabled={loading}>Back</Button>

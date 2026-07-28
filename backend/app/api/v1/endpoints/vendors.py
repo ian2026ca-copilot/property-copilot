@@ -1,5 +1,7 @@
+import os
 import secrets
 import uuid
+from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,6 +16,7 @@ from app.models.maintenance import Vendor, VendorOrganization, VendorAvailabilit
 from app.schemas.maintenance import (
     VendorCreate, VendorUpdate, VendorOut,
     VendorAvailabilityCreate, VendorAvailabilityOut,
+    VendorAvailabilityAIGenerateIn, VendorAvailabilityAIGenerateOut, VendorAvailabilitySlotSuggestion,
 )
 
 router = APIRouter(prefix="/vendors", tags=["vendors"])
@@ -216,6 +219,83 @@ async def list_availability(
     return res.scalars().all()
 
 
+@router.post("/{vendor_id}/availability/ai-generate", response_model=VendorAvailabilityAIGenerateOut)
+async def ai_generate_availability(
+    vendor_id: str,
+    body: VendorAvailabilityAIGenerateIn,
+    current: tuple[User, OrganizationMember] = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Use Gemini to turn a free-text availability description into proposed slots for review."""
+    import json
+    import google.generativeai as genai
+
+    user, member = current
+    vendor = await _get_vendor(vendor_id, db)
+    if member.role == UserRole.VENDOR and str(vendor.user_id) != str(user.id):
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    if not body.description or not body.description.strip():
+        raise HTTPException(status_code=400, detail="Describe your availability first")
+
+    api_key = os.environ.get("GEMINI_API_KEY", "")
+    if not api_key:
+        raise HTTPException(status_code=503, detail="Gemini API key not configured")
+
+    today = date.today()
+    start = body.start_date or today
+    end = body.end_date or (start + timedelta(days=13))
+
+    prompt = (
+        "You are a scheduling assistant helping a maintenance vendor set their availability calendar.\n"
+        f"Today's date is {today.isoformat()} ({today.strftime('%A')}).\n"
+        f"Generate availability slots between {start.isoformat()} and {end.isoformat()} (inclusive) based on "
+        f"this description from the vendor:\n\"{body.description.strip()}\"\n\n"
+        "Return ONLY a JSON object with this exact shape:\n"
+        "{\"slots\": [{\"date\": \"YYYY-MM-DD\", \"start_time\": \"HH:MM\", \"end_time\": \"HH:MM\"}, ...]}\n"
+        "Rules:\n"
+        "- Only include dates within the given range.\n"
+        "- Use 24-hour HH:MM time format.\n"
+        "- If the description mentions specific days of the week (e.g. weekdays, Mondays, weekends), only "
+        "generate slots on matching dates.\n"
+        "- If the description excludes a specific date or day, do not create a slot for it.\n"
+        "- Keep slot times reasonable (between 06:00 and 20:00) unless the description says otherwise.\n"
+        "No explanation, no markdown fences, just the JSON object."
+    )
+
+    try:
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel("gemini-2.5-flash")
+        response = model.generate_content(prompt)
+        raw = response.text or ""
+    except Exception as e:
+        err_str = str(e)
+        if "quota" in err_str.lower() or "429" in err_str:
+            raise HTTPException(status_code=402, detail="Gemini quota exceeded — check your API key at aistudio.google.com")
+        raise HTTPException(status_code=502, detail=f"Gemini error: {err_str[:200]}")
+
+    raw = raw.strip()
+    if raw.startswith("```"):
+        raw = raw.split("```")[1]
+        if raw.startswith("json"):
+            raw = raw[4:]
+    raw = raw.strip()
+
+    try:
+        data = json.loads(raw)
+    except Exception:
+        raise HTTPException(status_code=422, detail=f"Could not parse AI response: {raw[:200]}")
+
+    slots: list[VendorAvailabilitySlotSuggestion] = []
+    for s in data.get("slots", []):
+        try:
+            slots.append(VendorAvailabilitySlotSuggestion(date=s["date"], start_time=s["start_time"], end_time=s["end_time"]))
+        except Exception:
+            continue
+
+    return VendorAvailabilityAIGenerateOut(slots=slots)
+
+
 @router.post("/{vendor_id}/availability", response_model=VendorAvailabilityOut, status_code=status.HTTP_201_CREATED)
 async def add_availability(
     vendor_id: str,
@@ -237,6 +317,38 @@ async def add_availability(
         end_time=body.end_time,
     )
     db.add(slot)
+    await db.commit()
+    await db.refresh(slot)
+    return slot
+
+
+@router.patch("/{vendor_id}/availability/{slot_id}", response_model=VendorAvailabilityOut)
+async def update_availability(
+    vendor_id: str,
+    slot_id: str,
+    body: VendorAvailabilityCreate,
+    current: tuple[User, OrganizationMember] = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    user, member = current
+    vendor = await _get_vendor(vendor_id, db)
+
+    if member.role == UserRole.VENDOR and str(vendor.user_id) != str(user.id):
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    res = await db.execute(
+        select(VendorAvailability).where(
+            VendorAvailability.id == slot_id,
+            VendorAvailability.vendor_id == vendor.id,
+        )
+    )
+    slot = res.scalar_one_or_none()
+    if not slot:
+        raise HTTPException(status_code=404, detail="Availability slot not found")
+
+    slot.date = body.date
+    slot.start_time = body.start_time
+    slot.end_time = body.end_time
     await db.commit()
     await db.refresh(slot)
     return slot

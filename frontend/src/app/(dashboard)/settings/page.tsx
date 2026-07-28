@@ -36,9 +36,41 @@ function ProfileTab() {
   const [error, setError] = useState("");
   const [linkCopied, setLinkCopied] = useState(false);
 
-  const signupLink = user?.org_slug && typeof window !== "undefined"
-    ? `${window.location.origin}/join/${user.org_slug}`
-    : "";
+  const [orgName, setOrgName] = useState(user?.org_name ?? "");
+  const [savingOrg, setSavingOrg] = useState(false);
+  const [orgSuccess, setOrgSuccess] = useState(false);
+  const [orgError, setOrgError] = useState("");
+
+  useEffect(() => {
+    setOrgName(user?.org_name ?? "");
+  }, [user?.org_name]);
+
+  async function handleSaveOrg(e: React.FormEvent) {
+    e.preventDefault();
+    if (!orgName.trim()) { setOrgError("Company name is required"); return; }
+    setSavingOrg(true); setOrgError(""); setOrgSuccess(false);
+    try {
+      await profileApi.updateOrg({ name: orgName.trim() });
+      await refresh();
+      setOrgSuccess(true);
+      setTimeout(() => setOrgSuccess(false), 3000);
+    } catch (e: unknown) {
+      setOrgError(e instanceof Error ? e.message : "Save failed");
+    } finally { setSavingOrg(false); }
+  }
+
+  const [slug, setSlug] = useState(user?.org_slug ?? "");
+  const [savingSlug, setSavingSlug] = useState(false);
+  const [slugSuccess, setSlugSuccess] = useState(false);
+  const [slugError, setSlugError] = useState("");
+  const SLUG_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+
+  useEffect(() => {
+    setSlug(user?.org_slug ?? "");
+  }, [user?.org_slug]);
+
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
+  const signupLink = user?.org_slug ? `${origin}/join/${user.org_slug}` : "";
 
   function copySignupLink() {
     if (!signupLink) return;
@@ -46,6 +78,24 @@ function ProfileTab() {
       setLinkCopied(true);
       setTimeout(() => setLinkCopied(false), 2000);
     });
+  }
+
+  async function handleSaveSlug(e: React.FormEvent) {
+    e.preventDefault();
+    const cleaned = slug.trim().toLowerCase();
+    if (!SLUG_RE.test(cleaned)) {
+      setSlugError("Only lowercase letters, numbers, and hyphens are allowed.");
+      return;
+    }
+    setSavingSlug(true); setSlugError(""); setSlugSuccess(false);
+    try {
+      await profileApi.updateOrg({ slug: cleaned });
+      await refresh();
+      setSlugSuccess(true);
+      setTimeout(() => setSlugSuccess(false), 3000);
+    } catch (e: unknown) {
+      setSlugError(e instanceof Error ? e.message : "Save failed");
+    } finally { setSavingSlug(false); }
   }
 
   useEffect(() => {
@@ -114,9 +164,32 @@ function ProfileTab() {
       </div>
 
       <div className="bg-white rounded-xl border border-slate-200 p-6">
-        <h3 className="text-sm font-semibold text-slate-900 mb-1">Organization</h3>
-        <p className="text-sm text-slate-500">{user?.org_name}</p>
-        <p className="text-[11px] text-slate-400 mt-1">Role: {user?.role}</p>
+        <h3 className="text-sm font-semibold text-slate-900 mb-5">Company</h3>
+        {user?.role === "OWNER" ? (
+          <form onSubmit={handleSaveOrg} className="space-y-4">
+            <div>
+              <label className="block text-xs font-medium text-slate-700 mb-1">Company name</label>
+              <input
+                value={orgName}
+                onChange={(e) => setOrgName(e.target.value)}
+                className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black"
+                required
+              />
+            </div>
+            {orgError && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{orgError}</p>}
+            {orgSuccess && <p className="text-xs text-emerald-600 bg-emerald-50 rounded-lg px-3 py-2">Company name updated successfully</p>}
+            <button
+              type="submit"
+              disabled={savingOrg}
+              className="px-4 py-2 text-sm bg-black text-white rounded-lg hover:bg-slate-800 font-medium disabled:opacity-50 transition-colors"
+            >
+              {savingOrg ? "Saving…" : "Save changes"}
+            </button>
+          </form>
+        ) : (
+          <p className="text-sm text-slate-500">{user?.org_name}</p>
+        )}
+        <p className="text-[11px] text-slate-400 mt-3">Role: {user?.role}</p>
       </div>
 
       {user?.role === "OWNER" && (
@@ -125,7 +198,7 @@ function ProfileTab() {
           <p className="text-[11px] text-slate-400 mb-3">
             Share this link so tenants and vendors can create their own account under {user?.org_name}.
           </p>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 mb-4">
             <input
               readOnly
               value={signupLink}
@@ -140,6 +213,30 @@ function ProfileTab() {
               {linkCopied ? "Copied!" : "Copy"}
             </button>
           </div>
+
+          <form onSubmit={handleSaveSlug} className="border-t border-slate-100 pt-4 space-y-2">
+            <label className="block text-xs font-medium text-slate-700">Customize URL</label>
+            <div className="flex items-center gap-1">
+              <span className="text-sm text-slate-400 whitespace-nowrap">{origin}/join/</span>
+              <input
+                value={slug}
+                onChange={(e) => setSlug(e.target.value)}
+                className="flex-1 min-w-0 text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 outline-none focus:border-black"
+              />
+            </div>
+            <p className="text-[11px] text-slate-400">
+              Lowercase letters, numbers, and hyphens only. Changing this will break any links you've already shared.
+            </p>
+            {slugError && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{slugError}</p>}
+            {slugSuccess && <p className="text-xs text-emerald-600 bg-emerald-50 rounded-lg px-3 py-2">Sign-up page URL updated successfully</p>}
+            <button
+              type="submit"
+              disabled={savingSlug || slug === user?.org_slug}
+              className="px-4 py-2 text-sm bg-black text-white rounded-lg hover:bg-slate-800 font-medium disabled:opacity-50 transition-colors"
+            >
+              {savingSlug ? "Saving…" : "Save URL"}
+            </button>
+          </form>
         </div>
       )}
     </div>

@@ -146,6 +146,14 @@ export interface LeaseOut {
   property_name: string | null;
 }
 
+export interface PaymentNoteOut {
+  id: string;
+  note: string;
+  author_name: string;
+  author_user_id: string;
+  created_at: string | null;
+}
+
 export interface PaymentOut {
   id: string;
   lease_id: string;
@@ -155,11 +163,13 @@ export interface PaymentOut {
   status: "PENDING" | "PAID" | "OVERDUE" | "VOIDED" | string;
   payment_type: "RENT" | "SECURITY_DEPOSIT" | "LATE_FEE" | "MAINTENANCE_CHARGE" | "OTHER" | string;
   description: string | null;
-  notes: string | null;
+  notes: PaymentNoteOut[];
   tenant_name: string | null;
   tenant_avatar_url: string | null;
   unit_number: string | null;
   property_name: string | null;
+  status_updated_by_name: string | null;
+  status_updated_at: string | null;
 }
 
 export interface MaintenanceAttachmentOut {
@@ -237,6 +247,16 @@ export interface VendorAvailabilityOut {
   date: string;
   start_time: string;
   end_time: string;
+}
+
+export interface VendorAvailabilitySlotSuggestion {
+  date: string;
+  start_time: string;
+  end_time: string;
+}
+
+export interface VendorAvailabilityAIGenerateOut {
+  slots: VendorAvailabilitySlotSuggestion[];
 }
 
 export interface UnitDetailOut {
@@ -459,6 +479,8 @@ export const paymentsApi = {
   create: (body: object) => api.post<PaymentOut>("/payments", body),
   update: (id: string, body: object) => api.patch<PaymentOut>(`/payments/${id}`, body),
   void: (id: string) => api.delete<void>(`/payments/${id}`),
+  addNote: (id: string, note: string) => api.post<PaymentOut>(`/payments/${id}/notes`, { note }),
+  removeNote: (id: string, noteId: string) => api.delete<void>(`/payments/${id}/notes/${noteId}`),
 };
 
 export interface MaintenanceAIGenerateOut {
@@ -503,7 +525,10 @@ export const vendorsApi = {
   me: () => api.get<VendorOut>("/vendors/me/profile"),
   listAvailability: (vendorId: string) => api.get<VendorAvailabilityOut[]>(`/vendors/${vendorId}/availability`),
   addAvailability: (vendorId: string, body: object) => api.post<VendorAvailabilityOut>(`/vendors/${vendorId}/availability`, body),
+  updateAvailability: (vendorId: string, slotId: string, body: object) => api.patch<VendorAvailabilityOut>(`/vendors/${vendorId}/availability/${slotId}`, body),
   deleteAvailability: (vendorId: string, slotId: string) => api.delete<void>(`/vendors/${vendorId}/availability/${slotId}`),
+  aiGenerateAvailability: (vendorId: string, description: string) =>
+    api.post<VendorAvailabilityAIGenerateOut>(`/vendors/${vendorId}/availability/ai-generate`, { description }),
 };
 
 export interface TeamMemberOut {
@@ -560,6 +585,7 @@ export const profileApi = {
   me: () => api.get<UserOut>("/auth/me"),
   update: (body: { full_name?: string; phone?: string }) =>
     api.patch<UserOut>("/auth/me", body),
+  updateOrg: (body: { name?: string; slug?: string }) => api.patch<UserOut>("/auth/org", body),
 };
 
 export interface OrganizationPublicOut {

@@ -184,3 +184,19 @@ class VendorAvailabilityOut(BaseModel):
     start_time: time
     end_time: time
     model_config = {"from_attributes": True}
+
+
+class VendorAvailabilityAIGenerateIn(BaseModel):
+    description: str
+    start_date: date | None = None
+    end_date: date | None = None
+
+
+class VendorAvailabilitySlotSuggestion(BaseModel):
+    date: date
+    start_time: time
+    end_time: time
+
+
+class VendorAvailabilityAIGenerateOut(BaseModel):
+    slots: list[VendorAvailabilitySlotSuggestion] = []

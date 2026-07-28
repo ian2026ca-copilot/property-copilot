@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
-import { paymentsApi, tenantsApi, type PaymentOut, type LeaseOut } from "@/lib/api";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
+import { paymentsApi, tenantsApi, type PaymentOut, type PaymentNoteOut, type LeaseOut } from "@/lib/api";
 import { MOCK_MODE } from "@/lib/useApiData";
+import { useAuth } from "@/context/AuthContext";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -12,6 +13,8 @@ interface PaymentRow {
   tenantName: string;
   tenantAvatar: string;
   tenantAvatarUrl: string | null;
+  unitNumber: string | null;
+  propertyName: string | null;
   unitProperty: string;
   type: string;
   amount: number;
@@ -19,16 +22,18 @@ interface PaymentRow {
   paidDate: string | null;
   status: string;
   description: string | null;
-  notes: string | null;
+  notes: PaymentNoteOut[];
+  statusUpdatedByName: string | null;
+  statusUpdatedAt: string | null;
 }
 
 // ─── Mock data ────────────────────────────────────────────────────────────────
 
 const MOCK_PAYMENTS: PaymentRow[] = [
-  { id: "p1", leaseId: "l1", tenantName: "Emma Jones", tenantAvatar: "EJ", tenantAvatarUrl: null, unitProperty: "101 · Sunset Towers", type: "RENT", amount: 2400, dueDate: "2026-06-01", paidDate: "2026-06-01", status: "PAID", description: "Rent — June 2026", notes: null },
-  { id: "p2", leaseId: "l2", tenantName: "Marcus Lee", tenantAvatar: "ML", tenantAvatarUrl: null, unitProperty: "103 · Sunset Towers", type: "RENT", amount: 2750, dueDate: "2026-06-01", paidDate: null, status: "OVERDUE", description: "Rent — June 2026", notes: null },
-  { id: "p3", leaseId: "l3", tenantName: "Sarah Kim", tenantAvatar: "SK", tenantAvatarUrl: null, unitProperty: "A1 · Cedar Row", type: "RENT", amount: 3100, dueDate: "2026-07-01", paidDate: null, status: "PENDING", description: "Rent — July 2026", notes: null },
-  { id: "p4", leaseId: "l1", tenantName: "Emma Jones", tenantAvatar: "EJ", tenantAvatarUrl: null, unitProperty: "101 · Sunset Towers", type: "LATE_FEE", amount: 120, dueDate: "2026-05-06", paidDate: null, status: "OVERDUE", description: "Late fee — May 2026", notes: null },
+  { id: "p1", leaseId: "l1", tenantName: "Emma Jones", tenantAvatar: "EJ", tenantAvatarUrl: null, unitNumber: "101", propertyName: "Sunset Towers", unitProperty: "101 · Sunset Towers", type: "RENT", amount: 2400, dueDate: "2026-06-01", paidDate: "2026-06-01", status: "PAID", description: "Rent — June 2026", notes: [], statusUpdatedByName: "Alex Owner", statusUpdatedAt: "2026-06-01T14:32:00Z" },
+  { id: "p2", leaseId: "l2", tenantName: "Marcus Lee", tenantAvatar: "ML", tenantAvatarUrl: null, unitNumber: "103", propertyName: "Sunset Towers", unitProperty: "103 · Sunset Towers", type: "RENT", amount: 2750, dueDate: "2026-06-01", paidDate: null, status: "OVERDUE", description: "Rent — June 2026", notes: [], statusUpdatedByName: null, statusUpdatedAt: null },
+  { id: "p3", leaseId: "l3", tenantName: "Sarah Kim", tenantAvatar: "SK", tenantAvatarUrl: null, unitNumber: "A1", propertyName: "Cedar Row", unitProperty: "A1 · Cedar Row", type: "RENT", amount: 3100, dueDate: "2026-07-01", paidDate: null, status: "PENDING", description: "Rent — July 2026", notes: [], statusUpdatedByName: null, statusUpdatedAt: null },
+  { id: "p4", leaseId: "l1", tenantName: "Emma Jones", tenantAvatar: "EJ", tenantAvatarUrl: null, unitNumber: "101", propertyName: "Sunset Towers", unitProperty: "101 · Sunset Towers", type: "LATE_FEE", amount: 120, dueDate: "2026-05-06", paidDate: null, status: "OVERDUE", description: "Late fee — May 2026", notes: [], statusUpdatedByName: null, statusUpdatedAt: null },
 ];
 
 const MOCK_LEASES: LeaseOut[] = [];
@@ -61,6 +66,8 @@ function fromApi(p: PaymentOut): PaymentRow {
     tenantName: p.tenant_name ?? "Unknown",
     tenantAvatar: initials(p.tenant_name ?? "??"),
     tenantAvatarUrl: p.tenant_avatar_url ?? null,
+    unitNumber: p.unit_number ?? null,
+    propertyName: p.property_name ?? null,
     unitProperty: [p.unit_number, p.property_name].filter(Boolean).join(" · "),
     type: p.payment_type,
     amount: p.amount,
@@ -68,8 +75,23 @@ function fromApi(p: PaymentOut): PaymentRow {
     paidDate: p.paid_date ? String(p.paid_date) : null,
     status: p.status,
     description: p.description,
-    notes: p.notes ?? null,
+    notes: p.notes ?? [],
+    statusUpdatedByName: p.status_updated_by_name ?? null,
+    statusUpdatedAt: p.status_updated_at ?? null,
   };
+}
+
+function formatStatusUpdated(name: string | null, at: string | null): string | null {
+  if (!name || !at) return null;
+  const d = new Date(at);
+  const dateStr = d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  const timeStr = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  return `${name} · ${dateStr} ${timeStr}`;
+}
+
+function fmtNoteDt(s: string | null) {
+  if (!s) return "—";
+  return new Date(s).toLocaleString("en-CA", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
 // ─── Confirm dialog ───────────────────────────────────────────────────────────
@@ -95,12 +117,12 @@ function ConfirmDialog({ message, confirmLabel = "Confirm", danger = false, onCo
 
 interface AddForm {
   lease_id: string; payment_type: string; amount: string;
-  due_date: string; paid_date: string; description: string; notes: string;
+  due_date: string; paid_date: string; description: string;
 }
 
 const BLANK_ADD: AddForm = {
   lease_id: "", payment_type: "RENT", amount: "",
-  due_date: "", paid_date: "", description: "", notes: "",
+  due_date: "", paid_date: "", description: "",
 };
 
 function AddPaymentModal({ leases, onClose, onSaved }: {
@@ -134,7 +156,6 @@ function AddPaymentModal({ leases, onClose, onSaved }: {
         due_date: form.due_date,
         paid_date: form.paid_date || null,
         description: form.description || null,
-        notes: form.notes || null,
       });
       onSaved(fromApi(saved));
     } catch (e: unknown) {
@@ -192,10 +213,6 @@ function AddPaymentModal({ leases, onClose, onSaved }: {
             <label className="block text-xs font-medium text-slate-700 mb-1">Description</label>
             <input value={form.description} onChange={set("description")} placeholder="e.g. Late fee for May 2026" className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black" />
           </div>
-          <div>
-            <label className="block text-xs font-medium text-slate-700 mb-1">Notes</label>
-            <textarea value={form.notes} onChange={set("notes")} rows={2} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black resize-none" />
-          </div>
         </div>
         <div className="flex gap-3 px-6 py-4 border-t border-slate-100 sticky bottom-0 bg-white">
           <button onClick={onClose} className="flex-1 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Cancel</button>
@@ -212,12 +229,13 @@ function AddPaymentModal({ leases, onClose, onSaved }: {
 
 interface EditForm {
   payment_type: string; amount: string; due_date: string;
-  paid_date: string; status: string; description: string; notes: string;
+  paid_date: string; status: string; description: string;
 }
 
 function EditPaymentModal({ payment, onClose, onSaved }: {
   payment: PaymentRow; onClose: () => void; onSaved: (p: PaymentRow) => void;
 }) {
+  const { user } = useAuth();
   const [form, setForm] = useState<EditForm>({
     payment_type: payment.type,
     amount: String(payment.amount),
@@ -225,10 +243,12 @@ function EditPaymentModal({ payment, onClose, onSaved }: {
     paid_date: payment.paidDate ?? "",
     status: payment.status,
     description: payment.description ?? "",
-    notes: payment.notes ?? "",
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [notes, setNotes] = useState<PaymentNoteOut[]>(payment.notes);
+  const [newNote, setNewNote] = useState("");
+  const [addingNote, setAddingNote] = useState(false);
   const set = (f: keyof EditForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm(v => ({ ...v, [f]: e.target.value }));
 
@@ -242,12 +262,29 @@ function EditPaymentModal({ payment, onClose, onSaved }: {
         paid_date: form.paid_date || null,
         status: form.status,
         description: form.description || null,
-        notes: form.notes || null,
       });
       onSaved(fromApi(saved));
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Save failed");
     } finally { setSaving(false); }
+  }
+
+  async function addNote() {
+    const text = newNote.trim();
+    if (!text) return;
+    setAddingNote(true); setError("");
+    try {
+      const saved = await paymentsApi.addNote(payment.id, text);
+      setNotes(saved.notes);
+      setNewNote("");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Could not add note");
+    } finally { setAddingNote(false); }
+  }
+
+  async function deleteNote(noteId: string) {
+    await paymentsApi.removeNote(payment.id, noteId);
+    setNotes(prev => prev.filter(n => n.id !== noteId));
   }
 
   return (
@@ -298,9 +335,31 @@ function EditPaymentModal({ payment, onClose, onSaved }: {
             <label className="block text-xs font-medium text-slate-700 mb-1">Description</label>
             <input value={form.description} onChange={set("description")} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black" />
           </div>
-          <div>
-            <label className="block text-xs font-medium text-slate-700 mb-1">Notes</label>
-            <textarea value={form.notes} onChange={set("notes")} rows={2} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black resize-none" />
+          <div className="border-t border-slate-100 pt-3">
+            <p className="text-[11px] uppercase tracking-wider font-medium text-slate-400 mb-2">Notes ({notes.length})</p>
+            {notes.length > 0 && (
+              <div className="space-y-2 mb-2 max-h-44 overflow-y-auto pr-1">
+                {notes.map(n => (
+                  <div key={n.id} className="bg-slate-50 rounded-lg px-3 py-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs font-medium text-slate-700">{n.author_name}</p>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <p className="text-[11px] text-slate-400">{fmtNoteDt(n.created_at)}</p>
+                        {n.author_user_id === user?.id && (
+                          <button type="button" onClick={() => deleteNote(n.id)} className="text-[11px] text-slate-400 hover:text-red-500">Delete</button>
+                        )}
+                      </div>
+                    </div>
+                    <p className="text-sm text-slate-700 whitespace-pre-wrap mt-0.5">{n.note}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+            <textarea value={newNote} onChange={e => setNewNote(e.target.value)} rows={2} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black resize-none" placeholder="Add a note…" />
+            <button type="button" onClick={addNote} disabled={addingNote || !newNote.trim()}
+              className="mt-1.5 w-full px-4 py-2 border border-slate-200 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+              {addingNote ? "Adding…" : "Add note"}
+            </button>
           </div>
         </div>
         <div className="flex gap-3 px-6 py-4 border-t border-slate-100 sticky bottom-0 bg-white">
@@ -342,6 +401,7 @@ export default function PaymentsPage() {
   const [leases, setLeases] = useState<LeaseOut[]>(MOCK_LEASES);
   const [modal, setModal] = useState<ModalState>({ type: "none" });
   const [statusFilter, setStatusFilter] = useState("all");
+  const [periodFilter, setPeriodFilter] = useState<"this_month" | "last_month" | "all">("this_month");
   const [search, setSearch] = useState("");
   const [rules, setRules] = useState(AUTOMATION_RULES);
 
@@ -379,22 +439,33 @@ export default function PaymentsPage() {
     }
     try {
       await paymentsApi.void(p.id);
-      setPayments(prev => prev.map(x => x.id === p.id ? { ...x, status: "VOIDED" } : x));
+      const data = await paymentsApi.list();
+      setPayments(data.map(fromApi));
     } catch { /* silent */ } finally {
       setModal({ type: "none" });
     }
   }, []);
+
+  const today = new Date().toISOString().slice(0, 10);
+  const thisMonth = today.slice(0, 7);
+  const lastMonthDate = new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1);
+  const lastMonth = `${lastMonthDate.getFullYear()}-${String(lastMonthDate.getMonth() + 1).padStart(2, "0")}`;
+
+  const unitOptions = useMemo(
+    () => Array.from(new Set(payments.map(p => p.unitProperty).filter(Boolean))).sort(),
+    [payments]
+  );
 
   const filtered = payments.filter(p => {
     const matchStatus = statusFilter === "all" || p.status === statusFilter;
     const matchSearch = !search ||
       p.tenantName.toLowerCase().includes(search.toLowerCase()) ||
       p.unitProperty.toLowerCase().includes(search.toLowerCase());
-    return matchStatus && matchSearch;
+    const matchPeriod = periodFilter === "all"
+      || (periodFilter === "this_month" && p.dueDate.startsWith(thisMonth))
+      || (periodFilter === "last_month" && p.dueDate.startsWith(lastMonth));
+    return matchStatus && matchSearch && matchPeriod;
   });
-
-  const today = new Date().toISOString().slice(0, 10);
-  const thisMonth = today.slice(0, 7);
 
   const collectedThisMonth = payments.filter(p => p.status === "PAID" && p.paidDate?.startsWith(thisMonth)).reduce((s, p) => s + p.amount, 0);
   const outstanding = payments.filter(p => ["PENDING", "OVERDUE"].includes(p.status)).reduce((s, p) => s + p.amount, 0);
@@ -460,8 +531,17 @@ export default function PaymentsPage() {
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 placeholder="Search tenant or unit…"
+                list="payment-unit-options"
                 className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 outline-none focus:border-black w-44"
               />
+              <datalist id="payment-unit-options">
+                {unitOptions.map(u => <option key={u} value={u} />)}
+              </datalist>
+              <select value={periodFilter} onChange={e => setPeriodFilter(e.target.value as "this_month" | "last_month" | "all")} className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white outline-none focus:border-black">
+                <option value="this_month">This month</option>
+                <option value="last_month">Last month</option>
+                <option value="all">All time</option>
+              </select>
               <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white outline-none focus:border-black">
                 <option value="all">All status</option>
                 <option value="PENDING">Pending</option>
@@ -476,25 +556,26 @@ export default function PaymentsPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-100">
-                  {["Tenant", "Type", "Due", "Amount", "Paid on", "Status", ""].map(h => (
+                  {["Tenant", "Unit", "Type", "Due", "Amount", "Paid on", "Status", ""].map(h => (
                     <th key={h} className="text-left text-[11px] font-medium text-slate-400 uppercase tracking-wider px-4 py-3 whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
                 {filtered.length === 0 && (
-                  <tr><td colSpan={7} className="px-4 py-8 text-center text-xs text-slate-400">No payments found.</td></tr>
+                  <tr><td colSpan={8} className="px-4 py-8 text-center text-xs text-slate-400">No payments found.</td></tr>
                 )}
                 {filtered.map(p => (
                   <tr key={p.id} className={`hover:bg-slate-50 transition-colors group ${p.status === "VOIDED" ? "opacity-50" : ""}`}>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2.5">
                         <Avatar ini={p.tenantAvatar} url={p.tenantAvatarUrl} />
-                        <div>
-                          <p className="text-xs font-medium text-slate-900">{p.tenantName}</p>
-                          <p className="text-[11px] text-slate-400">{p.unitProperty}</p>
-                        </div>
+                        <p className="text-xs font-medium text-slate-900">{p.tenantName}</p>
                       </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <p className="text-xs text-slate-700">{p.unitNumber ?? "—"}</p>
+                      <p className="text-[11px] text-slate-400 truncate max-w-[120px]">{p.propertyName ?? ""}</p>
                     </td>
                     <td className="px-4 py-3 text-xs text-slate-600">{TYPE_LABELS[p.type] ?? p.type}</td>
                     <td className="px-4 py-3 text-xs text-slate-500">{p.dueDate}</td>
@@ -503,9 +584,17 @@ export default function PaymentsPage() {
                     </td>
                     <td className="px-4 py-3 text-xs text-slate-500">{p.paidDate ?? <span className="text-slate-300">—</span>}</td>
                     <td className="px-4 py-3">
-                      <span className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-medium ${STATUS_STYLES[p.status] ?? "bg-slate-100 text-slate-500"}`}>
+                      <span
+                        title={formatStatusUpdated(p.statusUpdatedByName, p.statusUpdatedAt) ?? undefined}
+                        className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-medium ${STATUS_STYLES[p.status] ?? "bg-slate-100 text-slate-500"}`}
+                      >
                         {STATUS_LABELS[p.status] ?? p.status}
                       </span>
+                      {p.statusUpdatedByName && (
+                        <p className="text-[10px] text-slate-400 mt-0.5 truncate max-w-[140px]">
+                          by {p.statusUpdatedByName}
+                        </p>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">

@@ -88,3 +88,8 @@ class UserUpdate(BaseModel):
         if v is None:
             return v
         return _validate_phone(v)
+
+
+class OrganizationUpdate(BaseModel):
+    name: str | None = None
+    slug: str | None = None

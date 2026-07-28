@@ -21,7 +21,7 @@ from app.models.tenant_application import (
 from app.models.marketing_site import MarketingSite, DEFAULT_MARKETING_SITES
 from app.schemas.auth import (
     RegisterRequest, LoginRequest, TokenResponse, UserOut, UserUpdate,
-    ForgotPasswordRequest, ResetPasswordRequest, OrganizationPublicOut,
+    ForgotPasswordRequest, ResetPasswordRequest, OrganizationPublicOut, OrganizationUpdate,
 )
 from app.api.deps import get_current_user
 
@@ -276,6 +276,48 @@ async def update_me(
     await db.refresh(user)
     org_result = await db.execute(select(Organization).where(Organization.id == member.organization_id))
     org = org_result.scalar_one()
+    return UserOut(
+        id=str(user.id),
+        email=user.email,
+        full_name=user.full_name,
+        phone=user.phone,
+        org_id=str(org.id),
+        org_name=org.name,
+        org_slug=org.slug,
+        role=member.role,
+    )
+
+
+@router.patch("/org", response_model=UserOut)
+async def update_organization(
+    body: OrganizationUpdate,
+    current=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    user, member = current
+    if member.role != UserRole.OWNER:
+        raise HTTPException(status_code=403, detail="Only the owner can update organization details")
+
+    org_result = await db.execute(select(Organization).where(Organization.id == member.organization_id))
+    org = org_result.scalar_one()
+
+    if body.name is not None:
+        name = body.name.strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="Company name is required")
+        org.name = name
+
+    if body.slug is not None:
+        slug = body.slug.strip().lower()
+        if not re.match(r"^[a-z0-9]+(-[a-z0-9]+)*$", slug):
+            raise HTTPException(status_code=400, detail="URL can only contain lowercase letters, numbers, and hyphens")
+        if slug != org.slug:
+            taken = await db.execute(select(Organization).where(Organization.slug == slug, Organization.id != org.id))
+            if taken.scalar_one_or_none():
+                raise HTTPException(status_code=400, detail="This URL is already taken")
+            org.slug = slug
+
+    await db.commit()
     return UserOut(
         id=str(user.id),
         email=user.email,
