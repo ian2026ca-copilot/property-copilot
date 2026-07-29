@@ -3,6 +3,7 @@ import smtplib
 import ssl
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from html import escape as _escape_html
 
 
 def _smtp_send(to_email: str, subject: str, html: str) -> None:
@@ -178,3 +179,19 @@ def send_welcome_email(to_email: str, full_name: str, org_name: str, role: str, 
     </div>
     """
     _smtp_send(to_email, f"Welcome to Property Copilot, {first}! 🎉", html)
+
+
+def send_overdue_notice_email(to_email: str, subject: str, message: str) -> None:
+    if not os.getenv("SMTP_HOST"):
+        print(f"\n[Overdue Notice Email] To: {to_email}\nSubject: {subject}\n{message}\n", flush=True)
+        return
+
+    safe_message = _escape_html(message).replace("\n", "<br>")
+    html = f"""
+    <div style="font-family:sans-serif;max-width:520px;margin:auto;padding:32px 24px;color:#111">
+      {_logo_block()}
+      <h2 style="margin:0 0 16px;font-size:20px">{_escape_html(subject)}</h2>
+      <div style="color:#333;line-height:1.7">{safe_message}</div>
+    </div>
+    """
+    _smtp_send(to_email, subject, html)

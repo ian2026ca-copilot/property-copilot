@@ -47,9 +47,33 @@ class PaymentOut(BaseModel):
     notes: list[PaymentNoteOut] = []
     tenant_name: str | None = None
     tenant_avatar_url: str | None = None
+    tenant_email: str | None = None
+    tenant_phone: str | None = None
     unit_number: str | None = None
     property_name: str | None = None
     status_updated_by_name: str | None = None
     status_updated_at: datetime | None = None
 
     model_config = {"from_attributes": True}
+
+
+class PaymentNoticeAIGenerateIn(BaseModel):
+    extra_instructions: str | None = None
+
+
+class PaymentNoticeAIGenerateOut(BaseModel):
+    subject: str
+    message: str
+
+
+class PaymentNoticeSend(BaseModel):
+    subject: str
+    message: str
+    channels: list[str]
+
+
+class PaymentNoticeSendOut(BaseModel):
+    email_sent: bool
+    sms_sent: bool
+    skipped_channels: list[str] = []
+    payment: PaymentOut

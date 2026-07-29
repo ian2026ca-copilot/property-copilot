@@ -166,10 +166,24 @@ export interface PaymentOut {
   notes: PaymentNoteOut[];
   tenant_name: string | null;
   tenant_avatar_url: string | null;
+  tenant_email: string | null;
+  tenant_phone: string | null;
   unit_number: string | null;
   property_name: string | null;
   status_updated_by_name: string | null;
   status_updated_at: string | null;
+}
+
+export interface PaymentNoticeAIGenerateOut {
+  subject: string;
+  message: string;
+}
+
+export interface PaymentNoticeSendOut {
+  email_sent: boolean;
+  sms_sent: boolean;
+  skipped_channels: string[];
+  payment: PaymentOut;
 }
 
 export interface MaintenanceAttachmentOut {
@@ -481,6 +495,10 @@ export const paymentsApi = {
   void: (id: string) => api.delete<void>(`/payments/${id}`),
   addNote: (id: string, note: string) => api.post<PaymentOut>(`/payments/${id}/notes`, { note }),
   removeNote: (id: string, noteId: string) => api.delete<void>(`/payments/${id}/notes/${noteId}`),
+  aiGenerateNotice: (id: string, extra_instructions?: string) =>
+    api.post<PaymentNoticeAIGenerateOut>(`/payments/${id}/ai-generate-notice`, { extra_instructions: extra_instructions || null }),
+  sendNotice: (id: string, body: { subject: string; message: string; channels: string[] }) =>
+    api.post<PaymentNoticeSendOut>(`/payments/${id}/send-notice`, body),
 };
 
 export interface MaintenanceAIGenerateOut {

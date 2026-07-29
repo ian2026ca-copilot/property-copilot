@@ -13,6 +13,8 @@ interface PaymentRow {
   tenantName: string;
   tenantAvatar: string;
   tenantAvatarUrl: string | null;
+  tenantEmail: string | null;
+  tenantPhone: string | null;
   unitNumber: string | null;
   propertyName: string | null;
   unitProperty: string;
@@ -30,10 +32,10 @@ interface PaymentRow {
 // ─── Mock data ────────────────────────────────────────────────────────────────
 
 const MOCK_PAYMENTS: PaymentRow[] = [
-  { id: "p1", leaseId: "l1", tenantName: "Emma Jones", tenantAvatar: "EJ", tenantAvatarUrl: null, unitNumber: "101", propertyName: "Sunset Towers", unitProperty: "101 · Sunset Towers", type: "RENT", amount: 2400, dueDate: "2026-06-01", paidDate: "2026-06-01", status: "PAID", description: "Rent — June 2026", notes: [], statusUpdatedByName: "Alex Owner", statusUpdatedAt: "2026-06-01T14:32:00Z" },
-  { id: "p2", leaseId: "l2", tenantName: "Marcus Lee", tenantAvatar: "ML", tenantAvatarUrl: null, unitNumber: "103", propertyName: "Sunset Towers", unitProperty: "103 · Sunset Towers", type: "RENT", amount: 2750, dueDate: "2026-06-01", paidDate: null, status: "OVERDUE", description: "Rent — June 2026", notes: [], statusUpdatedByName: null, statusUpdatedAt: null },
-  { id: "p3", leaseId: "l3", tenantName: "Sarah Kim", tenantAvatar: "SK", tenantAvatarUrl: null, unitNumber: "A1", propertyName: "Cedar Row", unitProperty: "A1 · Cedar Row", type: "RENT", amount: 3100, dueDate: "2026-07-01", paidDate: null, status: "PENDING", description: "Rent — July 2026", notes: [], statusUpdatedByName: null, statusUpdatedAt: null },
-  { id: "p4", leaseId: "l1", tenantName: "Emma Jones", tenantAvatar: "EJ", tenantAvatarUrl: null, unitNumber: "101", propertyName: "Sunset Towers", unitProperty: "101 · Sunset Towers", type: "LATE_FEE", amount: 120, dueDate: "2026-05-06", paidDate: null, status: "OVERDUE", description: "Late fee — May 2026", notes: [], statusUpdatedByName: null, statusUpdatedAt: null },
+  { id: "p1", leaseId: "l1", tenantName: "Emma Jones", tenantAvatar: "EJ", tenantAvatarUrl: null, tenantEmail: "emma@example.com", tenantPhone: "+15550000001", unitNumber: "101", propertyName: "Sunset Towers", unitProperty: "101 · Sunset Towers", type: "RENT", amount: 2400, dueDate: "2026-06-01", paidDate: "2026-06-01", status: "PAID", description: "Rent — June 2026", notes: [], statusUpdatedByName: "Alex Owner", statusUpdatedAt: "2026-06-01T14:32:00Z" },
+  { id: "p2", leaseId: "l2", tenantName: "Marcus Lee", tenantAvatar: "ML", tenantAvatarUrl: null, tenantEmail: "marcus@example.com", tenantPhone: "+15550000002", unitNumber: "103", propertyName: "Sunset Towers", unitProperty: "103 · Sunset Towers", type: "RENT", amount: 2750, dueDate: "2026-06-01", paidDate: null, status: "OVERDUE", description: "Rent — June 2026", notes: [], statusUpdatedByName: null, statusUpdatedAt: null },
+  { id: "p3", leaseId: "l3", tenantName: "Sarah Kim", tenantAvatar: "SK", tenantAvatarUrl: null, tenantEmail: "sarah@example.com", tenantPhone: null, unitNumber: "A1", propertyName: "Cedar Row", unitProperty: "A1 · Cedar Row", type: "RENT", amount: 3100, dueDate: "2026-07-01", paidDate: null, status: "PENDING", description: "Rent — July 2026", notes: [], statusUpdatedByName: null, statusUpdatedAt: null },
+  { id: "p4", leaseId: "l1", tenantName: "Emma Jones", tenantAvatar: "EJ", tenantAvatarUrl: null, tenantEmail: "emma@example.com", tenantPhone: "+15550000001", unitNumber: "101", propertyName: "Sunset Towers", unitProperty: "101 · Sunset Towers", type: "LATE_FEE", amount: 120, dueDate: "2026-05-06", paidDate: null, status: "OVERDUE", description: "Late fee — May 2026", notes: [], statusUpdatedByName: null, statusUpdatedAt: null },
 ];
 
 const MOCK_LEASES: LeaseOut[] = [];
@@ -66,6 +68,8 @@ function fromApi(p: PaymentOut): PaymentRow {
     tenantName: p.tenant_name ?? "Unknown",
     tenantAvatar: initials(p.tenant_name ?? "??"),
     tenantAvatarUrl: p.tenant_avatar_url ?? null,
+    tenantEmail: p.tenant_email ?? null,
+    tenantPhone: p.tenant_phone ?? null,
     unitNumber: p.unit_number ?? null,
     propertyName: p.property_name ?? null,
     unitProperty: [p.unit_number, p.property_name].filter(Boolean).join(" · "),
@@ -249,6 +253,16 @@ function EditPaymentModal({ payment, onClose, onSaved }: {
   const [notes, setNotes] = useState<PaymentNoteOut[]>(payment.notes);
   const [newNote, setNewNote] = useState("");
   const [addingNote, setAddingNote] = useState(false);
+  const [showNotice, setShowNotice] = useState(false);
+  const [noticeInstructions, setNoticeInstructions] = useState("");
+  const [noticeSubject, setNoticeSubject] = useState("");
+  const [noticeMessage, setNoticeMessage] = useState("");
+  const [noticeChannels, setNoticeChannels] = useState({ email: !!payment.tenantEmail, sms: !!payment.tenantPhone });
+  const [generatingNotice, setGeneratingNotice] = useState(false);
+  const [sendingNotice, setSendingNotice] = useState(false);
+  const [noticeError, setNoticeError] = useState("");
+  const [noticeResult, setNoticeResult] = useState<string | null>(null);
+  const [showNoticePreview, setShowNoticePreview] = useState(false);
   const set = (f: keyof EditForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm(v => ({ ...v, [f]: e.target.value }));
 
@@ -287,6 +301,75 @@ function EditPaymentModal({ payment, onClose, onSaved }: {
     setNotes(prev => prev.filter(n => n.id !== noteId));
   }
 
+  async function handleGenerateNotice() {
+    setGeneratingNotice(true); setNoticeError(""); setNoticeResult(null);
+    try {
+      const out = await paymentsApi.aiGenerateNotice(payment.id, noticeInstructions || undefined);
+      setNoticeSubject(out.subject);
+      setNoticeMessage(out.message);
+    } catch (e: unknown) {
+      setNoticeError(e instanceof Error ? e.message : "Failed to generate");
+    } finally { setGeneratingNotice(false); }
+  }
+
+  async function handleSendNotice() {
+    const channels = [
+      ...(noticeChannels.email ? ["email"] : []),
+      ...(noticeChannels.sms ? ["sms"] : []),
+    ];
+    if (channels.length === 0 || !noticeMessage.trim()) return;
+    setSendingNotice(true); setNoticeError(""); setNoticeResult(null);
+    try {
+      const out = await paymentsApi.sendNotice(payment.id, {
+        subject: noticeSubject || "Overdue rent payment",
+        message: noticeMessage,
+        channels,
+      });
+      setNotes(out.payment.notes);
+      const sentVia = [out.email_sent && "email", out.sms_sent && "SMS"].filter(Boolean).join(" and ");
+      let msg = sentVia ? `Sent via ${sentVia}.` : "Nothing was sent.";
+      if (out.skipped_channels.length) msg += ` Skipped: ${out.skipped_channels.join(", ")}.`;
+      setNoticeResult(msg);
+    } catch (e: unknown) {
+      setNoticeError(e instanceof Error ? e.message : "Could not send notice");
+    } finally { setSendingNotice(false); }
+  }
+
+  function handlePrintNotice() {
+    setNoticeError("");
+    const win = window.open("", "_blank", "width=650,height=800");
+    if (!win) {
+      setNoticeError("Could not open the print window — check your browser's popup blocker and try again.");
+      return;
+    }
+    const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    win.document.write(`<!DOCTYPE html>
+<html>
+<head>
+<title>${esc(noticeSubject || "Overdue rent notice")}</title>
+<style>
+  body { font-family: Arial, Helvetica, sans-serif; padding: 48px; color: #111; max-width: 650px; margin: 0 auto; }
+  .meta { color: #555; font-size: 13px; margin-bottom: 24px; line-height: 1.7; border-bottom: 1px solid #ddd; padding-bottom: 16px; }
+  .meta strong { color: #111; }
+  .subject { font-size: 20px; font-weight: 700; margin: 20px 0; }
+  .message { white-space: pre-wrap; line-height: 1.7; font-size: 14px; }
+</style>
+</head>
+<body>
+  <div class="meta">
+    <div><strong>To:</strong> ${esc(payment.tenantName)}${payment.tenantEmail ? ` &lt;${esc(payment.tenantEmail)}&gt;` : ""}</div>
+    <div><strong>Unit:</strong> ${esc(payment.unitProperty)}</div>
+    <div><strong>Date:</strong> ${esc(new Date().toLocaleDateString())}</div>
+  </div>
+  <div class="subject">${esc(noticeSubject || "Overdue rent notice")}</div>
+  <div class="message">${esc(noticeMessage)}</div>
+</body>
+</html>`);
+    win.document.close();
+    win.focus();
+    win.print();
+  }
+
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
@@ -296,6 +379,17 @@ function EditPaymentModal({ payment, onClose, onSaved }: {
         </div>
         <div className="px-6 py-5 space-y-4">
           {error && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
+          <div className="flex items-center gap-3 bg-slate-50 rounded-lg px-3 py-2.5">
+            <Avatar ini={payment.tenantAvatar} url={payment.tenantAvatarUrl} />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium text-slate-900 truncate">{payment.tenantName}</p>
+              <p className="text-xs text-slate-500 truncate">{payment.unitProperty}</p>
+            </div>
+            <div className="text-right shrink-0">
+              <p className={`text-xs ${payment.tenantEmail ? "text-slate-600" : "text-slate-300"}`}>{payment.tenantEmail ?? "No email"}</p>
+              <p className={`text-xs ${payment.tenantPhone ? "text-slate-600" : "text-slate-300"}`}>{payment.tenantPhone ?? "No phone"}</p>
+            </div>
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-slate-700 mb-1">Payment type</label>
@@ -335,6 +429,119 @@ function EditPaymentModal({ payment, onClose, onSaved }: {
             <label className="block text-xs font-medium text-slate-700 mb-1">Description</label>
             <input value={form.description} onChange={set("description")} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black" />
           </div>
+          {payment.status === "OVERDUE" && (
+            <div className="border-t border-slate-100 pt-3">
+              <button
+                type="button"
+                onClick={() => setShowNotice(v => !v)}
+                className="text-xs font-semibold text-violet-600 hover:text-violet-700"
+              >
+                {showNotice ? "− Hide overdue notice" : "✨ Send overdue notice"}
+              </button>
+              {showNotice && (
+                <div className="mt-2 bg-violet-50 border border-violet-100 rounded-lg p-3 space-y-2">
+                  {noticeError && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{noticeError}</p>}
+                  {noticeResult && <p className="text-xs text-emerald-700 bg-emerald-50 rounded-lg px-3 py-2">{noticeResult}</p>}
+                  <div>
+                    <label className="block text-[11px] font-medium text-slate-600 mb-1">Extra instructions (optional)</label>
+                    <input
+                      value={noticeInstructions}
+                      onChange={e => setNoticeInstructions(e.target.value)}
+                      placeholder="e.g. mention a 5% late fee applies after day 5"
+                      className="w-full text-sm border border-violet-200 rounded-lg px-3 py-2 outline-none focus:border-violet-500 bg-white"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleGenerateNotice}
+                    disabled={generatingNotice}
+                    className="px-3 py-1.5 text-xs font-medium bg-violet-600 text-white rounded-lg hover:bg-violet-700 disabled:opacity-50"
+                  >
+                    {generatingNotice ? "Generating…" : "✨ Generate with AI"}
+                  </button>
+                  <div>
+                    <label className="block text-[11px] font-medium text-slate-600 mb-1">Subject</label>
+                    <input
+                      value={noticeSubject}
+                      onChange={e => setNoticeSubject(e.target.value)}
+                      placeholder="Overdue rent payment"
+                      className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-medium text-slate-600 mb-1">Message</label>
+                    <textarea
+                      value={noticeMessage}
+                      onChange={e => setNoticeMessage(e.target.value)}
+                      rows={4}
+                      placeholder="Write or generate the notice message…"
+                      className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black bg-white resize-y"
+                    />
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setShowNoticePreview(v => !v)}
+                      disabled={!noticeMessage.trim()}
+                      className="text-xs font-medium text-slate-600 hover:text-slate-900 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      {showNoticePreview ? "Hide preview" : "👁 Preview"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handlePrintNotice}
+                      disabled={!noticeMessage.trim()}
+                      className="text-xs font-medium text-slate-600 hover:text-slate-900 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      🖨 Print
+                    </button>
+                  </div>
+                  {showNoticePreview && noticeMessage.trim() && (
+                    <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+                      <div className="px-4 py-2.5 border-b border-slate-100 bg-slate-50 space-y-0.5">
+                        <p className="text-xs text-slate-500">
+                          <span className="font-medium text-slate-700">To:</span> {payment.tenantName}
+                          {payment.tenantEmail && ` <${payment.tenantEmail}>`}
+                        </p>
+                        <p className="text-sm font-semibold text-slate-900">{noticeSubject || "Overdue rent notice"}</p>
+                      </div>
+                      <div className="px-4 py-3 text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">
+                        {noticeMessage}
+                      </div>
+                    </div>
+                  )}
+                  <div className="flex items-center gap-4">
+                    <label className={`flex items-center gap-1.5 text-xs ${payment.tenantEmail ? "text-slate-700" : "text-slate-300"}`}>
+                      <input
+                        type="checkbox"
+                        checked={noticeChannels.email}
+                        disabled={!payment.tenantEmail}
+                        onChange={e => setNoticeChannels(c => ({ ...c, email: e.target.checked }))}
+                      />
+                      Email{!payment.tenantEmail && " (no email on file)"}
+                    </label>
+                    <label className={`flex items-center gap-1.5 text-xs ${payment.tenantPhone ? "text-slate-700" : "text-slate-300"}`}>
+                      <input
+                        type="checkbox"
+                        checked={noticeChannels.sms}
+                        disabled={!payment.tenantPhone}
+                        onChange={e => setNoticeChannels(c => ({ ...c, sms: e.target.checked }))}
+                      />
+                      SMS{!payment.tenantPhone && " (no phone on file)"}
+                    </label>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleSendNotice}
+                    disabled={sendingNotice || !noticeMessage.trim() || (!noticeChannels.email && !noticeChannels.sms)}
+                    className="w-full px-4 py-2 text-sm font-medium bg-black text-white rounded-lg hover:bg-slate-800 disabled:opacity-50"
+                  >
+                    {sendingNotice ? "Sending…" : "Send notice"}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
           <div className="border-t border-slate-100 pt-3">
             <p className="text-[11px] uppercase tracking-wider font-medium text-slate-400 mb-2">Notes ({notes.length})</p>
             {notes.length > 0 && (
@@ -373,6 +580,243 @@ function EditPaymentModal({ payment, onClose, onSaved }: {
   );
 }
 
+// ─── Batch overdue notice modal ────────────────────────────────────────────────
+
+interface BatchRow {
+  paymentId: string;
+  tenantName: string;
+  tenantAvatar: string;
+  tenantAvatarUrl: string | null;
+  tenantEmail: string | null;
+  tenantPhone: string | null;
+  unitProperty: string;
+  amount: number;
+  dueDate: string;
+  selected: boolean;
+  subject: string;
+  message: string;
+  channels: { email: boolean; sms: boolean };
+  generating: boolean;
+  genError: string | null;
+  sendStatus: "idle" | "sending" | "sent" | "error";
+  sendMessage: string | null;
+}
+
+function BatchNoticeModal({ payments, onClose, onDone }: {
+  payments: PaymentRow[]; onClose: () => void; onDone: () => void;
+}) {
+  const overdue = useMemo(() => payments.filter(p => p.status === "OVERDUE"), [payments]);
+  const [rows, setRows] = useState<BatchRow[]>(() => overdue.map(p => ({
+    paymentId: p.id,
+    tenantName: p.tenantName,
+    tenantAvatar: p.tenantAvatar,
+    tenantAvatarUrl: p.tenantAvatarUrl,
+    tenantEmail: p.tenantEmail,
+    tenantPhone: p.tenantPhone,
+    unitProperty: p.unitProperty,
+    amount: p.amount,
+    dueDate: p.dueDate,
+    selected: true,
+    subject: "",
+    message: "",
+    channels: { email: !!p.tenantEmail, sms: !!p.tenantPhone },
+    generating: false,
+    genError: null,
+    sendStatus: "idle",
+    sendMessage: null,
+  })));
+  const [generatingAll, setGeneratingAll] = useState(false);
+  const [sendingAll, setSendingAll] = useState(false);
+  const [done, setDone] = useState(false);
+
+  const selectedCount = rows.filter(r => r.selected).length;
+  const allSelected = rows.length > 0 && selectedCount === rows.length;
+
+  function updateRow(paymentId: string, patch: Partial<BatchRow>) {
+    setRows(prev => prev.map(r => r.paymentId === paymentId ? { ...r, ...patch } : r));
+  }
+
+  async function generateOne(paymentId: string) {
+    updateRow(paymentId, { generating: true, genError: null });
+    try {
+      const out = await paymentsApi.aiGenerateNotice(paymentId);
+      updateRow(paymentId, { subject: out.subject, message: out.message, generating: false });
+    } catch (e: unknown) {
+      updateRow(paymentId, { generating: false, genError: e instanceof Error ? e.message : "Failed to generate" });
+    }
+  }
+
+  async function handleGenerateAll() {
+    setGeneratingAll(true);
+    await Promise.all(rows.filter(r => r.selected).map(r => generateOne(r.paymentId)));
+    setGeneratingAll(false);
+  }
+
+  async function handleSendAll() {
+    setSendingAll(true);
+    const targets = rows.filter(r => r.selected && r.message.trim() && (r.channels.email || r.channels.sms));
+    setRows(prev => prev.map(r => targets.some(t => t.paymentId === r.paymentId) ? { ...r, sendStatus: "sending" } : r));
+    await Promise.all(targets.map(async r => {
+      const channels = [...(r.channels.email ? ["email"] : []), ...(r.channels.sms ? ["sms"] : [])];
+      try {
+        const out = await paymentsApi.sendNotice(r.paymentId, {
+          subject: r.subject || "Overdue rent payment",
+          message: r.message,
+          channels,
+        });
+        const sentVia = [out.email_sent && "email", out.sms_sent && "SMS"].filter(Boolean).join(" and ");
+        updateRow(r.paymentId, {
+          sendStatus: "sent",
+          sendMessage: sentVia ? `Sent via ${sentVia}` : "Nothing was sent",
+        });
+      } catch (e: unknown) {
+        updateRow(r.paymentId, { sendStatus: "error", sendMessage: e instanceof Error ? e.message : "Failed to send" });
+      }
+    }));
+    setSendingAll(false);
+    setDone(true);
+    onDone();
+  }
+
+  const sentCount = rows.filter(r => r.sendStatus === "sent").length;
+  const errorCount = rows.filter(r => r.sendStatus === "error").length;
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 sticky top-0 bg-white z-10">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-900">Send overdue notices</h2>
+            <p className="text-xs text-slate-400 mt-0.5">{rows.length} overdue payment{rows.length === 1 ? "" : "s"}</p>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-700 text-lg leading-none">✕</button>
+        </div>
+
+        <div className="px-6 py-4 border-b border-slate-100 flex flex-wrap items-center gap-3 sticky top-[57px] bg-white z-10">
+          <label className="flex items-center gap-1.5 text-xs text-slate-600">
+            <input
+              type="checkbox"
+              checked={allSelected}
+              onChange={e => setRows(prev => prev.map(r => ({ ...r, selected: e.target.checked })))}
+            />
+            Select all
+          </label>
+          <span className="text-xs text-slate-400">{selectedCount} selected</span>
+          <div className="flex-1" />
+          <button
+            type="button"
+            onClick={handleGenerateAll}
+            disabled={generatingAll || selectedCount === 0}
+            className="px-3 py-1.5 text-xs font-medium bg-violet-600 text-white rounded-lg hover:bg-violet-700 disabled:opacity-50"
+          >
+            {generatingAll ? "Generating…" : "✨ Generate all with AI"}
+          </button>
+          <button
+            type="button"
+            onClick={handleSendAll}
+            disabled={sendingAll || selectedCount === 0 || rows.filter(r => r.selected).every(r => !r.message.trim())}
+            className="px-3 py-1.5 text-xs font-medium bg-black text-white rounded-lg hover:bg-slate-800 disabled:opacity-50"
+          >
+            {sendingAll ? "Sending…" : `Send to ${selectedCount}`}
+          </button>
+        </div>
+
+        {done && (
+          <div className="mx-6 mt-4 px-3 py-2 rounded-lg bg-emerald-50 text-emerald-700 text-xs">
+            Sent {sentCount} of {targetCountLabel(rows)}.{errorCount > 0 ? ` ${errorCount} failed — see details below.` : ""}
+          </div>
+        )}
+
+        <div className="px-6 py-4 space-y-3">
+          {rows.length === 0 && <p className="text-xs text-slate-400 text-center py-6">No overdue payments.</p>}
+          {rows.map(r => (
+            <div key={r.paymentId} className={`border rounded-lg p-3 ${r.sendStatus === "sent" ? "border-emerald-200 bg-emerald-50/40" : r.sendStatus === "error" ? "border-red-200 bg-red-50/40" : "border-slate-200"}`}>
+              <div className="flex items-center gap-2.5 mb-2">
+                <input
+                  type="checkbox"
+                  checked={r.selected}
+                  onChange={e => updateRow(r.paymentId, { selected: e.target.checked })}
+                />
+                <Avatar ini={r.tenantAvatar} url={r.tenantAvatarUrl} />
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-medium text-slate-900 truncate">{r.tenantName}</p>
+                  <p className="text-[11px] text-slate-400 truncate">{r.unitProperty} · ${r.amount.toLocaleString()} due {r.dueDate}</p>
+                  <p className="text-[11px] text-slate-400 truncate">
+                    <span className={r.tenantEmail ? "" : "text-slate-300"}>{r.tenantEmail ?? "No email"}</span>
+                    {" · "}
+                    <span className={r.tenantPhone ? "" : "text-slate-300"}>{r.tenantPhone ?? "No phone"}</span>
+                  </p>
+                </div>
+                {r.sendStatus === "sent" && <span className="text-[11px] font-medium text-emerald-600 shrink-0">✓ {r.sendMessage}</span>}
+                {r.sendStatus === "error" && <span className="text-[11px] font-medium text-red-600 shrink-0">✗ {r.sendMessage}</span>}
+                {r.sendStatus === "sending" && <span className="text-[11px] text-slate-400 shrink-0">Sending…</span>}
+                {r.sendStatus === "idle" && (
+                  <button
+                    type="button"
+                    onClick={() => generateOne(r.paymentId)}
+                    disabled={r.generating}
+                    className="text-[11px] font-medium text-violet-600 hover:text-violet-700 shrink-0 disabled:opacity-50"
+                  >
+                    {r.generating ? "Generating…" : "✨ Generate"}
+                  </button>
+                )}
+              </div>
+              {r.genError && <p className="text-[11px] text-red-600 mb-2">{r.genError}</p>}
+              {r.sendStatus !== "sent" && (
+                <div className="space-y-1.5">
+                  <input
+                    value={r.subject}
+                    onChange={e => updateRow(r.paymentId, { subject: e.target.value })}
+                    placeholder="Subject"
+                    className="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 outline-none focus:border-black"
+                  />
+                  <textarea
+                    value={r.message}
+                    onChange={e => updateRow(r.paymentId, { message: e.target.value })}
+                    placeholder="Write or generate the notice message…"
+                    rows={2}
+                    className="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 outline-none focus:border-black resize-y"
+                  />
+                  <div className="flex items-center gap-3">
+                    <label className={`flex items-center gap-1 text-[11px] ${r.tenantEmail ? "text-slate-600" : "text-slate-300"}`}>
+                      <input
+                        type="checkbox"
+                        checked={r.channels.email}
+                        disabled={!r.tenantEmail}
+                        onChange={e => updateRow(r.paymentId, { channels: { ...r.channels, email: e.target.checked } })}
+                      />
+                      Email{!r.tenantEmail && " (none)"}
+                    </label>
+                    <label className={`flex items-center gap-1 text-[11px] ${r.tenantPhone ? "text-slate-600" : "text-slate-300"}`}>
+                      <input
+                        type="checkbox"
+                        checked={r.channels.sms}
+                        disabled={!r.tenantPhone}
+                        onChange={e => updateRow(r.paymentId, { channels: { ...r.channels, sms: e.target.checked } })}
+                      />
+                      SMS{!r.tenantPhone && " (none)"}
+                    </label>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        <div className="flex gap-3 px-6 py-4 border-t border-slate-100 sticky bottom-0 bg-white">
+          <button onClick={onClose} className="flex-1 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">
+            {done ? "Close" : "Cancel"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function targetCountLabel(rows: BatchRow[]): number {
+  return rows.filter(r => r.sendStatus === "sent" || r.sendStatus === "error").length;
+}
+
 // ─── Tenant avatar ────────────────────────────────────────────────────────────
 
 function Avatar({ ini, url }: { ini: string; url: string | null }) {
@@ -387,7 +831,7 @@ function Avatar({ ini, url }: { ini: string; url: string | null }) {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-type ModalState = { type: "none" } | { type: "add" } | { type: "edit"; payment: PaymentRow } | { type: "void"; payment: PaymentRow };
+type ModalState = { type: "none" } | { type: "add" } | { type: "edit"; payment: PaymentRow } | { type: "void"; payment: PaymentRow } | { type: "batchNotice" };
 
 const AUTOMATION_RULES = [
   { id: "r1", name: "Late fee — Day 5", description: "Charge 5% late fee if rent not received by the 5th of the month.", active: true },
@@ -446,6 +890,14 @@ export default function PaymentsPage() {
     }
   }, []);
 
+  const refreshPayments = useCallback(async () => {
+    if (MOCK_MODE) return;
+    try {
+      const data = await paymentsApi.list();
+      setPayments(data.map(fromApi));
+    } catch { /* silent */ }
+  }, []);
+
   const today = new Date().toISOString().slice(0, 10);
   const thisMonth = today.slice(0, 7);
   const lastMonthDate = new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1);
@@ -488,6 +940,13 @@ export default function PaymentsPage() {
           danger
           onConfirm={() => handleVoid(modal.payment)}
           onCancel={() => setModal({ type: "none" })}
+        />
+      )}
+      {modal.type === "batchNotice" && (
+        <BatchNoticeModal
+          payments={payments}
+          onClose={() => setModal({ type: "none" })}
+          onDone={refreshPayments}
         />
       )}
 
@@ -654,6 +1113,16 @@ export default function PaymentsPage() {
               <h3 className="text-sm font-semibold text-slate-900">Needs action</h3>
               <span className="text-xs text-red-500 font-medium">{overdueCount} overdue</span>
             </div>
+            {overdueCount > 0 && (
+              <div className="px-4 pt-3">
+                <button
+                  onClick={() => setModal({ type: "batchNotice" })}
+                  className="w-full px-3 py-2 text-xs font-medium bg-violet-600 text-white rounded-lg hover:bg-violet-700"
+                >
+                  ✨ Send overdue notices ({overdueCount})
+                </button>
+              </div>
+            )}
             <div className="p-4 space-y-3">
               {payments.filter(p => p.status === "OVERDUE").slice(0, 6).map(p => (
                 <div key={p.id} className="flex items-center justify-between gap-2">

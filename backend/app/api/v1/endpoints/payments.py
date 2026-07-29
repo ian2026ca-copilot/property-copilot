@@ -2,18 +2,24 @@ import os
 from datetime import date, datetime, timezone, timedelta
 from calendar import monthrange
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
+from app.core.email import send_overdue_notice_email
+from app.core.sms import send_sms
 from app.api.deps import get_current_user, require_min_role
 from app.models.user import User, OrganizationMember, UserRole
 from app.models.payment import Payment, PaymentStatus, PaymentType, PaymentNote
 from app.models.lease import Lease
 from app.models.property import Unit, Property
-from app.schemas.payment import PaymentCreate, PaymentUpdate, PaymentOut, PaymentNoteOut, PaymentNoteCreate
+from app.models.organization import Organization
+from app.schemas.payment import (
+    PaymentCreate, PaymentUpdate, PaymentOut, PaymentNoteOut, PaymentNoteCreate,
+    PaymentNoticeAIGenerateIn, PaymentNoticeAIGenerateOut, PaymentNoticeSend, PaymentNoticeSendOut,
+)
 
 router = APIRouter(prefix="/payments", tags=["payments"])
 
@@ -98,6 +104,8 @@ def _to_out(payment: Payment, lease: Lease | None) -> PaymentOut:
         notes=[_note_to_out(n) for n in (payment.notes or [])],
         tenant_name=tenant.display_name if tenant else None,
         tenant_avatar_url=_uploads_url(tenant.avatar_filename) if tenant and tenant.avatar_filename else None,
+        tenant_email=tenant.email if tenant else None,
+        tenant_phone=tenant.phone if tenant and tenant.phone else None,
         unit_number=unit.unit_number if unit else None,
         property_name=unit.property.name if unit and unit.property else None,
         status_updated_by_name=payment.status_updated_by.display_name if payment.status_updated_by else None,
@@ -310,3 +318,158 @@ async def delete_note(
         raise HTTPException(status_code=403, detail="Not authorized")
     await db.delete(note)
     await db.commit()
+
+
+# ── Overdue notice ───────────────────────────────────────────────────────────────
+
+@router.post("/{payment_id}/ai-generate-notice", response_model=PaymentNoticeAIGenerateOut)
+async def ai_generate_notice(
+    payment_id: str,
+    body: PaymentNoticeAIGenerateIn,
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Use Gemini to draft a polite overdue-rent notice for email/SMS."""
+    import json
+    import google.generativeai as genai
+
+    user, member = current
+    payment = await _load_payment(payment_id, member.organization_id, db)
+    if not payment:
+        raise HTTPException(status_code=404, detail="Payment not found")
+    lease = await _load_lease(payment.lease_id, db)
+    if not lease:
+        raise HTTPException(status_code=404, detail="Lease not found")
+
+    api_key = os.environ.get("GEMINI_API_KEY", "")
+    if not api_key:
+        raise HTTPException(status_code=503, detail="Gemini API key not configured")
+
+    org_result = await db.execute(select(Organization).where(Organization.id == member.organization_id))
+    org = org_result.scalar_one_or_none()
+    signer_name = user.full_name or "Property Management"
+    org_name = org.name if org else "Property Management"
+
+    tenant = lease.tenant
+    unit = lease.unit
+    tenant_name = tenant.display_name if tenant else "Tenant"
+    days_overdue = max((date.today() - payment.due_date).days, 0)
+
+    context = (
+        f"Tenant name: {tenant_name}\n"
+        f"Unit: {unit.unit_number if unit else '—'}"
+        + (f" at {unit.property.name}" if unit and unit.property else "") + "\n"
+        f"Amount due: ${float(payment.amount):,.2f}\n"
+        f"Due date: {payment.due_date}\n"
+        f"Days overdue: {days_overdue}\n"
+        f"Payment type: {TYPE_LABEL.get(payment.payment_type, str(payment.payment_type))}\n"
+        f"Sent by: {signer_name}, {org_name}\n"
+    )
+
+    prompt = (
+        "You are a property manager drafting a formal, official overdue-rent notice email to a tenant.\n\n"
+        f"{context}"
+        + (f"\nADDITIONAL INSTRUCTIONS FROM THE LANDLORD:\n{body.extra_instructions}\n" if body.extra_instructions else "")
+        + "\nWrite the notice using an official business email format:\n"
+        f"- Open with a formal salutation, e.g. \"Dear {tenant_name},\"\n"
+        "- One or more body paragraphs stating the payment is overdue, the exact amount, the due date, and how "
+        "many days overdue it is, and requesting prompt payment or contact if there's an issue. Keep the tone "
+        "professional and firm but not hostile.\n"
+        f"- Close with a formal sign-off (e.g. \"Sincerely,\" or \"Regards,\") followed by \"{signer_name}\" and "
+        f"\"{org_name}\" each on their own line.\n"
+        "Plain text only — no markdown, no HTML, no placeholders like [Your Name].\n\n"
+        "Return ONLY a JSON object with these exact keys:\n"
+        "subject (a short, formal email subject line, under 80 characters),\n"
+        "message (the full notice described above, plain text, no markdown).\n"
+        "No explanation, no markdown fences, just the JSON object."
+    )
+
+    try:
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel("gemini-2.5-flash")
+        response = model.generate_content(prompt)
+        raw = response.text or ""
+    except Exception as e:
+        err_str = str(e)
+        if "quota" in err_str.lower() or "429" in err_str:
+            raise HTTPException(status_code=402, detail="Gemini quota exceeded — check your API key at aistudio.google.com")
+        raise HTTPException(status_code=502, detail=f"Gemini error: {err_str[:200]}")
+
+    raw = raw.strip()
+    if raw.startswith("```"):
+        raw = raw.split("```")[1]
+        if raw.startswith("json"):
+            raw = raw[4:]
+    raw = raw.strip()
+
+    try:
+        data = json.loads(raw)
+    except Exception:
+        raise HTTPException(status_code=422, detail=f"Could not parse AI response: {raw[:200]}")
+
+    return PaymentNoticeAIGenerateOut(
+        subject=data.get("subject") or "Overdue rent payment",
+        message=data.get("message") or "",
+    )
+
+
+@router.post("/{payment_id}/send-notice", response_model=PaymentNoticeSendOut)
+async def send_notice(
+    payment_id: str,
+    body: PaymentNoticeSend,
+    background_tasks: BackgroundTasks,
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
+    db: AsyncSession = Depends(get_db),
+):
+    user, member = current
+    payment = await _load_payment(payment_id, member.organization_id, db)
+    if not payment:
+        raise HTTPException(status_code=404, detail="Payment not found")
+    lease = await _load_lease(payment.lease_id, db)
+    if not lease or not lease.tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found for this payment")
+
+    tenant = lease.tenant
+    channels = set(body.channels)
+    email_sent = False
+    sms_sent = False
+    skipped: list[str] = []
+
+    if "email" in channels:
+        if tenant.email:
+            background_tasks.add_task(send_overdue_notice_email, tenant.email, body.subject, body.message)
+            email_sent = True
+        else:
+            skipped.append("email (no email on file)")
+
+    if "sms" in channels:
+        if tenant.phone:
+            background_tasks.add_task(send_sms, tenant.phone, body.message)
+            sms_sent = True
+        else:
+            skipped.append("SMS (no phone on file)")
+
+    if not email_sent and not sms_sent:
+        raise HTTPException(status_code=400, detail="No valid channel to send to — tenant has no email/phone on file")
+
+    sent_via = [c for c, sent in (("email", email_sent), ("SMS", sms_sent)) if sent]
+    note_text = f"Overdue notice sent via {' and '.join(sent_via)}"
+    if skipped:
+        note_text += f" (skipped: {', '.join(skipped)})"
+
+    db.add(PaymentNote(
+        payment_id=payment.id,
+        author_user_id=user.id,
+        note=note_text,
+        created_at=datetime.now(timezone.utc),
+    ))
+    await db.commit()
+    payment = await _load_payment(payment_id, member.organization_id, db)
+    lease = await _load_lease(payment.lease_id, db)
+
+    return PaymentNoticeSendOut(
+        email_sent=email_sent,
+        sms_sent=sms_sent,
+        skipped_channels=skipped,
+        payment=_to_out(payment, lease),
+    )
