@@ -236,8 +236,9 @@ interface EditForm {
   paid_date: string; status: string; description: string;
 }
 
-function EditPaymentModal({ payment, onClose, onSaved }: {
+function EditPaymentModal({ payment, onClose, onSaved, onNotesChanged }: {
   payment: PaymentRow; onClose: () => void; onSaved: (p: PaymentRow) => void;
+  onNotesChanged?: (paymentId: string, notes: PaymentNoteOut[]) => void;
 }) {
   const { user } = useAuth();
   const [form, setForm] = useState<EditForm>({
@@ -290,6 +291,7 @@ function EditPaymentModal({ payment, onClose, onSaved }: {
     try {
       const saved = await paymentsApi.addNote(payment.id, text);
       setNotes(saved.notes);
+      onNotesChanged?.(payment.id, saved.notes);
       setNewNote("");
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Could not add note");
@@ -298,7 +300,11 @@ function EditPaymentModal({ payment, onClose, onSaved }: {
 
   async function deleteNote(noteId: string) {
     await paymentsApi.removeNote(payment.id, noteId);
-    setNotes(prev => prev.filter(n => n.id !== noteId));
+    setNotes(prev => {
+      const next = prev.filter(n => n.id !== noteId);
+      onNotesChanged?.(payment.id, next);
+      return next;
+    });
   }
 
   async function handleGenerateNotice() {
@@ -326,6 +332,7 @@ function EditPaymentModal({ payment, onClose, onSaved }: {
         channels,
       });
       setNotes(out.payment.notes);
+      onNotesChanged?.(payment.id, out.payment.notes);
       const sentVia = [out.email_sent && "email", out.sms_sent && "SMS"].filter(Boolean).join(" and ");
       let msg = sentVia ? `Sent via ${sentVia}.` : "Nothing was sent.";
       if (out.skipped_channels.length) msg += ` Skipped: ${out.skipped_channels.join(", ")}.`;
@@ -600,6 +607,13 @@ interface BatchRow {
   genError: string | null;
   sendStatus: "idle" | "sending" | "sent" | "error";
   sendMessage: string | null;
+  lastNoticeSentAt: string | null;
+}
+
+function lastNoticeSentAt(notes: PaymentNoteOut[]): string | null {
+  const sent = notes.filter(n => n.note.startsWith("Overdue notice sent") && n.created_at);
+  if (sent.length === 0) return null;
+  return sent.reduce((latest, n) => (n.created_at! > latest ? n.created_at! : latest), sent[0].created_at!);
 }
 
 function BatchNoticeModal({ payments, onClose, onDone }: {
@@ -624,6 +638,7 @@ function BatchNoticeModal({ payments, onClose, onDone }: {
     genError: null,
     sendStatus: "idle",
     sendMessage: null,
+    lastNoticeSentAt: lastNoticeSentAt(p.notes),
   })));
   const [generatingAll, setGeneratingAll] = useState(false);
   const [sendingAll, setSendingAll] = useState(false);
@@ -746,6 +761,9 @@ function BatchNoticeModal({ payments, onClose, onDone }: {
                     {" · "}
                     <span className={r.tenantPhone ? "" : "text-slate-300"}>{r.tenantPhone ?? "No phone"}</span>
                   </p>
+                  {r.lastNoticeSentAt && (
+                    <p className="text-[11px] text-amber-600 truncate">Last notice sent: {fmtNoteDt(r.lastNoticeSentAt)}</p>
+                  )}
                 </div>
                 {r.sendStatus === "sent" && <span className="text-[11px] font-medium text-emerald-600 shrink-0">✓ {r.sendMessage}</span>}
                 {r.sendStatus === "error" && <span className="text-[11px] font-medium text-red-600 shrink-0">✗ {r.sendMessage}</span>}
@@ -817,6 +835,302 @@ function targetCountLabel(rows: BatchRow[]): number {
   return rows.filter(r => r.sendStatus === "sent" || r.sendStatus === "error").length;
 }
 
+// ─── Batch mark paid modal ──────────────────────────────────────────────────────
+
+interface MarkPaidRow {
+  paymentId: string;
+  tenantName: string;
+  tenantAvatar: string;
+  tenantAvatarUrl: string | null;
+  unitProperty: string;
+  amount: number;
+  dueDate: string;
+  selected: boolean;
+  paidDate: string;
+  status: "idle" | "marking" | "done" | "error";
+  errorMessage: string | null;
+}
+
+function BatchMarkPaidModal({ payments, onClose, onDone }: {
+  payments: PaymentRow[]; onClose: () => void; onDone: () => void;
+}) {
+  const today = new Date().toISOString().slice(0, 10);
+  const overdue = useMemo(() => payments.filter(p => p.status === "OVERDUE"), [payments]);
+  const [rows, setRows] = useState<MarkPaidRow[]>(() => overdue.map(p => ({
+    paymentId: p.id,
+    tenantName: p.tenantName,
+    tenantAvatar: p.tenantAvatar,
+    tenantAvatarUrl: p.tenantAvatarUrl,
+    unitProperty: p.unitProperty,
+    amount: p.amount,
+    dueDate: p.dueDate,
+    selected: true,
+    paidDate: today,
+    status: "idle",
+    errorMessage: null,
+  })));
+  const [marking, setMarking] = useState(false);
+  const [done, setDone] = useState(false);
+
+  const selectedCount = rows.filter(r => r.selected).length;
+  const allSelected = rows.length > 0 && selectedCount === rows.length;
+  const totalSelected = rows.filter(r => r.selected).reduce((s, r) => s + r.amount, 0);
+
+  function updateRow(paymentId: string, patch: Partial<MarkPaidRow>) {
+    setRows(prev => prev.map(r => r.paymentId === paymentId ? { ...r, ...patch } : r));
+  }
+
+  async function handleMarkSelected() {
+    setMarking(true);
+    const targets = rows.filter(r => r.selected);
+    setRows(prev => prev.map(r => targets.some(t => t.paymentId === r.paymentId) ? { ...r, status: "marking" } : r));
+    await Promise.all(targets.map(async r => {
+      try {
+        await paymentsApi.update(r.paymentId, { paid_date: r.paidDate, status: "PAID" });
+        updateRow(r.paymentId, { status: "done" });
+      } catch (e: unknown) {
+        updateRow(r.paymentId, { status: "error", errorMessage: e instanceof Error ? e.message : "Failed to mark paid" });
+      }
+    }));
+    setMarking(false);
+    setDone(true);
+    onDone();
+  }
+
+  const doneCount = rows.filter(r => r.status === "done").length;
+  const errorCount = rows.filter(r => r.status === "error").length;
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 sticky top-0 bg-white z-10">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-900">Mark overdue as paid</h2>
+            <p className="text-xs text-slate-400 mt-0.5">{rows.length} overdue payment{rows.length === 1 ? "" : "s"}</p>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-700 text-lg leading-none">✕</button>
+        </div>
+
+        <div className="px-6 py-4 border-b border-slate-100 flex flex-wrap items-center gap-3 sticky top-[57px] bg-white z-10">
+          <label className="flex items-center gap-1.5 text-xs text-slate-600">
+            <input
+              type="checkbox"
+              checked={allSelected}
+              onChange={e => setRows(prev => prev.map(r => ({ ...r, selected: e.target.checked })))}
+            />
+            Select all
+          </label>
+          <span className="text-xs text-slate-400">{selectedCount} selected · ${totalSelected.toLocaleString()}</span>
+          <div className="flex-1" />
+          <button
+            type="button"
+            onClick={handleMarkSelected}
+            disabled={marking || selectedCount === 0}
+            className="px-3 py-1.5 text-xs font-medium bg-black text-white rounded-lg hover:bg-slate-800 disabled:opacity-50"
+          >
+            {marking ? "Marking…" : `Mark ${selectedCount} as paid`}
+          </button>
+        </div>
+
+        {done && (
+          <div className="mx-6 mt-4 px-3 py-2 rounded-lg bg-emerald-50 text-emerald-700 text-xs">
+            Marked {doneCount} of {doneCount + errorCount} as paid.{errorCount > 0 ? ` ${errorCount} failed — see details below.` : ""}
+          </div>
+        )}
+
+        <div className="px-6 py-4 space-y-2">
+          {rows.length === 0 && <p className="text-xs text-slate-400 text-center py-6">No overdue payments.</p>}
+          {rows.map(r => (
+            <div key={r.paymentId} className={`flex items-center gap-2.5 border rounded-lg p-3 ${r.status === "done" ? "border-emerald-200 bg-emerald-50/40" : r.status === "error" ? "border-red-200 bg-red-50/40" : "border-slate-200"}`}>
+              <input
+                type="checkbox"
+                checked={r.selected}
+                disabled={r.status === "done"}
+                onChange={e => updateRow(r.paymentId, { selected: e.target.checked })}
+              />
+              <Avatar ini={r.tenantAvatar} url={r.tenantAvatarUrl} />
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-medium text-slate-900 truncate">{r.tenantName}</p>
+                <p className="text-[11px] text-slate-400 truncate">{r.unitProperty} · ${r.amount.toLocaleString()} due {r.dueDate}</p>
+                {r.status === "error" && <p className="text-[11px] text-red-600 mt-0.5">{r.errorMessage}</p>}
+              </div>
+              {r.status === "idle" && (
+                <input
+                  type="date"
+                  value={r.paidDate}
+                  onChange={e => updateRow(r.paymentId, { paidDate: e.target.value })}
+                  className="text-xs border border-slate-200 rounded-lg px-2 py-1 outline-none focus:border-black"
+                />
+              )}
+              {r.status === "marking" && <span className="text-[11px] text-slate-400 shrink-0">Marking…</span>}
+              {r.status === "done" && <span className="text-[11px] font-medium text-emerald-600 shrink-0">✓ Paid {r.paidDate}</span>}
+              {r.status === "error" && <span className="text-[11px] font-medium text-red-600 shrink-0">✗ Failed</span>}
+            </div>
+          ))}
+        </div>
+
+        <div className="flex gap-3 px-6 py-4 border-t border-slate-100 sticky bottom-0 bg-white">
+          <button onClick={onClose} className="flex-1 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">
+            {done ? "Close" : "Cancel"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Notice history modal ──────────────────────────────────────────────────────
+
+interface NoticeHistoryEntry {
+  noteId: string;
+  createdAt: string | null;
+  authorName: string;
+  noteText: string;
+  paymentId: string;
+  tenantName: string;
+  tenantAvatar: string;
+  tenantAvatarUrl: string | null;
+  unitProperty: string;
+  amount: number;
+}
+
+const NOTICE_HISTORY_PAGE_SIZE = 6;
+
+function NoticeHistoryModal({ payments, onClose }: { payments: PaymentRow[]; onClose: () => void }) {
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(0);
+  const toggle = (id: string) => setExpanded(prev => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+  const entries = useMemo<NoticeHistoryEntry[]>(() => {
+    const list: NoticeHistoryEntry[] = [];
+    for (const p of payments) {
+      for (const n of p.notes) {
+        if (n.note.startsWith("Overdue notice sent")) {
+          list.push({
+            noteId: n.id,
+            createdAt: n.created_at,
+            authorName: n.author_name,
+            noteText: n.note,
+            paymentId: p.id,
+            tenantName: p.tenantName,
+            tenantAvatar: p.tenantAvatar,
+            tenantAvatarUrl: p.tenantAvatarUrl,
+            unitProperty: p.unitProperty,
+            amount: p.amount,
+          });
+        }
+      }
+    }
+    return list.sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
+  }, [payments]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return entries;
+    return entries.filter(e =>
+      e.tenantName.toLowerCase().includes(q) ||
+      e.unitProperty.toLowerCase().includes(q) ||
+      e.noteText.toLowerCase().includes(q) ||
+      e.authorName.toLowerCase().includes(q)
+    );
+  }, [entries, search]);
+
+  const pageCount = Math.max(1, Math.ceil(filtered.length / NOTICE_HISTORY_PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount - 1);
+  const pageEntries = filtered.slice(currentPage * NOTICE_HISTORY_PAGE_SIZE, currentPage * NOTICE_HISTORY_PAGE_SIZE + NOTICE_HISTORY_PAGE_SIZE);
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 sticky top-0 bg-white">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-900">Overdue notice history</h2>
+            <p className="text-xs text-slate-400 mt-0.5">{entries.length} notice{entries.length === 1 ? "" : "s"} sent</p>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-700 text-lg leading-none">✕</button>
+        </div>
+        <div className="px-6 py-3 border-b border-slate-100 sticky top-[57px] bg-white">
+          <input
+            value={search}
+            onChange={e => { setSearch(e.target.value); setPage(0); }}
+            placeholder="Search tenant, unit, message…"
+            className="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 outline-none focus:border-black"
+          />
+        </div>
+        <div className="px-6 py-4 space-y-2">
+          {filtered.length === 0 && (
+            <p className="text-xs text-slate-400 text-center py-6">
+              {entries.length === 0 ? "No overdue notices have been sent yet." : "No notices match your search."}
+            </p>
+          )}
+          {pageEntries.map(e => {
+            const lines = e.noteText.split("\n");
+            const summary = lines[0];
+            const detail = lines.slice(1).join("\n");
+            const isExpanded = expanded.has(e.noteId);
+            return (
+              <div
+                key={e.noteId}
+                onClick={detail ? () => toggle(e.noteId) : undefined}
+                role={detail ? "button" : undefined}
+                tabIndex={detail ? 0 : undefined}
+                onKeyDown={detail ? (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); toggle(e.noteId); } } : undefined}
+                className={`border border-slate-200 rounded-lg p-3 ${detail ? "cursor-pointer hover:bg-slate-50" : ""}`}
+              >
+                <div className="flex items-center gap-2.5 mb-1.5">
+                  <Avatar ini={e.tenantAvatar} url={e.tenantAvatarUrl} />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-medium text-slate-900 truncate">{e.tenantName}</p>
+                    <p className="text-[11px] text-slate-400 truncate">{e.unitProperty} · ${e.amount.toLocaleString()}</p>
+                  </div>
+                  <p className="text-[11px] text-slate-400 shrink-0">{fmtNoteDt(e.createdAt)}</p>
+                </div>
+                <p className="text-xs text-slate-700">{summary}</p>
+                {isExpanded && detail && (
+                  <p className="text-xs text-slate-600 whitespace-pre-wrap bg-slate-50 rounded-lg p-2 mt-1.5">{detail}</p>
+                )}
+                <p className="text-[11px] text-slate-400 mt-0.5">by {e.authorName}</p>
+              </div>
+            );
+          })}
+        </div>
+        {filtered.length > 0 && (
+          <div className="flex items-center justify-between px-6 pb-4 text-xs text-slate-500">
+            <span>Page {currentPage + 1} of {pageCount}</span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setPage(p => Math.max(0, p - 1))}
+                disabled={currentPage === 0}
+                className="px-2.5 py-1 border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-40"
+              >
+                ← Prev
+              </button>
+              <button
+                type="button"
+                onClick={() => setPage(p => Math.min(pageCount - 1, p + 1))}
+                disabled={currentPage >= pageCount - 1}
+                className="px-2.5 py-1 border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-40"
+              >
+                Next →
+              </button>
+            </div>
+          </div>
+        )}
+        <div className="flex gap-3 px-6 py-4 border-t border-slate-100 sticky bottom-0 bg-white">
+          <button onClick={onClose} className="flex-1 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Tenant avatar ────────────────────────────────────────────────────────────
 
 function Avatar({ ini, url }: { ini: string; url: string | null }) {
@@ -831,7 +1145,7 @@ function Avatar({ ini, url }: { ini: string; url: string | null }) {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-type ModalState = { type: "none" } | { type: "add" } | { type: "edit"; payment: PaymentRow } | { type: "void"; payment: PaymentRow } | { type: "batchNotice" };
+type ModalState = { type: "none" } | { type: "add" } | { type: "edit"; payment: PaymentRow } | { type: "void"; payment: PaymentRow } | { type: "batchNotice" } | { type: "noticeHistory" } | { type: "batchMarkPaid" };
 
 const AUTOMATION_RULES = [
   { id: "r1", name: "Late fee — Day 5", description: "Charge 5% late fee if rent not received by the 5th of the month.", active: true },
@@ -861,6 +1175,10 @@ export default function PaymentsPage() {
       return idx >= 0 ? prev.map(x => x.id === p.id ? p : x) : [p, ...prev];
     });
     setModal({ type: "none" });
+  }, []);
+
+  const handleNotesChanged = useCallback((paymentId: string, notes: PaymentNoteOut[]) => {
+    setPayments(prev => prev.map(x => x.id === paymentId ? { ...x, notes } : x));
   }, []);
 
   const handleMarkPaid = useCallback(async (p: PaymentRow) => {
@@ -931,7 +1249,7 @@ export default function PaymentsPage() {
         <AddPaymentModal leases={leases} onClose={() => setModal({ type: "none" })} onSaved={handleSaved} />
       )}
       {modal.type === "edit" && (
-        <EditPaymentModal payment={modal.payment} onClose={() => setModal({ type: "none" })} onSaved={handleSaved} />
+        <EditPaymentModal payment={modal.payment} onClose={() => setModal({ type: "none" })} onSaved={handleSaved} onNotesChanged={handleNotesChanged} />
       )}
       {modal.type === "void" && (
         <ConfirmDialog
@@ -944,6 +1262,16 @@ export default function PaymentsPage() {
       )}
       {modal.type === "batchNotice" && (
         <BatchNoticeModal
+          payments={payments}
+          onClose={() => setModal({ type: "none" })}
+          onDone={refreshPayments}
+        />
+      )}
+      {modal.type === "noticeHistory" && (
+        <NoticeHistoryModal payments={payments} onClose={() => setModal({ type: "none" })} />
+      )}
+      {modal.type === "batchMarkPaid" && (
+        <BatchMarkPaidModal
           payments={payments}
           onClose={() => setModal({ type: "none" })}
           onDone={refreshPayments}
@@ -1113,16 +1441,30 @@ export default function PaymentsPage() {
               <h3 className="text-sm font-semibold text-slate-900">Needs action</h3>
               <span className="text-xs text-red-500 font-medium">{overdueCount} overdue</span>
             </div>
-            {overdueCount > 0 && (
-              <div className="px-4 pt-3">
+            <div className="px-4 pt-3 space-y-2">
+              {overdueCount > 0 && (
                 <button
                   onClick={() => setModal({ type: "batchNotice" })}
                   className="w-full px-3 py-2 text-xs font-medium bg-violet-600 text-white rounded-lg hover:bg-violet-700"
                 >
                   ✨ Send overdue notices ({overdueCount})
                 </button>
-              </div>
-            )}
+              )}
+              {overdueCount > 0 && (
+                <button
+                  onClick={() => setModal({ type: "batchMarkPaid" })}
+                  className="w-full px-3 py-2 text-xs font-medium bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
+                >
+                  ✓ Mark overdue as paid ({overdueCount})
+                </button>
+              )}
+              <button
+                onClick={() => setModal({ type: "noticeHistory" })}
+                className="w-full px-3 py-1.5 text-xs font-medium text-slate-500 border border-slate-200 rounded-lg hover:bg-slate-50 hover:text-slate-700"
+              >
+                📜 Notice history
+              </button>
+            </div>
             <div className="p-4 space-y-3">
               {payments.filter(p => p.status === "OVERDUE").slice(0, 6).map(p => (
                 <div key={p.id} className="flex items-center justify-between gap-2">

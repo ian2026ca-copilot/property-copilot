@@ -456,6 +456,7 @@ async def send_notice(
     note_text = f"Overdue notice sent via {' and '.join(sent_via)}"
     if skipped:
         note_text += f" (skipped: {', '.join(skipped)})"
+    note_text += f"\nSubject: {body.subject}\nMessage: {body.message}"
 
     db.add(PaymentNote(
         payment_id=payment.id,
