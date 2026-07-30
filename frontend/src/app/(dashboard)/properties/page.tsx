@@ -2,8 +2,11 @@
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { propertiesApi, tenantsApi, imagesApi, type PropertyOut, type UnitOut, type ImageOut, type TenantOut, type UnitTenantInfo } from "@/lib/api";
+import { propertiesApi, tenantsApi, imagesApi, unitsApi, type PropertyOut, type UnitOut, type ImageOut, type TenantOut, type UnitTenantInfo, type UnitDetailOut } from "@/lib/api";
 import { MOCK_MODE } from "@/lib/useApiData";
+import { useAuth } from "@/context/AuthContext";
+import { can } from "@/lib/roles";
+import { CampaignModal } from "@/components/CampaignModal";
 
 // ─── Mock data ────────────────────────────────────────────────────────────────
 
@@ -59,6 +62,13 @@ const TYPE_LABELS: Record<string, string> = {
   COMMERCIAL: "Commercial",
   MIXED_USE: "Mixed-use",
   INDUSTRIAL: "Industrial",
+  HOUSE: "House",
+  TOWNHOUSE: "Townhouse",
+  CONDO_UNIT: "Condo Unit",
+  DUPLEX: "Duplex",
+  TRIPLEX: "Triplex",
+  FOURPLEX: "Fourplex",
+  BASEMENT: "Basement",
 };
 
 function unitStatusLabel(s: string) {
@@ -236,7 +246,7 @@ interface PropertyForm {
   zip_code: string; property_type: string; year_built: string;
 }
 
-const BLANK_PROP: PropertyForm = { name: "", address: "", city: "", state: "", zip_code: "", property_type: "RESIDENTIAL", year_built: "" };
+const BLANK_PROP: PropertyForm = { name: "", address: "", city: "", state: "", zip_code: "", property_type: "HOUSE", year_built: "" };
 
 function propertyToForm(p: PropertyOut): PropertyForm {
   return { name: p.name, address: p.address, city: p.city, state: p.state, zip_code: p.zip_code, property_type: p.property_type, year_built: p.year_built?.toString() ?? "" };
@@ -322,10 +332,13 @@ function PropertyModal({ initial, onClose, onSave }: {
             <div>
               <label className="block text-xs font-medium text-slate-700 mb-1">Property type</label>
               <select value={form.property_type} onChange={set("property_type")} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black bg-white">
-                <option value="RESIDENTIAL">Residential</option>
-                <option value="COMMERCIAL">Commercial</option>
-                <option value="MIXED_USE">Mixed-use</option>
-                <option value="INDUSTRIAL">Industrial</option>
+                <option value="HOUSE">House</option>
+                <option value="TOWNHOUSE">Townhouse</option>
+                <option value="CONDO_UNIT">Condo Unit</option>
+                <option value="DUPLEX">Duplex</option>
+                <option value="TRIPLEX">Triplex</option>
+                <option value="FOURPLEX">Fourplex</option>
+                <option value="BASEMENT">Basement</option>
               </select>
             </div>
             <div>
@@ -606,6 +619,7 @@ function TenantDetailModal({ unit, onClose }: { unit: UnitRow; onClose: () => vo
 type ModalState =
   | { type: "none" }
   | { type: "addProperty" }
+  | { type: "addListing" }
   | { type: "editProperty"; property: PropertyOut }
   | { type: "deleteProperty"; property: PropertyOut }
   | { type: "addUnit"; propertyId: string; propertyName: string }
@@ -618,11 +632,14 @@ type ModalState =
 
 export default function PropertiesPage() {
   const router = useRouter();
+  const { user } = useAuth();
+  const perms = can(user?.role);
   const [filter, setFilter] = useState("all");
   const [selectedPropertyIds, setSelectedPropertyIds] = useState<Set<string>>(new Set());
   const [modal, setModal] = useState<ModalState>({ type: "none" });
   const [properties, setProperties] = useState<PropertyOut[]>(MOCK_PROPERTIES);
   const [units, setUnits] = useState<UnitRow[]>(MOCK_UNITS);
+  const [listingUnits, setListingUnits] = useState<UnitDetailOut[]>([]);
   const [galleryImages, setGalleryImages] = useState<ImageOut[]>([]);
   const [galleryUploading, setGalleryUploading] = useState(false);
   const [galleryCoverId, setGalleryCoverId] = useState<string | null>(null);
@@ -643,6 +660,11 @@ export default function PropertiesPage() {
       }
       setUnits(allUnits);
     }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (MOCK_MODE) return;
+    unitsApi.listAll().then(setListingUnits).catch(() => {});
   }, []);
 
   async function openPropertyGallery(p: PropertyOut) {
@@ -806,6 +828,15 @@ export default function PropertiesPage() {
       {(modal.type === "editProperty") && (
         <PropertyModal initial={modal.property} onClose={() => setModal({ type: "none" })} onSave={handlePropertySaved} />
       )}
+      {(modal.type === "addListing") && (
+        <CampaignModal
+          campaign={null}
+          units={listingUnits}
+          onClose={() => setModal({ type: "none" })}
+          onSave={() => { setModal({ type: "none" }); router.push("/marketing"); }}
+          onPhotosChanged={() => {}}
+        />
+      )}
       {(modal.type === "deleteProperty") && (
         <ConfirmDialog
           message={`Delete "${modal.property.name}"? All units will also be removed. This cannot be undone.`}
@@ -867,12 +898,25 @@ export default function PropertiesPage() {
           <p className="text-[11px] uppercase tracking-widest text-slate-400 font-medium">Assets</p>
           <h1 className="text-xl font-bold text-slate-900 mt-0.5">Properties and units</h1>
         </div>
-        <button
-          onClick={() => setModal({ type: "addProperty" })}
-          className="px-3 py-1.5 bg-black text-white text-xs font-medium rounded-lg hover:bg-slate-800 transition-colors"
-        >
-          + Add property
-        </button>
+        <div className="flex items-center gap-2">
+          {perms.manageMaintenance && (
+            <button
+              onClick={() => {
+                if (!MOCK_MODE) unitsApi.listAll().then(setListingUnits).catch(() => {});
+                setModal({ type: "addListing" });
+              }}
+              className="px-3 py-1.5 border border-slate-200 text-slate-700 text-xs font-medium rounded-lg hover:bg-slate-50 transition-colors"
+            >
+              + Add new listing
+            </button>
+          )}
+          <button
+            onClick={() => setModal({ type: "addProperty" })}
+            className="px-3 py-1.5 bg-black text-white text-xs font-medium rounded-lg hover:bg-slate-800 transition-colors"
+          >
+            + Add property
+          </button>
+        </div>
       </div>
 
       {/* Property cards */}

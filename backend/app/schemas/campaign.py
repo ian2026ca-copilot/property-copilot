@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, date
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from app.models.campaign import CampaignStatus
 
 
@@ -13,6 +13,16 @@ class CampaignCreate(BaseModel):
     contact_email: str | None = None
     available_from: date | None = None
     monthly_rent: float | None = None
+    security_deposit: float | None = None
+    lease_term: str | None = None
+    furnishing: str | None = None
+    smoking_policy: str | None = None
+    pets_policy: str | None = None
+    utilities_included: list[str] = Field(default_factory=list)
+    parking_available: bool | None = None
+    parking_details: dict | None = None
+    home_features: list[str] = Field(default_factory=list)
+    neighborhood_features: list[str] = Field(default_factory=list)
 
 
 class CampaignUpdate(BaseModel):
@@ -24,6 +34,16 @@ class CampaignUpdate(BaseModel):
     contact_email: str | None = None
     available_from: date | None = None
     monthly_rent: float | None = None
+    security_deposit: float | None = None
+    lease_term: str | None = None
+    furnishing: str | None = None
+    smoking_policy: str | None = None
+    pets_policy: str | None = None
+    utilities_included: list[str] | None = None
+    parking_available: bool | None = None
+    parking_details: dict | None = None
+    home_features: list[str] | None = None
+    neighborhood_features: list[str] | None = None
 
 
 class CampaignOut(BaseModel):
@@ -37,6 +57,16 @@ class CampaignOut(BaseModel):
     contact_email: str | None
     available_from: date | None
     monthly_rent: float | None
+    security_deposit: float | None = None
+    lease_term: str | None = None
+    furnishing: str | None = None
+    smoking_policy: str | None = None
+    pets_policy: str | None = None
+    utilities_included: list[str] = Field(default_factory=list)
+    parking_available: bool | None = None
+    parking_details: dict | None = None
+    home_features: list[str] = Field(default_factory=list)
+    neighborhood_features: list[str] = Field(default_factory=list)
     status: CampaignStatus
     photos: list[str]
     fb_post_id: str | None

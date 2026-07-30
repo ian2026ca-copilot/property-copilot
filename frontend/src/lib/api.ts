@@ -630,6 +630,22 @@ export interface CampaignOut {
   contact_email: string | null;
   available_from: string | null;
   monthly_rent: number | null;
+  security_deposit: number | null;
+  lease_term: string | null;
+  furnishing: string | null;
+  smoking_policy: string | null;
+  pets_policy: string | null;
+  utilities_included: string[];
+  parking_available: boolean | null;
+  parking_details: {
+    total_spaces?: number | null;
+    types?: string[];
+    tenant_options?: string[];
+    garage_monthly_fee?: number | null;
+    notes?: string | null;
+  } | null;
+  home_features: string[];
+  neighborhood_features: string[];
   status: CampaignStatus;
   photos: string[];
   fb_post_id: string | null;
