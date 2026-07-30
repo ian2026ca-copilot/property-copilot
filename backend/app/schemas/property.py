@@ -9,7 +9,7 @@ class PropertyCreate(BaseModel):
     city: str
     state: str
     zip_code: str
-    property_type: PropertyType = PropertyType.RESIDENTIAL
+    property_type: PropertyType = PropertyType.HOUSE
     year_built: int | None = None
 
 

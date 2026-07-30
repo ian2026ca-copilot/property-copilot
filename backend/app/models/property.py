@@ -14,6 +14,13 @@ class PropertyType(str, enum.Enum):
     COMMERCIAL = "COMMERCIAL"
     MIXED_USE = "MIXED_USE"
     INDUSTRIAL = "INDUSTRIAL"
+    HOUSE = "HOUSE"
+    TOWNHOUSE = "TOWNHOUSE"
+    CONDO_UNIT = "CONDO_UNIT"
+    DUPLEX = "DUPLEX"
+    TRIPLEX = "TRIPLEX"
+    FOURPLEX = "FOURPLEX"
+    BASEMENT = "BASEMENT"
 
 
 class UnitStatus(str, enum.Enum):
@@ -37,7 +44,7 @@ class Property(Base, TimestampMixin):
     city: Mapped[str] = mapped_column(String(100), nullable=False)
     state: Mapped[str] = mapped_column(String(50), nullable=False)
     zip_code: Mapped[str] = mapped_column(String(20), nullable=False)
-    property_type: Mapped[PropertyType] = mapped_column(SAEnum(PropertyType), nullable=False, default=PropertyType.RESIDENTIAL)
+    property_type: Mapped[PropertyType] = mapped_column(SAEnum(PropertyType), nullable=False, default=PropertyType.HOUSE)
     year_built: Mapped[int | None] = mapped_column(Integer, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
