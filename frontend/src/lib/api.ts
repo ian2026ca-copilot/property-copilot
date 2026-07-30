@@ -282,6 +282,8 @@ export interface UnitDetailOut {
   status: string;
   monthly_rent: number;
   bedrooms: number;
+  bathrooms: number;
+  square_feet: number | null;
   tenant_name: string | null;
   tenant_user_id: string | null;
   tenant_email: string | null;

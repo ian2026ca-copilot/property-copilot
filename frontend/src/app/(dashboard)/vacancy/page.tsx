@@ -1,6 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { unitsApi, type UnitDetailOut } from "@/lib/api";
+import { MOCK_MODE } from "@/lib/useApiData";
 
 type Stage = "Available" | "Showing" | "Applied" | "Approved" | "Leased";
 
@@ -10,8 +12,11 @@ interface Lead {
   avatar: string;
   unit: string;
   property: string;
+  address?: string;
   rent: number;
   beds: string;
+  bathrooms?: number;
+  squareFeet?: number | null;
   date: string;
   score?: number;
   note: string;
@@ -19,6 +24,26 @@ interface Lead {
   tours?: number;
   email: string;
   phone: string;
+}
+
+function unitToLead(u: UnitDetailOut): Lead {
+  return {
+    id: u.id,
+    name: `Unit ${u.unit_number}`,
+    avatar: "🏠",
+    unit: u.unit_number,
+    property: u.property_name,
+    address: u.property_address,
+    rent: u.monthly_rent,
+    beds: `${u.bedrooms} bd / ${u.bathrooms} ba`,
+    bathrooms: u.bathrooms,
+    squareFeet: u.square_feet,
+    date: "",
+    note: u.property_address,
+    stage: "Available",
+    email: "",
+    phone: "",
+  };
 }
 
 const STAGES: Stage[] = ["Available", "Showing", "Applied", "Approved", "Leased"];
@@ -32,8 +57,6 @@ const STAGE_STYLES: Record<Stage, { bg: string; border: string; dot: string; cou
 };
 
 const initialLeads: Lead[] = [
-  { id: "l1", name: "Unit 201", avatar: "🏠", unit: "201", property: "Sunset Towers", rent: 1600, beds: "Studio", date: "2026-06-01", note: "Listed 10 days ago · 4 inquiries", stage: "Available", email: "", phone: "" },
-  { id: "l2", name: "Unit B1", avatar: "🏠", unit: "B1", property: "Northside Commons", rent: 1800, beds: "1 bed / 1 bath", date: "2026-06-05", note: "Listed 6 days ago · 7 inquiries", stage: "Available", email: "", phone: "" },
   { id: "l3", name: "Aiden Park", avatar: "AP", unit: "201", property: "Sunset Towers", rent: 1600, beds: "Studio", date: "2026-06-08", note: "Toured yesterday, very interested", stage: "Showing", tours: 1, email: "aiden.park@email.com", phone: "(213) 555-0471" },
   { id: "l4", name: "Maya Torres", avatar: "MT", unit: "B1", property: "Northside Commons", rent: 1800, beds: "1 bed / 1 bath", date: "2026-06-07", note: "2nd tour scheduled for Thu", stage: "Showing", tours: 2, email: "maya.torres@email.com", phone: "(312) 555-0882" },
   { id: "l5", name: "Ryan Okafor", avatar: "RO", unit: "201", property: "Sunset Towers", rent: 1600, beds: "Studio", date: "2026-06-05", note: "Application submitted, refs pending", stage: "Applied", score: 72, email: "ryan.okafor@email.com", phone: "(323) 555-0134" },
@@ -121,7 +144,9 @@ function LeadDrawer({ lead, onClose }: { lead: Lead; onClose: () => void }) {
             <div className="grid grid-cols-2 gap-y-2">
               <span className="text-slate-500">Unit</span><span className="font-medium text-slate-900">{lead.unit}</span>
               <span className="text-slate-500">Property</span><span className="font-medium text-slate-900">{lead.property}</span>
+              {lead.address && (<><span className="text-slate-500">Address</span><span className="font-medium text-slate-900">{lead.address}</span></>)}
               <span className="text-slate-500">Layout</span><span className="font-medium text-slate-900">{lead.beds}</span>
+              {lead.squareFeet != null && (<><span className="text-slate-500">Square feet</span><span className="font-medium text-slate-900">{lead.squareFeet.toLocaleString()} sqft</span></>)}
               <span className="text-slate-500">Rent</span><span className="font-medium text-slate-900">${lead.rent.toLocaleString()}/mo</span>
               <span className="text-slate-500">Stage</span><span className="font-medium text-slate-900">{lead.stage}</span>
               {lead.score !== undefined && <><span className="text-slate-500">Score</span><ScoreBadge score={lead.score} /></>}
@@ -157,6 +182,18 @@ function LeadDrawer({ lead, onClose }: { lead: Lead; onClose: () => void }) {
 export default function VacancyPage() {
   const [leads, setLeads] = useState(initialLeads);
   const [selected, setSelected] = useState<Lead | null>(null);
+  const [loadingUnits, setLoadingUnits] = useState(!MOCK_MODE);
+
+  useEffect(() => {
+    if (MOCK_MODE) return;
+    unitsApi.listAll()
+      .then(units => {
+        const vacant = units.filter(u => u.status === "VACANT").map(unitToLead);
+        setLeads(prev => [...vacant, ...prev]);
+      })
+      .catch(() => {})
+      .finally(() => setLoadingUnits(false));
+  }, []);
 
   const move = (id: string, dir: 1 | -1) => {
     setLeads(prev => prev.map(l => {
@@ -222,7 +259,12 @@ export default function VacancyPage() {
                 {cards.map(lead => (
                   <LeadCard key={lead.id} lead={lead} onMove={move} onSelect={setSelected} />
                 ))}
-                {cards.length === 0 && (
+                {cards.length === 0 && stage === "Available" && loadingUnits && (
+                  <div className="flex-1 flex items-center justify-center">
+                    <p className="text-[11px] text-slate-300 text-center">Loading vacant units…</p>
+                  </div>
+                )}
+                {cards.length === 0 && !(stage === "Available" && loadingUnits) && (
                   <div className="flex-1 flex items-center justify-center">
                     <p className="text-[11px] text-slate-300 text-center">No leads</p>
                   </div>

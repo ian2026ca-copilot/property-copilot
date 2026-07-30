@@ -24,6 +24,8 @@ class UnitDetailOut(BaseModel):
     status: str
     monthly_rent: float
     bedrooms: int
+    bathrooms: float
+    square_feet: Optional[int] = None
     tenant_name: Optional[str] = None
     tenant_user_id: Optional[str] = None
     tenant_email: Optional[str] = None
@@ -80,6 +82,8 @@ async def list_all_units(
                 status=unit.status.value,
                 monthly_rent=float(unit.monthly_rent),
                 bedrooms=unit.bedrooms,
+                bathrooms=float(unit.bathrooms),
+                square_feet=unit.square_feet,
                 tenant_name=tenant.full_name if tenant else None,
                 tenant_user_id=str(tenant.id) if tenant else None,
                 tenant_email=tenant.email if tenant else None,
