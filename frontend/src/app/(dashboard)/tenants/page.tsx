@@ -658,6 +658,7 @@ function EditPersonModal({ person, onClose, onSave }: EditPersonModalProps) {
     first_name: person.first_name ?? "",
     last_name: person.last_name ?? "",
     middle_name: "",
+    email: person.email ?? "",
     phone: person.phone ?? "",
     date_of_birth: person.date_of_birth ?? "",
     ssn_sin: "",
@@ -763,6 +764,7 @@ function EditPersonModal({ person, onClose, onSave }: EditPersonModalProps) {
         first_name: form.first_name,
         last_name: form.last_name,
         middle_name: form.middle_name || null,
+        email: form.email || null,
         phone: form.phone || null,
         date_of_birth: form.date_of_birth || null,
         ssn_sin: form.ssn_sin || null,
@@ -812,6 +814,10 @@ function EditPersonModal({ person, onClose, onSave }: EditPersonModalProps) {
             <div>
               <label className="block text-xs font-medium text-slate-500 mb-1">Driver's licence</label>
               <input value={form.drivers_licence} onChange={e => set("drivers_licence", e.target.value)} placeholder="Optional" className={input} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">Email</label>
+              <input type="email" value={form.email} onChange={e => set("email", e.target.value)} className={input} />
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-500 mb-1">Phone</label>

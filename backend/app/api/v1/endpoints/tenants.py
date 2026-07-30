@@ -562,6 +562,13 @@ async def update_person(
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant not found")
     data = body.model_dump(exclude_none=True)
+    if "email" in data:
+        new_email = data["email"].lower().strip()
+        if new_email != tenant.email:
+            existing = await db.execute(select(User).where(User.email == new_email, User.id != tenant.id))
+            if existing.scalar_one_or_none():
+                raise HTTPException(status_code=400, detail="Email already in use")
+        data["email"] = new_email
     list_data = {f: data.pop(f, []) for f in RENTAL_APP_LIST_FIELDS}
     profile_data = {f: data.pop(f, None) for f in PROFILE_FIELDS}
     rental_profile_data = {f: data.pop(f, None) for f in RENTAL_APP_PROFILE_FIELDS}

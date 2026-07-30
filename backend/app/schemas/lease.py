@@ -23,6 +23,7 @@ class TenantCreate(RentalApplicationFields):
 class TenantUpdate(RentalApplicationFields):
     first_name: str | None = None
     last_name: str | None = None
+    email: EmailStr | None = None
     phone: str | None = None
     date_of_birth: date | None = None
     street_address: str | None = None
