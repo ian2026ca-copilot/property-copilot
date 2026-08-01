@@ -24,12 +24,12 @@ export function fmtDate(s: string | null) {
 const UTILITY_OPTIONS = ["Heat", "Electricity", "Water", "Cable", "Internet", "Satellite"];
 const PARKING_TYPE_OPTIONS = ["Parallel", "Tandem"];
 const PARKING_TENANT_OPTIONS = ["Outdoor", "Indoor", "Street", "Driveway", "Covered", "Garage", "Underground"];
-const HOME_FEATURE_OPTIONS = [
+export const HOME_FEATURE_OPTIONS = [
   "Dishwasher", "Front Door", "Microwave", "Fridge", "Laundry in Suite", "Fireplace",
   "Skylight", "Wireless Internet", "Continuous Water", "Subway", "Patio/Deck", "Storage",
   "Fenced Yard", "Air Conditioning",
 ];
-const NEIGHBORHOOD_FEATURE_OPTIONS = [
+export const NEIGHBORHOOD_FEATURE_OPTIONS = [
   "Bike Route", "Gym", "Golf Course", "Playground/Park", "Public Library",
   "Pool", "Shopping Center", "Sports Courts", "Tennis Courts",
 ];
@@ -38,11 +38,11 @@ const FURNISHING_OPTIONS = ["Furnished", "Unfurnished", "Negotiable"];
 const SMOKING_OPTIONS = ["Non-Smoking", "Smoking Allowed"];
 const PETS_OPTIONS = ["No Pets", "Cats Negotiable", "Dogs Negotiable", "Cats & Dogs Negotiable", "Pets Allowed"];
 
-function toggleTag(setList: React.Dispatch<React.SetStateAction<string[]>>, value: string) {
+export function toggleTag(setList: React.Dispatch<React.SetStateAction<string[]>>, value: string) {
   setList(prev => prev.includes(value) ? prev.filter(v => v !== value) : [...prev, value]);
 }
 
-function TagPicker({ options, selected, onToggle, allowCustom, customPlaceholder }: {
+export function TagPicker({ options, selected, onToggle, allowCustom, customPlaceholder }: {
   options: string[]; selected: string[]; onToggle: (v: string) => void;
   allowCustom?: boolean; customPlaceholder?: string;
 }) {

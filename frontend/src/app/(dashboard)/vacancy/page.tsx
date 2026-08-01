@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { unitsApi, type UnitDetailOut } from "@/lib/api";
 import { MOCK_MODE } from "@/lib/useApiData";
+import { CampaignModal } from "@/components/CampaignModal";
 
 type Stage = "Available" | "Showing" | "Applied" | "Approved" | "Leased";
 
@@ -70,9 +72,15 @@ function ScoreBadge({ score }: { score: number }) {
   return <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${color}`}>{score}</span>;
 }
 
-function LeadCard({ lead, onMove, onSelect }: { lead: Lead; onMove: (id: string, dir: 1 | -1) => void; onSelect: (l: Lead) => void }) {
+function LeadCard({ lead, onMove, onSelect, onCreateCampaign }: {
+  lead: Lead;
+  onMove: (id: string, dir: 1 | -1) => void;
+  onSelect: (l: Lead) => void;
+  onCreateCampaign: (l: Lead) => void;
+}) {
   const isUnit = lead.avatar === "🏠";
   const stageIdx = STAGES.indexOf(lead.stage);
+  const canCreateCampaign = lead.stage === "Available" || lead.stage === "Showing";
 
   return (
     <div
@@ -102,6 +110,17 @@ function LeadCard({ lead, onMove, onSelect }: { lead: Lead; onMove: (id: string,
       {lead.tours && (
         <div className="mt-2 flex items-center gap-1 text-[11px] text-blue-600">
           <span>📅</span><span>{lead.tours} tour{lead.tours > 1 ? "s" : ""} scheduled</span>
+        </div>
+      )}
+
+      {canCreateCampaign && (
+        <div className="mt-2.5" onClick={e => e.stopPropagation()}>
+          <button
+            onClick={() => onCreateCampaign(lead)}
+            className="w-full py-1 text-[10px] font-medium text-violet-700 border border-violet-200 rounded hover:bg-violet-50 transition-colors"
+          >
+            + Create new campaign
+          </button>
         </div>
       )}
 
@@ -180,14 +199,18 @@ function LeadDrawer({ lead, onClose }: { lead: Lead; onClose: () => void }) {
 }
 
 export default function VacancyPage() {
+  const router = useRouter();
   const [leads, setLeads] = useState(initialLeads);
   const [selected, setSelected] = useState<Lead | null>(null);
   const [loadingUnits, setLoadingUnits] = useState(!MOCK_MODE);
+  const [campaignUnits, setCampaignUnits] = useState<UnitDetailOut[]>([]);
+  const [campaignLead, setCampaignLead] = useState<Lead | null>(null);
 
   useEffect(() => {
     if (MOCK_MODE) return;
     unitsApi.listAll()
       .then(units => {
+        setCampaignUnits(units);
         const vacant = units.filter(u => u.status === "VACANT").map(unitToLead);
         setLeads(prev => [...vacant, ...prev]);
       })
@@ -212,6 +235,16 @@ export default function VacancyPage() {
   return (
     <div className="max-w-[1280px] mx-auto px-6 py-6 space-y-6">
       {selected && <LeadDrawer lead={selected} onClose={() => setSelected(null)} />}
+      {campaignLead && (
+        <CampaignModal
+          campaign={null}
+          units={campaignUnits}
+          initialUnitId={campaignLead.id}
+          onClose={() => setCampaignLead(null)}
+          onSave={() => { setCampaignLead(null); router.push("/marketing"); }}
+          onPhotosChanged={() => {}}
+        />
+      )}
 
       {/* Header */}
       <div className="flex items-end justify-between">
@@ -257,7 +290,7 @@ export default function VacancyPage() {
               {/* Cards */}
               <div className="flex flex-col gap-2 flex-1">
                 {cards.map(lead => (
-                  <LeadCard key={lead.id} lead={lead} onMove={move} onSelect={setSelected} />
+                  <LeadCard key={lead.id} lead={lead} onMove={move} onSelect={setSelected} onCreateCampaign={setCampaignLead} />
                 ))}
                 {cards.length === 0 && stage === "Available" && loadingUnits && (
                   <div className="flex-1 flex items-center justify-center">

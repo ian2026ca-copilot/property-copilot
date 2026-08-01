@@ -79,6 +79,11 @@ export interface UnitTenantInfo {
   outstanding_balance: number;
 }
 
+export interface ContactPhone {
+  number: string;
+  extension?: string | null;
+}
+
 export interface UnitOut {
   id: string;
   property_id: string;
@@ -88,6 +93,24 @@ export interface UnitOut {
   square_feet: number | null;
   monthly_rent: number;
   status: string;
+  contact_methods?: string[];
+  contact_phones?: ContactPhone[];
+  contact_emails?: string[];
+  security_deposit?: string | null;
+  utilities_included?: string[];
+  furnishing?: string | null;
+  lease_term?: string | null;
+  availability_date?: string | null;
+  smoking_policy?: string | null;
+  dogs_policy?: string | null;
+  cats_policy?: string | null;
+  pet_fee?: number | null;
+  parking_available?: boolean | null;
+  property_heading?: string | null;
+  hidden_notes?: string | null;
+  description?: string | null;
+  home_features?: string[];
+  neighborhood_features?: string[];
   property_name?: string | null;
   tenant_name?: string | null;
   tenant_user_id?: string | null;

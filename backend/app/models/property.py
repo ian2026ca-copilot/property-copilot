@@ -1,7 +1,8 @@
 import uuid
 import enum
+from datetime import date
 
-from sqlalchemy import String, Integer, Numeric, ForeignKey, Enum as SAEnum, Boolean
+from sqlalchemy import String, Integer, Numeric, Date, ForeignKey, Enum as SAEnum, Boolean, JSON, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -71,6 +72,25 @@ class Unit(Base, TimestampMixin):
     square_feet: Mapped[int | None] = mapped_column(Integer, nullable=True)
     monthly_rent: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
     status: Mapped[UnitStatus] = mapped_column(SAEnum(UnitStatus), nullable=False, default=UnitStatus.VACANT)
+
+    contact_methods: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    contact_phones: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    contact_emails: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    security_deposit: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    utilities_included: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    furnishing: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    lease_term: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    availability_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    smoking_policy: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    dogs_policy: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    cats_policy: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    pet_fee: Mapped[float | None] = mapped_column(Numeric(10, 2), nullable=True)
+    parking_available: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    property_heading: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    hidden_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    home_features: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    neighborhood_features: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
 
     property: Mapped["Property"] = relationship(back_populates="units")
     images: Mapped[list["UnitImage"]] = relationship(back_populates="unit", cascade="all, delete-orphan", order_by="UnitImage.sort_order")  # noqa: F821

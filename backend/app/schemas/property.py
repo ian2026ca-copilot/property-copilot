@@ -1,6 +1,12 @@
 import uuid
-from pydantic import BaseModel
+from datetime import date
+from pydantic import BaseModel, Field
 from app.models.property import PropertyType, UnitStatus
+
+
+class ContactPhone(BaseModel):
+    number: str
+    extension: str | None = None
 
 
 class PropertyCreate(BaseModel):
@@ -46,6 +52,24 @@ class UnitCreate(BaseModel):
     square_feet: int | None = None
     monthly_rent: float
     status: UnitStatus = UnitStatus.VACANT
+    contact_methods: list[str] = Field(default_factory=list)
+    contact_phones: list[ContactPhone] = Field(default_factory=list)
+    contact_emails: list[str] = Field(default_factory=list)
+    security_deposit: str | None = None
+    utilities_included: list[str] = Field(default_factory=list)
+    furnishing: str | None = None
+    lease_term: str | None = None
+    availability_date: date | None = None
+    smoking_policy: str | None = None
+    dogs_policy: str | None = None
+    cats_policy: str | None = None
+    pet_fee: float | None = None
+    parking_available: bool | None = None
+    property_heading: str | None = None
+    hidden_notes: str | None = None
+    description: str | None = None
+    home_features: list[str] = Field(default_factory=list)
+    neighborhood_features: list[str] = Field(default_factory=list)
 
 
 class UnitUpdate(BaseModel):
@@ -55,6 +79,24 @@ class UnitUpdate(BaseModel):
     square_feet: int | None = None
     monthly_rent: float | None = None
     status: UnitStatus | None = None
+    contact_methods: list[str] | None = None
+    contact_phones: list[ContactPhone] | None = None
+    contact_emails: list[str] | None = None
+    security_deposit: str | None = None
+    utilities_included: list[str] | None = None
+    furnishing: str | None = None
+    lease_term: str | None = None
+    availability_date: date | None = None
+    smoking_policy: str | None = None
+    dogs_policy: str | None = None
+    cats_policy: str | None = None
+    pet_fee: float | None = None
+    parking_available: bool | None = None
+    property_heading: str | None = None
+    hidden_notes: str | None = None
+    description: str | None = None
+    home_features: list[str] | None = None
+    neighborhood_features: list[str] | None = None
 
 
 class UnitTenantInfo(BaseModel):
@@ -76,6 +118,24 @@ class UnitOut(BaseModel):
     square_feet: int | None
     monthly_rent: float
     status: UnitStatus
+    contact_methods: list[str] = Field(default_factory=list)
+    contact_phones: list[ContactPhone] = Field(default_factory=list)
+    contact_emails: list[str] = Field(default_factory=list)
+    security_deposit: str | None = None
+    utilities_included: list[str] = Field(default_factory=list)
+    furnishing: str | None = None
+    lease_term: str | None = None
+    availability_date: date | None = None
+    smoking_policy: str | None = None
+    dogs_policy: str | None = None
+    cats_policy: str | None = None
+    pet_fee: float | None = None
+    parking_available: bool | None = None
+    property_heading: str | None = None
+    hidden_notes: str | None = None
+    description: str | None = None
+    home_features: list[str] = Field(default_factory=list)
+    neighborhood_features: list[str] = Field(default_factory=list)
     property_name: str | None = None
     tenant_name: str | None = None
     tenant_user_id: str | None = None
