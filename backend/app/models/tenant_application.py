@@ -6,7 +6,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
-from app.models.base import new_uuid
+from app.models.base import new_uuid, TimestampMixin
 
 
 class TenantAddressHistory(Base):
@@ -110,3 +110,17 @@ class TenantVehicle(Base):
     year: Mapped[int | None] = mapped_column(Integer, nullable=True)
     license_plate: Mapped[str | None] = mapped_column(String(30), nullable=True)
     created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class TenantScreeningNote(Base, TimestampMixin):
+    """Landlord-facing screening activity log: manual notes plus auto-logged actions
+    (e.g. status changes), each attributed to the team member who made them."""
+    __tablename__ = "tenant_screening_notes"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    organization_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    author_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    author_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    note: Mapped[str] = mapped_column(Text, nullable=False)
+    kind: Mapped[str] = mapped_column(String(20), nullable=False, default="NOTE")  # "NOTE" | "STATUS_CHANGE"

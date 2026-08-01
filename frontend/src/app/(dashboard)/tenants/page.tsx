@@ -32,6 +32,8 @@ const MOCK_PERSONS: PersonRow[] = [
     id: "tu1", first_name: "Emma", last_name: "Jones", full_name: "Emma Jones",
     email: "emma.jones@email.com", phone: "(310) 555-0192", date_of_birth: null,
     avatar_url: null, documents: [],
+    application_status: "NOT_STARTED", interested_unit_id: null,
+    personal_income_annual: null, household_income_annual: null,
     street_address: null, city: null, province: null, postal_code: null, country: null,
     leases: [{
       id: "l1", unit_id: "u1", tenant_user_id: "tu1", start_date: "2026-02-01",
@@ -50,6 +52,8 @@ const MOCK_PERSONS: PersonRow[] = [
     id: "tu2", first_name: "Marcus", last_name: "Lee", full_name: "Marcus Lee",
     email: "marcus.lee@email.com", phone: "(310) 555-0841", date_of_birth: null,
     avatar_url: null, documents: [],
+    application_status: "NOT_STARTED", interested_unit_id: null,
+    personal_income_annual: null, household_income_annual: null,
     street_address: null, city: null, province: null, postal_code: null, country: null,
     leases: [{
       id: "l2", unit_id: "u3", tenant_user_id: "tu2", start_date: "2025-09-01",
@@ -391,7 +395,7 @@ interface AddPersonModalProps {
 function AddPersonModal({ onClose, onAdded }: AddPersonModalProps) {
   const [form, setForm] = useState({
     first_name: "", last_name: "", middle_name: "", email: "", phone: "", date_of_birth: "",
-    ssn_sin: "", drivers_licence: "",
+    drivers_licence: "",
   });
   const app = useRentalApplicationState();
   const [saved, setSaved] = useState<TenantOut | null>(null);
@@ -417,7 +421,6 @@ function AddPersonModal({ onClose, onAdded }: AddPersonModalProps) {
         phone: form.phone,
         date_of_birth: form.date_of_birth || null,
         middle_name: form.middle_name || null,
-        ssn_sin: form.ssn_sin || null,
         drivers_licence: form.drivers_licence || null,
         ...buildRentalApplicationPayload(app),
       });
@@ -459,10 +462,6 @@ function AddPersonModal({ onClose, onAdded }: AddPersonModalProps) {
             <div>
               <label className="block text-xs font-medium text-slate-500 mb-1">Date of birth</label>
               <input type="date" value={form.date_of_birth} onChange={e => set("date_of_birth", e.target.value)} disabled={!!saved} className={`${input} disabled:opacity-60`} />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-slate-500 mb-1">SSN / SIN</label>
-              <input value={form.ssn_sin} onChange={e => set("ssn_sin", e.target.value)} placeholder="Optional" disabled={!!saved} className={`${input} disabled:opacity-60`} />
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-500 mb-1">Driver's licence</label>
@@ -661,7 +660,6 @@ function EditPersonModal({ person, onClose, onSave }: EditPersonModalProps) {
     email: person.email ?? "",
     phone: person.phone ?? "",
     date_of_birth: person.date_of_birth ?? "",
-    ssn_sin: "",
     drivers_licence: "",
   });
   const app = useRentalApplicationState();
@@ -683,7 +681,6 @@ function EditPersonModal({ person, onClose, onSave }: EditPersonModalProps) {
       setForm(f => ({
         ...f,
         middle_name: data.middle_name ?? "",
-        ssn_sin: data.ssn_sin ?? "",
         drivers_licence: data.drivers_licence ?? "",
       }));
       if (data.address_history?.length) {
@@ -767,7 +764,6 @@ function EditPersonModal({ person, onClose, onSave }: EditPersonModalProps) {
         email: form.email || null,
         phone: form.phone || null,
         date_of_birth: form.date_of_birth || null,
-        ssn_sin: form.ssn_sin || null,
         drivers_licence: form.drivers_licence || null,
         ...buildRentalApplicationPayload(app),
       });
@@ -806,10 +802,6 @@ function EditPersonModal({ person, onClose, onSave }: EditPersonModalProps) {
             <div>
               <label className="block text-xs font-medium text-slate-500 mb-1">Date of birth</label>
               <input type="date" value={form.date_of_birth} onChange={e => set("date_of_birth", e.target.value)} className={input} />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-slate-500 mb-1">SSN / SIN</label>
-              <input value={form.ssn_sin} onChange={e => set("ssn_sin", e.target.value)} placeholder="Optional" className={input} />
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-500 mb-1">Driver's licence</label>

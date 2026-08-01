@@ -11,20 +11,24 @@ from sqlalchemy.orm import selectinload, joinedload
 
 from app.core.database import get_db
 from app.core.security import hash_password
+from app.core.email import send_reference_letter_email
+from app.core.sms import send_sms
 from app.api.deps import get_current_user, require_min_role
 from app.models.user import User, OrganizationMember, UserRole, TenantDocument
 from app.models.profiles import TenantProfile
 from app.models.lease import Lease, LeaseStatus
 from app.models.property import Unit, Property, UnitStatus
+from app.models.organization import Organization
 from app.models.tenant_application import (
     TenantAddressHistory, TenantEmployment, TenantIncomeSource,
-    TenantOccupant, TenantCosigner, TenantPet, TenantVehicle,
+    TenantOccupant, TenantCosigner, TenantPet, TenantVehicle, TenantScreeningNote,
 )
 from app.schemas.lease import TenantCreate, TenantUpdate, TenantInvite, LeaseUpdate, LeaseOut, TenantOut, TenantDocumentOut
 from app.schemas.property import UnitOut
 from app.schemas.tenant_application import (
     TenantApplicationOut, AddressHistoryIn, EmploymentIn, IncomeSourceIn,
-    OccupantIn, CosignerIn, PetIn, VehicleIn,
+    OccupantIn, CosignerIn, PetIn, VehicleIn, TenantScreeningUpdate,
+    TenantScreeningNoteIn, TenantScreeningNoteOut, EmployerReferenceContactIn, EmployerReferenceLetterOut,
     RENTAL_APP_PROFILE_FIELDS, RENTAL_APP_LIST_FIELDS,
 )
 from app.api.v1.endpoints.payments import generate_monthly_payments
@@ -94,6 +98,10 @@ def _tenant_to_out(user: User, docs: list[TenantDocument] | None = None) -> Tena
         postal_code=profile.postal_code if profile else None,
         country=profile.country if profile else None,
         documents=[_doc_to_out(d) for d in (docs or [])],
+        application_status=profile.application_status if profile else "NOT_STARTED",
+        interested_unit_id=str(profile.interested_unit_id) if profile and profile.interested_unit_id else None,
+        personal_income_annual=profile.personal_income_annual if profile else None,
+        household_income_annual=profile.household_income_annual if profile else None,
     )
 
 
@@ -359,7 +367,6 @@ async def create_person(
         db, tenant_user.id,
         date_of_birth=body.date_of_birth,
         middle_name=body.middle_name,
-        ssn_sin=body.ssn_sin,
         drivers_licence=body.drivers_licence,
         personal_income_annual=body.personal_income_annual,
         household_income_annual=body.household_income_annual,
@@ -538,6 +545,8 @@ async def get_tenant_application(
 
     return TenantApplicationOut(
         **{f: getattr(profile, f, None) for f in RENTAL_APP_PROFILE_FIELDS},
+        application_status=profile.application_status if profile else "NOT_STARTED",
+        interested_unit_id=str(profile.interested_unit_id) if profile and profile.interested_unit_id else None,
         address_history=[AddressHistoryIn.model_validate(a, from_attributes=True) for a in await _fetch(TenantAddressHistory)],
         employment_history=[EmploymentIn.model_validate(e, from_attributes=True) for e in await _fetch(TenantEmployment)],
         income_sources=[IncomeSourceIn.model_validate(i, from_attributes=True) for i in await _fetch(TenantIncomeSource)],
@@ -546,6 +555,582 @@ async def get_tenant_application(
         pets=[PetIn.model_validate(p, from_attributes=True) for p in await _fetch(TenantPet)],
         vehicles=[VehicleIn.model_validate(v, from_attributes=True) for v in await _fetch(TenantVehicle)],
     )
+
+
+SCREENING_STATUS_LABELS = {
+    "NOT_STARTED": "Not started",
+    "IN_REVIEW": "In review",
+    "MORE_INFO_REQUESTED": "More info requested",
+    "APPROVED": "Approved",
+    "DECLINED": "Declined",
+}
+
+
+@router.patch("/person/{tenant_user_id}/screening", response_model=TenantScreeningUpdate)
+async def update_screening(
+    tenant_user_id: str,
+    body: TenantScreeningUpdate,
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Landlord-only screening decision: application status, interested unit, notes."""
+    user, member = current
+    mem_res = await db.execute(
+        select(OrganizationMember).where(
+            OrganizationMember.organization_id == member.organization_id,
+            OrganizationMember.user_id == tenant_user_id,
+            OrganizationMember.role == UserRole.TENANT,
+        )
+    )
+    if not mem_res.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    interested_unit_id = body.interested_unit_id
+    if interested_unit_id:
+        unit_check = await db.execute(
+            select(Unit.id).join(Property, Property.id == Unit.property_id)
+            .where(Unit.id == interested_unit_id, Property.organization_id == member.organization_id)
+        )
+        if not unit_check.scalar_one_or_none():
+            raise HTTPException(status_code=400, detail="Unit not found in this organization")
+
+    old_status = None
+    if body.application_status is not None:
+        profile_res = await db.execute(select(TenantProfile).where(TenantProfile.user_id == tenant_user_id))
+        existing_profile = profile_res.scalar_one_or_none()
+        old_status = existing_profile.application_status if existing_profile else "NOT_STARTED"
+
+    await _upsert_tenant_profile(
+        db, tenant_user_id,
+        application_status=body.application_status,
+        interested_unit_id=interested_unit_id,
+        screening_notes=body.screening_notes,
+    )
+
+    if body.application_status is not None and body.application_status != old_status:
+        old_label = SCREENING_STATUS_LABELS.get(old_status, old_status)
+        new_label = SCREENING_STATUS_LABELS.get(body.application_status, body.application_status)
+        db.add(TenantScreeningNote(
+            user_id=tenant_user_id,
+            organization_id=member.organization_id,
+            author_user_id=user.id,
+            author_name=user.display_name,
+            note=f"Changed status from {old_label} to {new_label}",
+            kind="STATUS_CHANGE",
+        ))
+
+    await db.commit()
+    return body
+
+
+@router.get("/person/{tenant_user_id}/notes", response_model=list[TenantScreeningNoteOut])
+async def list_screening_notes(
+    tenant_user_id: str,
+    current: tuple[User, OrganizationMember] = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    _, member = current
+    result = await db.execute(
+        select(TenantScreeningNote)
+        .where(
+            TenantScreeningNote.user_id == tenant_user_id,
+            TenantScreeningNote.organization_id == member.organization_id,
+        )
+        .order_by(TenantScreeningNote.created_at.desc())
+    )
+    return [
+        TenantScreeningNoteOut(
+            id=str(n.id), author_name=n.author_name, note=n.note, kind=n.kind,
+            created_at=n.created_at.isoformat(),
+        )
+        for n in result.scalars().all()
+    ]
+
+
+@router.post("/person/{tenant_user_id}/notes", response_model=TenantScreeningNoteOut, status_code=status.HTTP_201_CREATED)
+async def add_screening_note(
+    tenant_user_id: str,
+    body: TenantScreeningNoteIn,
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
+    db: AsyncSession = Depends(get_db),
+):
+    user, member = current
+    mem_res = await db.execute(
+        select(OrganizationMember).where(
+            OrganizationMember.organization_id == member.organization_id,
+            OrganizationMember.user_id == tenant_user_id,
+            OrganizationMember.role == UserRole.TENANT,
+        )
+    )
+    if not mem_res.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    if not body.note.strip():
+        raise HTTPException(status_code=400, detail="Note cannot be empty")
+
+    note = TenantScreeningNote(
+        user_id=tenant_user_id,
+        organization_id=member.organization_id,
+        author_user_id=user.id,
+        author_name=user.display_name,
+        note=body.note.strip(),
+        kind="NOTE",
+    )
+    db.add(note)
+    await db.commit()
+    await db.refresh(note)
+    return TenantScreeningNoteOut(
+        id=str(note.id), author_name=note.author_name, note=note.note, kind=note.kind,
+        created_at=note.created_at.isoformat(),
+    )
+
+
+@router.post(
+    "/person/{tenant_user_id}/employment/{employment_id}/contact-reference",
+    response_model=TenantScreeningNoteOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def contact_employer_reference(
+    tenant_user_id: str,
+    employment_id: str,
+    body: EmployerReferenceContactIn,
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Send an email or SMS to an applicant's employer reference contact, and
+    log it as a screening note so the outreach is visible in the activity feed."""
+    user, member = current
+    mem_res = await db.execute(
+        select(OrganizationMember).where(
+            OrganizationMember.organization_id == member.organization_id,
+            OrganizationMember.user_id == tenant_user_id,
+            OrganizationMember.role == UserRole.TENANT,
+        )
+    )
+    if not mem_res.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    emp_res = await db.execute(
+        select(TenantEmployment).where(
+            TenantEmployment.id == employment_id,
+            TenantEmployment.user_id == tenant_user_id,
+        )
+    )
+    employment = emp_res.scalar_one_or_none()
+    if not employment:
+        raise HTTPException(status_code=404, detail="Employment record not found")
+
+    channel = body.channel.upper()
+    reference_label = employment.employer_reference_name or "the employer reference"
+
+    tenant_res = await db.execute(select(User).where(User.id == tenant_user_id))
+    tenant_user = tenant_res.scalar_one_or_none()
+    applicant_name = tenant_user.display_name if tenant_user else "the applicant"
+
+    if channel == "EMAIL":
+        if not employment.employer_reference_email:
+            raise HTTPException(status_code=400, detail="No email on file for this reference")
+        if body.subject and body.body:
+            email_subject, email_body = body.subject, body.body
+        else:
+            org_res = await db.execute(select(Organization).where(Organization.id == member.organization_id))
+            org = org_res.scalar_one_or_none()
+            org_name = org.name if org else "Property Copilot"
+            greeting = f"Hi {employment.employer_reference_name}," if employment.employer_reference_name else "Hi,"
+            email_subject = f"Reference check for {applicant_name}"
+            email_body = (
+                f"{greeting}\n\n{applicant_name} has listed you as an employer reference on a rental application "
+                f"with {org_name}. When you have a moment, please reply to this email to confirm their employment details."
+            )
+        send_reference_letter_email(employment.employer_reference_email, email_subject, email_body)
+        recipient = employment.employer_reference_email
+        sent_content = f"Subject: {email_subject}\n\n{email_body}"
+    elif channel == "SMS":
+        if not employment.employer_reference_phone:
+            raise HTTPException(status_code=400, detail="No phone number on file for this reference")
+        if body.body:
+            sms_body = body.body
+        else:
+            sms_body = (
+                f"Hi {employment.employer_reference_name or ''}, {applicant_name} listed you as an "
+                f"employer reference on a rental application. Please reply to confirm their employment."
+            ).strip()
+        send_sms(employment.employer_reference_phone, sms_body)
+        recipient = employment.employer_reference_phone
+        sent_content = sms_body
+    else:
+        raise HTTPException(status_code=400, detail="channel must be 'EMAIL' or 'SMS'")
+
+    note = TenantScreeningNote(
+        user_id=tenant_user_id,
+        organization_id=member.organization_id,
+        author_user_id=user.id,
+        author_name=user.display_name,
+        note=f"Sent {channel.lower()} to {reference_label} ({recipient}) (employer reference):\n{sent_content}",
+        kind="NOTE",
+    )
+    db.add(note)
+    await db.commit()
+    await db.refresh(note)
+    return TenantScreeningNoteOut(
+        id=str(note.id), author_name=note.author_name, note=note.note, kind=note.kind,
+        created_at=note.created_at.isoformat(),
+    )
+
+
+@router.post("/person/{tenant_user_id}/employment/{employment_id}/reference-letter", response_model=EmployerReferenceLetterOut)
+async def generate_reference_letter(
+    tenant_user_id: str,
+    employment_id: str,
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
+    db: AsyncSession = Depends(get_db),
+):
+    """AI-draft a professional reference-request letter to an employer reference,
+    for the landlord to review/edit before sending via the contact-reference endpoint."""
+    import google.generativeai as genai
+
+    _, member = current
+    mem_res = await db.execute(
+        select(OrganizationMember).where(
+            OrganizationMember.organization_id == member.organization_id,
+            OrganizationMember.user_id == tenant_user_id,
+            OrganizationMember.role == UserRole.TENANT,
+        )
+    )
+    if not mem_res.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    emp_res = await db.execute(
+        select(TenantEmployment).where(
+            TenantEmployment.id == employment_id,
+            TenantEmployment.user_id == tenant_user_id,
+        )
+    )
+    employment = emp_res.scalar_one_or_none()
+    if not employment:
+        raise HTTPException(status_code=404, detail="Employment record not found")
+    if not employment.employer_reference_email:
+        raise HTTPException(status_code=400, detail="No email on file for this reference")
+
+    tenant_res = await db.execute(select(User).where(User.id == tenant_user_id))
+    tenant_user = tenant_res.scalar_one_or_none()
+    applicant_name = tenant_user.display_name if tenant_user else "the applicant"
+
+    org_res = await db.execute(select(Organization).where(Organization.id == member.organization_id))
+    org = org_res.scalar_one_or_none()
+    org_name = org.name if org else "Property Copilot"
+
+    reference_name = employment.employer_reference_name or "there"
+    subject = f"Reference check for {applicant_name}"
+
+    api_key = os.environ.get("GEMINI_API_KEY", "")
+    if api_key:
+        context_parts = [
+            f"Applicant name: {applicant_name}",
+            f"Employer reference name: {reference_name}",
+            f"Company: {employment.company}" if employment.company else "",
+            f"Applicant's position at the company: {employment.position}" if employment.position else "",
+            f"Length of employment reported by applicant: {employment.employment_length}" if employment.employment_length else "",
+            f"Landlord / property management organization: {org_name}",
+        ]
+        prompt = (
+            "Write a short, professional email body (3-4 short paragraphs, no subject line) from a Canadian "
+            "landlord to an applicant's employer reference, asking them to confirm the applicant's employment "
+            "details (role, length of employment, and whether they are in good standing) as part of a rental "
+            "application. Be polite and concise. Do not invent facts beyond what's given. Sign off as "
+            f"\"{org_name}\". Use only the facts below.\n\n" + "\n".join(p for p in context_parts if p)
+        )
+        try:
+            genai.configure(api_key=api_key)
+            model = genai.GenerativeModel("gemini-2.5-flash")
+            response = model.generate_content(prompt)
+            letter_body = (response.text or "").strip()
+        except Exception:
+            letter_body = ""
+    else:
+        letter_body = ""
+
+    if not letter_body:
+        letter_body = (
+            f"Hi {reference_name},\n\n"
+            f"{applicant_name} has listed you as an employer reference on a rental application with {org_name}. "
+            "Could you please confirm their role, length of employment, and whether they are in good standing? "
+            "Any details you can share would be greatly appreciated.\n\n"
+            f"Thank you,\n{org_name}"
+        )
+
+    return EmployerReferenceLetterOut(subject=subject, body=letter_body)
+
+
+@router.post(
+    "/person/{tenant_user_id}/address/{address_id}/contact-reference",
+    response_model=TenantScreeningNoteOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def contact_landlord_reference(
+    tenant_user_id: str,
+    address_id: str,
+    body: EmployerReferenceContactIn,
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Send an email or SMS to an applicant's landlord reference contact, and
+    log it as a screening note so the outreach is visible in the activity feed."""
+    user, member = current
+    mem_res = await db.execute(
+        select(OrganizationMember).where(
+            OrganizationMember.organization_id == member.organization_id,
+            OrganizationMember.user_id == tenant_user_id,
+            OrganizationMember.role == UserRole.TENANT,
+        )
+    )
+    if not mem_res.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    addr_res = await db.execute(
+        select(TenantAddressHistory).where(
+            TenantAddressHistory.id == address_id,
+            TenantAddressHistory.user_id == tenant_user_id,
+        )
+    )
+    address = addr_res.scalar_one_or_none()
+    if not address:
+        raise HTTPException(status_code=404, detail="Address record not found")
+
+    channel = body.channel.upper()
+    reference_label = address.landlord_name or "the landlord reference"
+
+    tenant_res = await db.execute(select(User).where(User.id == tenant_user_id))
+    tenant_user = tenant_res.scalar_one_or_none()
+    applicant_name = tenant_user.display_name if tenant_user else "the applicant"
+
+    if channel == "EMAIL":
+        if not address.landlord_email:
+            raise HTTPException(status_code=400, detail="No email on file for this reference")
+        if body.subject and body.body:
+            email_subject, email_body = body.subject, body.body
+        else:
+            org_res = await db.execute(select(Organization).where(Organization.id == member.organization_id))
+            org = org_res.scalar_one_or_none()
+            org_name = org.name if org else "Property Copilot"
+            greeting = f"Hi {address.landlord_name}," if address.landlord_name else "Hi,"
+            email_subject = f"Reference check for {applicant_name}"
+            email_body = (
+                f"{greeting}\n\n{applicant_name} has listed you as a landlord reference on a rental application "
+                f"with {org_name}. When you have a moment, please reply to this email to confirm their tenancy details."
+            )
+        send_reference_letter_email(address.landlord_email, email_subject, email_body)
+        recipient = address.landlord_email
+        sent_content = f"Subject: {email_subject}\n\n{email_body}"
+    elif channel == "SMS":
+        if not address.landlord_phone:
+            raise HTTPException(status_code=400, detail="No phone number on file for this reference")
+        if body.body:
+            sms_body = body.body
+        else:
+            sms_body = (
+                f"Hi {address.landlord_name or ''}, {applicant_name} listed you as a "
+                f"landlord reference on a rental application. Please reply to confirm their tenancy."
+            ).strip()
+        send_sms(address.landlord_phone, sms_body)
+        recipient = address.landlord_phone
+        sent_content = sms_body
+    else:
+        raise HTTPException(status_code=400, detail="channel must be 'EMAIL' or 'SMS'")
+
+    note = TenantScreeningNote(
+        user_id=tenant_user_id,
+        organization_id=member.organization_id,
+        author_user_id=user.id,
+        author_name=user.display_name,
+        note=f"Sent {channel.lower()} to {reference_label} ({recipient}) (landlord reference):\n{sent_content}",
+        kind="NOTE",
+    )
+    db.add(note)
+    await db.commit()
+    await db.refresh(note)
+    return TenantScreeningNoteOut(
+        id=str(note.id), author_name=note.author_name, note=note.note, kind=note.kind,
+        created_at=note.created_at.isoformat(),
+    )
+
+
+@router.post("/person/{tenant_user_id}/address/{address_id}/reference-letter", response_model=EmployerReferenceLetterOut)
+async def generate_landlord_reference_letter(
+    tenant_user_id: str,
+    address_id: str,
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
+    db: AsyncSession = Depends(get_db),
+):
+    """AI-draft a professional reference-request letter to a landlord reference,
+    for the landlord (org) to review/edit before sending via the contact-reference endpoint."""
+    import google.generativeai as genai
+
+    _, member = current
+    mem_res = await db.execute(
+        select(OrganizationMember).where(
+            OrganizationMember.organization_id == member.organization_id,
+            OrganizationMember.user_id == tenant_user_id,
+            OrganizationMember.role == UserRole.TENANT,
+        )
+    )
+    if not mem_res.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    addr_res = await db.execute(
+        select(TenantAddressHistory).where(
+            TenantAddressHistory.id == address_id,
+            TenantAddressHistory.user_id == tenant_user_id,
+        )
+    )
+    address = addr_res.scalar_one_or_none()
+    if not address:
+        raise HTTPException(status_code=404, detail="Address record not found")
+    if not address.landlord_email:
+        raise HTTPException(status_code=400, detail="No email on file for this reference")
+
+    tenant_res = await db.execute(select(User).where(User.id == tenant_user_id))
+    tenant_user = tenant_res.scalar_one_or_none()
+    applicant_name = tenant_user.display_name if tenant_user else "the applicant"
+
+    org_res = await db.execute(select(Organization).where(Organization.id == member.organization_id))
+    org = org_res.scalar_one_or_none()
+    org_name = org.name if org else "Property Copilot"
+
+    reference_name = address.landlord_name or "there"
+    subject = f"Reference check for {applicant_name}"
+
+    api_key = os.environ.get("GEMINI_API_KEY", "")
+    if api_key:
+        context_parts = [
+            f"Applicant name: {applicant_name}",
+            f"Landlord reference name: {reference_name}",
+            f"Address applicant rented: {address.street_address}, {address.city}" if address.street_address else "",
+            f"Tenancy period: {address.move_in_date} to {address.move_out_date or 'present'}" if address.move_in_date else "",
+            f"Monthly rent reported by applicant: ${address.monthly_rent:,.0f}" if address.monthly_rent else "",
+            f"Property management organization requesting the check: {org_name}",
+        ]
+        prompt = (
+            "Write a short, professional email body (3-4 short paragraphs, no subject line) from a Canadian "
+            "landlord to an applicant's previous landlord reference, asking them to confirm the applicant's "
+            "tenancy details (rent payment history, whether they were in good standing, and whether they'd rent "
+            "to them again) as part of a rental application. Be polite and concise. Do not invent facts beyond "
+            f"what's given. Sign off as \"{org_name}\". Use only the facts below.\n\n"
+            + "\n".join(p for p in context_parts if p)
+        )
+        try:
+            genai.configure(api_key=api_key)
+            model = genai.GenerativeModel("gemini-2.5-flash")
+            response = model.generate_content(prompt)
+            letter_body = (response.text or "").strip()
+        except Exception:
+            letter_body = ""
+    else:
+        letter_body = ""
+
+    if not letter_body:
+        letter_body = (
+            f"Hi {reference_name},\n\n"
+            f"{applicant_name} has listed you as a landlord reference on a rental application with {org_name}. "
+            "Could you please confirm whether they paid rent on time, kept the unit in good condition, and whether "
+            "you would rent to them again? Any details you can share would be greatly appreciated.\n\n"
+            f"Thank you,\n{org_name}"
+        )
+
+    return EmployerReferenceLetterOut(subject=subject, body=letter_body)
+
+
+@router.post("/person/{tenant_user_id}/ai-screen")
+async def ai_screen_tenant(
+    tenant_user_id: str,
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Compute a deterministic screening score from real applicant data, plus a
+    Gemini-written plain-language summary. The numeric score is never generated
+    by the LLM — it's derived from concrete inputs so it stays explainable."""
+    import google.generativeai as genai
+
+    _, member = current
+    mem_res = await db.execute(
+        select(OrganizationMember).where(
+            OrganizationMember.organization_id == member.organization_id,
+            OrganizationMember.user_id == tenant_user_id,
+            OrganizationMember.role == UserRole.TENANT,
+        )
+    )
+    if not mem_res.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    user_res = await db.execute(select(User).where(User.id == tenant_user_id))
+    tenant_user = user_res.scalar_one_or_none()
+    if not tenant_user:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    profile_res = await db.execute(select(TenantProfile).where(TenantProfile.user_id == tenant_user_id))
+    profile = profile_res.scalar_one_or_none()
+
+    employment_res = await db.execute(select(TenantEmployment).where(TenantEmployment.user_id == tenant_user_id))
+    employment = employment_res.scalars().all()
+    docs_res = await db.execute(select(TenantDocument).where(TenantDocument.user_id == tenant_user_id))
+    documents = docs_res.scalars().all()
+
+    unit_rent = None
+    if profile and profile.interested_unit_id:
+        unit_res = await db.execute(select(Unit).where(Unit.id == profile.interested_unit_id))
+        unit = unit_res.scalar_one_or_none()
+        if unit:
+            unit_rent = float(unit.monthly_rent)
+
+    annual_income = (profile.household_income_annual if profile else None) or (profile.personal_income_annual if profile else None)
+    monthly_income = annual_income / 12 if annual_income else None
+    income_ratio = (monthly_income / unit_rent) if (monthly_income and unit_rent) else None
+
+    score = 50
+    if income_ratio is not None:
+        if income_ratio >= 3:
+            score += 30
+        elif income_ratio >= 2.5:
+            score += 20
+        elif income_ratio >= 2:
+            score += 10
+    if employment:
+        score += 10
+    if documents:
+        score += 10
+    disclosed_flags = [f for f in (profile.evicted if profile else None, profile.refused_rent if profile else None, profile.criminal_record if profile else None) if f]
+    score -= 20 * len(disclosed_flags)
+    score = max(0, min(100, score))
+
+    api_key = os.environ.get("GEMINI_API_KEY", "")
+    verdict = "AI summary unavailable — Gemini API key not configured."
+    if api_key:
+        context_parts = [
+            f"Applicant: {tenant_user.display_name}",
+            f"Annual income reported: ${annual_income:,.0f}" if annual_income else "No income reported.",
+            f"Unit rent: ${unit_rent:,.0f}/mo, income-to-rent ratio: {income_ratio:.1f}x" if income_ratio else "No specific unit / rent to compare against.",
+            f"Employment on file: {len(employment)} record(s)." if employment else "No employment history on file.",
+            f"Supporting documents uploaded: {len(documents)}." if documents else "No supporting documents uploaded.",
+            f"Self-disclosed flags: {', '.join(disclosed_flags) if disclosed_flags else 'none'}.",
+            f"Applicant's message: {profile.personal_message}" if profile and profile.personal_message else "",
+        ]
+        prompt = (
+            "You are helping a Canadian landlord review a rental applicant. Based ONLY on the facts below, "
+            "write a short (2-3 sentence) plain-language assessment: mention income-to-rent ratio if available, "
+            "document/reference completeness, and any disclosed flags. Do not invent facts. Do not suggest a "
+            "numeric score. Do not comment on protected characteristics (race, family status, source of income, "
+            "disability, etc.) — focus only on income, documentation, and disclosed rental history.\n\n"
+            + "\n".join(p for p in context_parts if p)
+        )
+        try:
+            genai.configure(api_key=api_key)
+            model = genai.GenerativeModel("gemini-2.5-flash")
+            response = model.generate_content(prompt)
+            verdict = (response.text or "").strip()
+        except Exception as e:
+            verdict = f"AI summary unavailable: {str(e)[:200]}"
+
+    return {"score": score, "verdict": verdict}
 
 
 @router.put("/person/{tenant_user_id}", response_model=TenantOut)

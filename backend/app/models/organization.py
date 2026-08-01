@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import String, Text
+from sqlalchemy import String, Text, Boolean
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -17,6 +17,8 @@ class Organization(Base, TimestampMixin):
     logo_url: Mapped[str | None] = mapped_column(Text)
     fb_page_token: Mapped[str | None] = mapped_column(Text, nullable=True)
     fb_page_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    screening_criminal_record_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    screening_rental_history_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
 
     members: Mapped[list["OrganizationMember"]] = relationship(back_populates="organization")
     properties: Mapped[list["Property"]] = relationship(back_populates="organization")  # noqa: F821

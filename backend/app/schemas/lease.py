@@ -58,6 +58,10 @@ class TenantOut(BaseModel):
     postal_code: str | None = None
     country: str | None = None
     documents: list[TenantDocumentOut] = []
+    application_status: str = "NOT_STARTED"
+    interested_unit_id: str | None = None
+    personal_income_annual: float | None = None
+    household_income_annual: float | None = None
 
     model_config = {"from_attributes": True}
 

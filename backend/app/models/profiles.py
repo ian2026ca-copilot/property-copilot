@@ -24,7 +24,6 @@ class TenantProfile(Base, TimestampMixin):
 
     # Rental application fields
     middle_name: Mapped[str | None] = mapped_column(String(150), nullable=True)
-    ssn_sin: Mapped[str | None] = mapped_column(String(50), nullable=True)
     drivers_licence: Mapped[str | None] = mapped_column(String(50), nullable=True)
     personal_income_annual: Mapped[float | None] = mapped_column(Float, nullable=True)
     household_income_annual: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -35,6 +34,12 @@ class TenantProfile(Base, TimestampMixin):
     evicted: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     criminal_record: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     screening_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Screening / application tracking
+    application_status: Mapped[str] = mapped_column(String(30), nullable=False, default="NOT_STARTED", server_default="NOT_STARTED")
+    interested_unit_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("units.id", ondelete="SET NULL"), nullable=True
+    )
 
     user: Mapped["User"] = relationship(back_populates="tenant_profile")  # noqa: F821
 

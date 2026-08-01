@@ -33,6 +33,7 @@ class RegisterRequest(RentalApplicationFields):
 
     # Tenant rental application field not shared with TenantCreate (owner already knows this from context there)
     date_of_birth: date | None = None
+    unit_id: str | None = None
 
     @field_validator("phone")
     @classmethod
@@ -68,14 +69,25 @@ class UserOut(BaseModel):
     org_name: str
     org_slug: str
     role: str
+    screening_criminal_record_enabled: bool = False
+    screening_rental_history_enabled: bool = False
 
     class Config:
         from_attributes = True
 
 
+class VacantUnitOut(BaseModel):
+    id: str
+    label: str
+    monthly_rent: float
+
+
 class OrganizationPublicOut(BaseModel):
     name: str
     slug: str
+    screening_criminal_record_enabled: bool = False
+    screening_rental_history_enabled: bool = False
+    vacant_units: list[VacantUnitOut] = []
 
 
 class UserUpdate(BaseModel):
@@ -93,3 +105,5 @@ class UserUpdate(BaseModel):
 class OrganizationUpdate(BaseModel):
     name: str | None = None
     slug: str | None = None
+    screening_criminal_record_enabled: bool | None = None
+    screening_rental_history_enabled: bool | None = None

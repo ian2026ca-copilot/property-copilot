@@ -6,6 +6,8 @@ export interface AuthUser {
   org_name: string;
   org_slug: string;
   role: "OWNER" | "TENANT" | "VENDOR";
+  screening_criminal_record_enabled?: boolean;
+  screening_rental_history_enabled?: boolean;
 }
 
 export function setToken(token: string) {

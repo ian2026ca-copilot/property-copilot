@@ -145,6 +145,10 @@ export interface TenantOut {
   postal_code: string | null;
   country: string | null;
   documents: TenantDocumentOut[];
+  application_status: "NOT_STARTED" | "IN_REVIEW" | "APPROVED" | "DECLINED" | "MORE_INFO_REQUESTED" | string;
+  interested_unit_id: string | null;
+  personal_income_annual: number | null;
+  household_income_annual: number | null;
 }
 
 export interface LeaseOut {
@@ -437,6 +441,88 @@ export const leasesApi = {
   },
 };
 
+export interface TenantEmploymentOut {
+  id: string | null;
+  is_current: boolean;
+  employment_type: string | null;
+  company: string | null;
+  position: string | null;
+  employment_length: string | null;
+  employer_reference_name: string | null;
+  employer_reference_phone: string | null;
+  employer_reference_email: string | null;
+}
+
+export interface TenantAddressHistoryOut {
+  id: string | null;
+  is_current: boolean;
+  residential_status: string | null;
+  street_address: string | null;
+  city: string | null;
+  province: string | null;
+  postal_code: string | null;
+  country: string | null;
+  move_in_date: string | null;
+  move_out_date: string | null;
+  monthly_rent: number | null;
+  reason_for_moving: string | null;
+  landlord_name: string | null;
+  landlord_phone: string | null;
+  landlord_email: string | null;
+}
+
+export interface TenantIncomeSourceOut {
+  source_name: string;
+  amount_annual: number;
+}
+
+export interface TenantApplicationOut {
+  middle_name: string | null;
+  drivers_licence: string | null;
+  personal_income_annual: number | null;
+  household_income_annual: number | null;
+  personal_message: string | null;
+  smoke_vape: boolean | null;
+  given_notice_to_landlord: boolean | null;
+  refused_rent: boolean | null;
+  evicted: boolean | null;
+  criminal_record: boolean | null;
+  screening_notes: string | null;
+  application_status: string;
+  interested_unit_id: string | null;
+  address_history: TenantAddressHistoryOut[];
+  employment_history: TenantEmploymentOut[];
+  income_sources: TenantIncomeSourceOut[];
+  occupants: Record<string, unknown>[];
+  cosigners: Record<string, unknown>[];
+  pets: Record<string, unknown>[];
+  vehicles: Record<string, unknown>[];
+}
+
+export interface TenantScreeningUpdate {
+  application_status?: string | null;
+  interested_unit_id?: string | null;
+  screening_notes?: string | null;
+}
+
+export interface TenantAiScreenOut {
+  score: number;
+  verdict: string;
+}
+
+export interface TenantScreeningNoteOut {
+  id: string;
+  author_name: string;
+  note: string;
+  kind: "NOTE" | "STATUS_CHANGE";
+  created_at: string;
+}
+
+export interface EmployerReferenceLetterOut {
+  subject: string;
+  body: string;
+}
+
 export const tenantsApi = {
   list: () => api.get<LeaseOut[]>("/tenants"),
   create: (body: object) => api.post<LeaseOut>("/tenants", body),
@@ -446,7 +532,20 @@ export const tenantsApi = {
   // Person-only (decoupled)
   listPersons: () => api.get<TenantOut[]>("/tenants/persons"),
   getPerson: (id: string) => api.get<TenantOut>(`/tenants/person/${id}`),
-  getApplication: (id: string) => api.get<Record<string, any>>(`/tenants/person/${id}/application`),
+  getApplication: (id: string) => api.get<TenantApplicationOut>(`/tenants/person/${id}/application`),
+  updateScreening: (id: string, body: TenantScreeningUpdate) =>
+    api.patch<TenantScreeningUpdate>(`/tenants/person/${id}/screening`, body),
+  aiScreen: (id: string) => api.post<TenantAiScreenOut>(`/tenants/person/${id}/ai-screen`, {}),
+  listNotes: (id: string) => api.get<TenantScreeningNoteOut[]>(`/tenants/person/${id}/notes`),
+  addNote: (id: string, note: string) => api.post<TenantScreeningNoteOut>(`/tenants/person/${id}/notes`, { note }),
+  contactEmployerReference: (id: string, employmentId: string, channel: "EMAIL" | "SMS", letter?: { subject: string; body: string }) =>
+    api.post<TenantScreeningNoteOut>(`/tenants/person/${id}/employment/${employmentId}/contact-reference`, { channel, ...letter }),
+  generateReferenceLetter: (id: string, employmentId: string) =>
+    api.post<EmployerReferenceLetterOut>(`/tenants/person/${id}/employment/${employmentId}/reference-letter`, {}),
+  contactLandlordReference: (id: string, addressId: string, channel: "EMAIL" | "SMS", letter?: { subject: string; body: string }) =>
+    api.post<TenantScreeningNoteOut>(`/tenants/person/${id}/address/${addressId}/contact-reference`, { channel, ...letter }),
+  generateLandlordReferenceLetter: (id: string, addressId: string) =>
+    api.post<EmployerReferenceLetterOut>(`/tenants/person/${id}/address/${addressId}/reference-letter`, {}),
   aiExtract: (file: File) => upload<Record<string, string | null>>("/tenants/ai-extract", file),
   createPerson: (body: object) => api.post<TenantOut>("/tenants/person", body),
   updatePerson: (id: string, body: object) => api.put<TenantOut>(`/tenants/person/${id}`, body),
@@ -622,18 +721,30 @@ export interface UserOut {
   org_name: string;
   org_slug: string;
   role: string;
+  screening_criminal_record_enabled: boolean;
+  screening_rental_history_enabled: boolean;
 }
 
 export const profileApi = {
   me: () => api.get<UserOut>("/auth/me"),
   update: (body: { full_name?: string; phone?: string }) =>
     api.patch<UserOut>("/auth/me", body),
-  updateOrg: (body: { name?: string; slug?: string }) => api.patch<UserOut>("/auth/org", body),
+  updateOrg: (body: { name?: string; slug?: string; screening_criminal_record_enabled?: boolean; screening_rental_history_enabled?: boolean }) =>
+    api.patch<UserOut>("/auth/org", body),
 };
+
+export interface VacantUnitOut {
+  id: string;
+  label: string;
+  monthly_rent: number;
+}
 
 export interface OrganizationPublicOut {
   name: string;
   slug: string;
+  screening_criminal_record_enabled: boolean;
+  screening_rental_history_enabled: boolean;
+  vacant_units: VacantUnitOut[];
 }
 
 export const orgsApi = {

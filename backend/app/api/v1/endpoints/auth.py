@@ -14,6 +14,7 @@ from app.models.user import User, OrganizationMember, UserRole
 from app.models.password_reset import PasswordResetToken
 from app.models.maintenance import Vendor, VendorOrganization
 from app.models.profiles import OwnerProfile, TenantProfile
+from app.models.property import Property, Unit, UnitStatus
 from app.models.tenant_application import (
     TenantAddressHistory, TenantEmployment, TenantIncomeSource,
     TenantOccupant, TenantCosigner, TenantPet, TenantVehicle,
@@ -21,7 +22,7 @@ from app.models.tenant_application import (
 from app.models.marketing_site import MarketingSite, DEFAULT_MARKETING_SITES
 from app.schemas.auth import (
     RegisterRequest, LoginRequest, TokenResponse, UserOut, UserUpdate,
-    ForgotPasswordRequest, ResetPasswordRequest, OrganizationPublicOut, OrganizationUpdate,
+    ForgotPasswordRequest, ResetPasswordRequest, OrganizationPublicOut, OrganizationUpdate, VacantUnitOut,
 )
 from app.api.deps import get_current_user
 
@@ -38,7 +39,24 @@ async def get_org_by_slug(slug: str, db: AsyncSession = Depends(get_db)):
     org = result.scalar_one_or_none()
     if not org:
         raise HTTPException(status_code=404, detail="Sign-up link not found")
-    return OrganizationPublicOut(name=org.name, slug=org.slug)
+
+    units_result = await db.execute(
+        select(Unit, Property.name)
+        .join(Property, Property.id == Unit.property_id)
+        .where(Property.organization_id == org.id, Unit.status == UnitStatus.VACANT, Property.is_active == True)
+        .order_by(Property.name, Unit.unit_number)
+    )
+    vacant_units = [
+        VacantUnitOut(id=str(unit.id), label=f"{prop_name} — Unit {unit.unit_number}", monthly_rent=unit.monthly_rent)
+        for unit, prop_name in units_result.all()
+    ]
+
+    return OrganizationPublicOut(
+        name=org.name, slug=org.slug,
+        screening_criminal_record_enabled=org.screening_criminal_record_enabled,
+        screening_rental_history_enabled=org.screening_rental_history_enabled,
+        vacant_units=vacant_units,
+    )
 
 
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
@@ -128,21 +146,32 @@ async def register(body: RegisterRequest, background_tasks: BackgroundTasks, db:
                 "postal_code": current_addr.postal_code,
                 "country": current_addr.country,
             }
+
+        interested_unit_id = None
+        if body.unit_id:
+            unit_check = await db.execute(
+                select(Unit.id).join(Property, Property.id == Unit.property_id)
+                .where(Unit.id == body.unit_id, Property.organization_id == org.id)
+            )
+            if unit_check.scalar_one_or_none():
+                interested_unit_id = body.unit_id
+
         db.add(TenantProfile(
             user_id=user.id,
             date_of_birth=body.date_of_birth,
             middle_name=body.middle_name,
-            ssn_sin=body.ssn_sin,
             drivers_licence=body.drivers_licence,
             personal_income_annual=body.personal_income_annual,
             household_income_annual=body.household_income_annual,
             personal_message=body.personal_message,
             smoke_vape=body.smoke_vape,
             given_notice_to_landlord=body.given_notice_to_landlord,
-            refused_rent=body.refused_rent,
-            evicted=body.evicted,
-            criminal_record=body.criminal_record,
+            refused_rent=body.refused_rent if org.screening_rental_history_enabled else None,
+            evicted=body.evicted if org.screening_rental_history_enabled else None,
+            criminal_record=body.criminal_record if org.screening_criminal_record_enabled else None,
             screening_notes=body.screening_notes,
+            interested_unit_id=interested_unit_id,
+            application_status="NOT_STARTED",
             **address_fields,
         ))
 
@@ -258,6 +287,8 @@ async def me(
         org_name=org.name,
         org_slug=org.slug,
         role=member.role,
+        screening_criminal_record_enabled=org.screening_criminal_record_enabled,
+        screening_rental_history_enabled=org.screening_rental_history_enabled,
     )
 
 
@@ -285,6 +316,8 @@ async def update_me(
         org_name=org.name,
         org_slug=org.slug,
         role=member.role,
+        screening_criminal_record_enabled=org.screening_criminal_record_enabled,
+        screening_rental_history_enabled=org.screening_rental_history_enabled,
     )
 
 
@@ -317,6 +350,11 @@ async def update_organization(
                 raise HTTPException(status_code=400, detail="This URL is already taken")
             org.slug = slug
 
+    if body.screening_criminal_record_enabled is not None:
+        org.screening_criminal_record_enabled = body.screening_criminal_record_enabled
+    if body.screening_rental_history_enabled is not None:
+        org.screening_rental_history_enabled = body.screening_rental_history_enabled
+
     await db.commit()
     return UserOut(
         id=str(user.id),
@@ -327,4 +365,6 @@ async def update_organization(
         org_name=org.name,
         org_slug=org.slug,
         role=member.role,
+        screening_criminal_record_enabled=org.screening_criminal_record_enabled,
+        screening_rental_history_enabled=org.screening_rental_history_enabled,
     )

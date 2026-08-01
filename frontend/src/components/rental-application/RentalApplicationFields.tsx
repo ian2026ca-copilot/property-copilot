@@ -175,8 +175,19 @@ export function buildRentalApplicationPayload(s: RentalApplicationState) {
 // (Personal details and Documents stay page-specific — they differ between
 // the public self-registration flow and the owner-driven Add-tenant flow.)
 
-export function RentalApplicationSections({ state: s }: { state: RentalApplicationState }) {
+export function RentalApplicationSections({ state: s, askCriminalRecord = true, askRentalHistory = true }: {
+  state: RentalApplicationState;
+  /** Whether to ask "Do you have a criminal record?" — off by default on the public join page unless the landlord opted in. */
+  askCriminalRecord?: boolean;
+  /** Whether to ask about eviction / refused-rent history — off by default on the public join page unless the landlord opted in. */
+  askRentalHistory?: boolean;
+}) {
   const anyScreeningYes = Object.values(s.screening).some(v => v === true);
+  const visibleQuestions = SCREENING_QUESTIONS.filter(q => {
+    if (q.key === "criminal_record") return askCriminalRecord;
+    if (q.key === "evicted" || q.key === "refused_rent") return askRentalHistory;
+    return true;
+  });
 
   return (
     <>
@@ -392,7 +403,7 @@ export function RentalApplicationSections({ state: s }: { state: RentalApplicati
       {/* Additional information */}
       <Section title="Additional information">
         <div className="divide-y divide-slate-100">
-          {SCREENING_QUESTIONS.map(q => (
+          {visibleQuestions.map(q => (
             <div key={q.key} className="flex items-center justify-between py-2.5 first:pt-0 last:pb-0">
               <p className="text-sm text-slate-700">{q.label}</p>
               <div className="flex gap-1.5 shrink-0">

@@ -1,8 +1,10 @@
+import uuid
 from datetime import date
 from pydantic import BaseModel
 
 
 class AddressHistoryIn(BaseModel):
+    id: uuid.UUID | None = None
     is_current: bool = True
     residential_status: str | None = None
     street_address: str | None = None
@@ -20,6 +22,7 @@ class AddressHistoryIn(BaseModel):
 
 
 class EmploymentIn(BaseModel):
+    id: uuid.UUID | None = None
     is_current: bool = True
     employment_type: str | None = None
     company: str | None = None
@@ -74,7 +77,6 @@ class RentalApplicationFields(BaseModel):
     """Shared optional rental-application fields, mixed into both the public
     self-registration RegisterRequest and the owner-driven TenantCreate/TenantUpdate."""
     middle_name: str | None = None
-    ssn_sin: str | None = None
     drivers_licence: str | None = None
     personal_income_annual: float | None = None
     household_income_annual: float | None = None
@@ -96,7 +98,7 @@ class RentalApplicationFields(BaseModel):
 
 # Flat TenantProfile columns carried by RentalApplicationFields (everything except the 7 lists)
 RENTAL_APP_PROFILE_FIELDS = (
-    "middle_name", "ssn_sin", "drivers_licence", "personal_income_annual",
+    "middle_name", "drivers_licence", "personal_income_annual",
     "household_income_annual", "personal_message", "smoke_vape",
     "given_notice_to_landlord", "refused_rent", "evicted", "criminal_record", "screening_notes",
 )
@@ -109,4 +111,38 @@ RENTAL_APP_LIST_FIELDS = (
 
 class TenantApplicationOut(RentalApplicationFields):
     """Full rental-application detail for one tenant, used to pre-fill the Edit tenant form."""
+    application_status: str = "NOT_STARTED"
+    interested_unit_id: str | None = None
     model_config = {"from_attributes": True}
+
+
+class TenantScreeningUpdate(BaseModel):
+    """Landlord-only screening decision update."""
+    application_status: str | None = None
+    interested_unit_id: str | None = None
+    screening_notes: str | None = None
+
+
+class TenantScreeningNoteIn(BaseModel):
+    note: str
+
+
+class TenantScreeningNoteOut(BaseModel):
+    id: str
+    author_name: str
+    note: str
+    kind: str
+    created_at: str
+
+    model_config = {"from_attributes": True}
+
+
+class EmployerReferenceContactIn(BaseModel):
+    channel: str  # "EMAIL" | "SMS"
+    subject: str | None = None  # optional AI-drafted (or edited) letter override, EMAIL only
+    body: str | None = None
+
+
+class EmployerReferenceLetterOut(BaseModel):
+    subject: str
+    body: str

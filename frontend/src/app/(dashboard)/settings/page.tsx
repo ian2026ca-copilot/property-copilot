@@ -385,15 +385,102 @@ function MarketingTab() {
   );
 }
 
+// ─── Screening tab ─────────────────────────────────────────────────────────────
+
+function ScreeningTab() {
+  const { user, refresh } = useAuth();
+  const [criminalEnabled, setCriminalEnabled] = useState(user?.screening_criminal_record_enabled ?? false);
+  const [rentalHistoryEnabled, setRentalHistoryEnabled] = useState(user?.screening_rental_history_enabled ?? false);
+  const [saving, setSaving] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    setCriminalEnabled(user?.screening_criminal_record_enabled ?? false);
+    setRentalHistoryEnabled(user?.screening_rental_history_enabled ?? false);
+  }, [user?.screening_criminal_record_enabled, user?.screening_rental_history_enabled]);
+
+  async function handleSave() {
+    setSaving(true); setError(""); setSuccess(false);
+    try {
+      await profileApi.updateOrg({
+        screening_criminal_record_enabled: criminalEnabled,
+        screening_rental_history_enabled: rentalHistoryEnabled,
+      });
+      await refresh();
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 3000);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Save failed");
+    } finally { setSaving(false); }
+  }
+
+  return (
+    <div className="max-w-lg space-y-6">
+      <div className="bg-white rounded-xl border border-slate-200 p-6 space-y-5">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-900">Tenant screening questions</h3>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Control which sensitive questions appear on your rental application form. Both are off by default —
+            in several Canadian provinces, criminal-record and eviction-history screening carries Human Rights Code risk if used
+            to reject applicants, so only enable what you have a clear, consistent policy for.
+          </p>
+        </div>
+
+        <label className="flex items-start gap-3 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={criminalEnabled}
+            onChange={(e) => setCriminalEnabled(e.target.checked)}
+            className="mt-0.5"
+          />
+          <span>
+            <span className="block text-sm font-medium text-slate-900">Ask about criminal record</span>
+            <span className="block text-xs text-slate-400 mt-0.5">
+              Adds "Do you have a criminal record?" to the application. Off by default.
+            </span>
+          </span>
+        </label>
+
+        <label className="flex items-start gap-3 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={rentalHistoryEnabled}
+            onChange={(e) => setRentalHistoryEnabled(e.target.checked)}
+            className="mt-0.5"
+          />
+          <span>
+            <span className="block text-sm font-medium text-slate-900">Ask about eviction / refused-rent history</span>
+            <span className="block text-xs text-slate-400 mt-0.5">
+              Adds "Have you ever been evicted?" and "Have you ever refused to pay rent?" to the application. Off by default.
+            </span>
+          </span>
+        </label>
+
+        {error && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
+        {success && <p className="text-xs text-emerald-600 bg-emerald-50 rounded-lg px-3 py-2">Screening settings saved</p>}
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={saving}
+          className="px-4 py-2 text-sm bg-black text-white rounded-lg hover:bg-slate-800 font-medium disabled:opacity-50 transition-colors"
+        >
+          {saving ? "Saving…" : "Save changes"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
   const searchParams = useSearchParams();
-  const [tab, setTab] = useState<"profile" | "roles" | "marketing">("profile");
+  const [tab, setTab] = useState<"profile" | "roles" | "marketing" | "screening">("profile");
 
   useEffect(() => {
     const t = searchParams.get("tab");
-    if (t === "roles" || t === "marketing" || t === "profile") setTab(t);
+    if (t === "roles" || t === "marketing" || t === "profile" || t === "screening") setTab(t);
   }, [searchParams]);
 
   return (
@@ -406,7 +493,7 @@ export default function SettingsPage() {
 
       {/* Tabs */}
       <div className="flex gap-1 border-b border-slate-200">
-        {(["profile", "roles", "marketing"] as const).map((t) => (
+        {(["profile", "roles", "marketing", "screening"] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -414,7 +501,7 @@ export default function SettingsPage() {
               tab === t ? "border-black text-slate-900" : "border-transparent text-slate-500 hover:text-slate-700"
             }`}
           >
-            {t === "profile" ? "My profile" : t === "roles" ? "Role guide" : "Marketing"}
+            {t === "profile" ? "My profile" : t === "roles" ? "Role guide" : t === "marketing" ? "Marketing" : "Screening"}
           </button>
         ))}
       </div>
@@ -424,6 +511,9 @@ export default function SettingsPage() {
 
       {/* Marketing tab */}
       {tab === "marketing" && <MarketingTab />}
+
+      {/* Screening tab */}
+      {tab === "screening" && <ScreeningTab />}
 
       {/* Role guide tab */}
       {tab === "roles" && (

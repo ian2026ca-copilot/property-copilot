@@ -181,6 +181,21 @@ def send_welcome_email(to_email: str, full_name: str, org_name: str, role: str, 
     _smtp_send(to_email, f"Welcome to Property Copilot, {first}! 🎉", html)
 
 
+def send_reference_letter_email(to_email: str, subject: str, body_text: str) -> None:
+    if not os.getenv("SMTP_HOST"):
+        print(f"\n[Reference Letter Email] To: {to_email}\nSubject: {subject}\n{body_text}\n", flush=True)
+        return
+
+    safe_body = _escape_html(body_text).replace("\n", "<br>")
+    html = f"""
+    <div style="font-family:sans-serif;max-width:520px;margin:auto;padding:32px 24px;color:#111">
+      {_logo_block()}
+      <div style="color:#333;line-height:1.7">{safe_body}</div>
+    </div>
+    """
+    _smtp_send(to_email, subject, html)
+
+
 def send_overdue_notice_email(to_email: str, subject: str, message: str) -> None:
     if not os.getenv("SMTP_HOST"):
         print(f"\n[Overdue Notice Email] To: {to_email}\nSubject: {subject}\n{message}\n", flush=True)

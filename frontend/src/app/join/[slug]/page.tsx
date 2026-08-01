@@ -45,10 +45,11 @@ export default function JoinLandlordPage() {
   // Account + personal details
   const [form, setForm] = useState({
     first_name: "", middle_name: "", last_name: "", email: "", password: "", phone: "",
-    date_of_birth: "", ssn_sin: "", drivers_licence: "",
+    date_of_birth: "", drivers_licence: "",
     business_name: "", service_categories: [] as string[],
     street_address: "", city: "", postal_code: "", country: "" as Country | "", province: "",
   });
+  const [unitId, setUnitId] = useState("");
 
   const app = useRentalApplicationState();
   const [docs, setDocs] = useState<StagedDoc[]>([]);
@@ -130,8 +131,8 @@ export default function JoinLandlordPage() {
         Object.assign(body, {
           middle_name: form.middle_name || null,
           date_of_birth: form.date_of_birth || null,
-          ssn_sin: form.ssn_sin || null,
           drivers_licence: form.drivers_licence || null,
+          unit_id: unitId || null,
           ...buildRentalApplicationPayload(app),
         });
       }
@@ -327,15 +328,28 @@ export default function JoinLandlordPage() {
               <Field label="Middle name"><Input value={form.middle_name} onChange={set("middle_name")} /></Field>
               <Field label="Last name *"><Input value={form.last_name} onChange={set("last_name")} required /></Field>
               <Field label="Date of birth"><Input type="date" value={form.date_of_birth} onChange={set("date_of_birth")} /></Field>
-              <Field label="SSN / SIN"><Input value={form.ssn_sin} onChange={set("ssn_sin")} placeholder="Optional" /></Field>
               <Field label="Driver's licence"><Input value={form.drivers_licence} onChange={set("drivers_licence")} placeholder="Optional" /></Field>
               <Field label="Email *"><Input type="email" value={form.email} onChange={set("email")} required /></Field>
               <Field label="Phone number *"><Input type="tel" value={form.phone} onChange={set("phone")} placeholder="6041234567" required /></Field>
               <Field label="Password *" className="col-span-2"><Input type="password" value={form.password} onChange={set("password")} minLength={8} required /></Field>
+              {org.vacant_units.length > 0 && (
+                <Field label="Which unit are you applying for?" className="col-span-2">
+                  <select className={selectClass} value={unitId} onChange={(e) => setUnitId(e.target.value)}>
+                    <option value="">— not sure yet / general application —</option>
+                    {org.vacant_units.map((u) => (
+                      <option key={u.id} value={u.id}>{u.label} — ${u.monthly_rent.toLocaleString()}/mo</option>
+                    ))}
+                  </select>
+                </Field>
+              )}
             </div>
           </Section>
 
-          <RentalApplicationSections state={app} />
+          <RentalApplicationSections
+            state={app}
+            askCriminalRecord={org.screening_criminal_record_enabled}
+            askRentalHistory={org.screening_rental_history_enabled}
+          />
 
           {/* Documents */}
           <Section title="Supporting documents" subtitle="Optional — ID, paystubs, bank statements">
