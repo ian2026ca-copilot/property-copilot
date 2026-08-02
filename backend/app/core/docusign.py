@@ -2,6 +2,12 @@
 
 Uses the already-installed python-jose (RS256 JWT signing) and httpx
 (HTTP calls) instead of the full docusign-esign SDK.
+
+Credentials can come from two places: an organization's own developer
+account (set via Settings > DocuSign) takes priority, falling back to the
+platform-wide env-configured integration when an org hasn't connected its
+own account. resolve_credentials() merges those two sources into a single
+dict that every other function in this module takes as its first argument.
 """
 import time
 import base64
@@ -12,39 +18,47 @@ from jose import jwt as jose_jwt
 from app.core.config import settings
 
 
-def is_configured() -> bool:
-    return bool(
-        settings.DOCUSIGN_INTEGRATION_KEY
-        and settings.DOCUSIGN_ACCOUNT_ID
-        and settings.DOCUSIGN_USER_ID
-        and settings.DOCUSIGN_PRIVATE_KEY
-    )
+def resolve_credentials(org) -> dict:
+    """org-level fields win when set; otherwise fall back to the platform env config."""
+    return {
+        "integration_key": org.docusign_integration_key or settings.DOCUSIGN_INTEGRATION_KEY,
+        "account_id": org.docusign_account_id or settings.DOCUSIGN_ACCOUNT_ID,
+        "user_id": org.docusign_user_id or settings.DOCUSIGN_USER_ID,
+        "private_key": org.docusign_private_key or settings.DOCUSIGN_PRIVATE_KEY,
+        "base_path": settings.DOCUSIGN_BASE_PATH,
+        "auth_server": settings.DOCUSIGN_AUTH_SERVER,
+    }
 
 
-def _private_key_pem() -> str:
-    # .env files can't hold real newlines, so the key is stored with literal \n escapes
-    return settings.DOCUSIGN_PRIVATE_KEY.replace("\\n", "\n")
+def is_configured(creds: dict) -> bool:
+    return bool(creds["integration_key"] and creds["account_id"] and creds["user_id"] and creds["private_key"])
+
+
+def _private_key_pem(creds: dict) -> str:
+    # .env files (and copy-pasted textareas) can't always hold real newlines,
+    # so the key may be stored with literal \n escapes.
+    return creds["private_key"].replace("\\n", "\n")
 
 
 def _extension_for(filename: str) -> str:
     return filename.rsplit(".", 1)[-1] if "." in filename else "pdf"
 
 
-async def get_access_token() -> str:
+async def get_access_token(creds: dict) -> str:
     now = int(time.time())
     claims = {
-        "iss": settings.DOCUSIGN_INTEGRATION_KEY,
-        "sub": settings.DOCUSIGN_USER_ID,
-        "aud": settings.DOCUSIGN_AUTH_SERVER,
+        "iss": creds["integration_key"],
+        "sub": creds["user_id"],
+        "aud": creds["auth_server"],
         "iat": now,
         "exp": now + 3600,
         "scope": "signature impersonation",
     }
-    assertion = jose_jwt.encode(claims, _private_key_pem(), algorithm="RS256")
+    assertion = jose_jwt.encode(claims, _private_key_pem(creds), algorithm="RS256")
 
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.post(
-            f"https://{settings.DOCUSIGN_AUTH_SERVER}/oauth/token",
+            f"https://{creds['auth_server']}/oauth/token",
             data={
                 "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
                 "assertion": assertion,
@@ -55,7 +69,34 @@ async def get_access_token() -> str:
     return resp.json()["access_token"]
 
 
+async def get_user_info(creds: dict, access_token: str) -> dict:
+    """The DocuSign account(s) this access token resolves to — real account name,
+    email, and account ID, as opposed to the raw integration-key/account-id
+    fields we store ourselves. Used to show "which DocuSign account is this?"
+    in the Settings page."""
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.get(
+            f"https://{creds['auth_server']}/oauth/userinfo",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+    if resp.status_code != 200:
+        raise RuntimeError(f"DocuSign userinfo failed: {resp.text[:300]}")
+    data = resp.json()
+    accounts = data.get("accounts", [])
+    account = next((a for a in accounts if a.get("account_id") == creds["account_id"]), None) \
+        or next((a for a in accounts if a.get("is_default")), None) \
+        or (accounts[0] if accounts else None)
+    return {
+        "name": data.get("name"),
+        "email": data.get("email"),
+        "account_id": account.get("account_id") if account else None,
+        "account_name": account.get("account_name") if account else None,
+        "is_sandbox": "demo" in creds["base_path"] or "-d." in creds["auth_server"],
+    }
+
+
 async def send_envelope(
+    creds: dict,
     access_token: str,
     document_bytes: bytes,
     filename: str,
@@ -127,7 +168,7 @@ async def send_envelope(
 
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.post(
-            f"{settings.DOCUSIGN_BASE_PATH}/v2.1/accounts/{settings.DOCUSIGN_ACCOUNT_ID}/envelopes",
+            f"{creds['base_path']}/v2.1/accounts/{creds['account_id']}/envelopes",
             json=envelope,
             headers={"Authorization": f"Bearer {access_token}"},
         )
@@ -136,10 +177,10 @@ async def send_envelope(
     return resp.json()["envelopeId"]
 
 
-async def get_envelope_status(access_token: str, envelope_id: str) -> str:
+async def get_envelope_status(creds: dict, access_token: str, envelope_id: str) -> str:
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.get(
-            f"{settings.DOCUSIGN_BASE_PATH}/v2.1/accounts/{settings.DOCUSIGN_ACCOUNT_ID}/envelopes/{envelope_id}",
+            f"{creds['base_path']}/v2.1/accounts/{creds['account_id']}/envelopes/{envelope_id}",
             headers={"Authorization": f"Bearer {access_token}"},
         )
     if resp.status_code != 200:
@@ -147,12 +188,12 @@ async def get_envelope_status(access_token: str, envelope_id: str) -> str:
     return resp.json()["status"]
 
 
-async def get_signer_statuses(access_token: str, envelope_id: str) -> list[dict]:
+async def get_signer_statuses(creds: dict, access_token: str, envelope_id: str) -> list[dict]:
     """Per-recipient status (e.g. one signer 'completed' while the other is still 'sent'),
     used to distinguish "tenant signed, awaiting landlord" from the envelope's overall status."""
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.get(
-            f"{settings.DOCUSIGN_BASE_PATH}/v2.1/accounts/{settings.DOCUSIGN_ACCOUNT_ID}/envelopes/{envelope_id}/recipients",
+            f"{creds['base_path']}/v2.1/accounts/{creds['account_id']}/envelopes/{envelope_id}/recipients",
             headers={"Authorization": f"Bearer {access_token}"},
         )
     if resp.status_code != 200:
@@ -160,10 +201,10 @@ async def get_signer_statuses(access_token: str, envelope_id: str) -> list[dict]
     return resp.json().get("signers", [])
 
 
-async def get_combined_document(access_token: str, envelope_id: str) -> bytes:
+async def get_combined_document(creds: dict, access_token: str, envelope_id: str) -> bytes:
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.get(
-            f"{settings.DOCUSIGN_BASE_PATH}/v2.1/accounts/{settings.DOCUSIGN_ACCOUNT_ID}/envelopes/{envelope_id}/documents/combined",
+            f"{creds['base_path']}/v2.1/accounts/{creds['account_id']}/envelopes/{envelope_id}/documents/combined",
             headers={"Authorization": f"Bearer {access_token}"},
         )
     if resp.status_code != 200:

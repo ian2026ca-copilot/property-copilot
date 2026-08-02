@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import { leasesApi, tenantsApi, type LeaseOut, type UnitOut, type TenantOut, type LeaseTemplateOut } from "@/lib/api";
 import { MOCK_MODE } from "@/lib/useApiData";
+import { useAuth } from "@/context/AuthContext";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -714,6 +715,7 @@ interface EditLeaseModalProps {
 }
 
 function EditLeaseModal({ lease, templates, landlordSuggestions, onClose, onSave }: EditLeaseModalProps) {
+  const { user } = useAuth();
   const [form, setForm] = useState({
     start_date: lease.start_date,
     end_date: lease.end_date,
@@ -721,8 +723,8 @@ function EditLeaseModal({ lease, templates, landlordSuggestions, onClose, onSave
     security_deposit: String(lease.security_deposit),
     lease_type: (lease.lease_type ?? "FIXED") as LeaseType,
     status: lease.status as LeaseStatus,
-    landlord_name: lease.landlord_name ?? "",
-    landlord_email: lease.landlord_email ?? "",
+    landlord_name: lease.landlord_name ?? user?.full_name ?? "",
+    landlord_email: lease.landlord_email ?? user?.email ?? "",
     notes: lease.notes ?? "",
   });
   const [selectedTemplateId, setSelectedTemplateId] = useState("");

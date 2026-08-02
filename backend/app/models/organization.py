@@ -19,6 +19,10 @@ class Organization(Base, TimestampMixin):
     fb_page_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     screening_criminal_record_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     screening_rental_history_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    docusign_integration_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    docusign_account_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    docusign_user_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    docusign_private_key: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     members: Mapped[list["OrganizationMember"]] = relationship(back_populates="organization")
     properties: Mapped[list["Property"]] = relationship(back_populates="organization")  # noqa: F821

@@ -19,7 +19,7 @@ from app.models.lease import Lease, LeaseStatus, LeaseType
 from app.models.payment import Payment
 from app.models.lease_template import LeaseTemplate
 from app.models.property import Unit, Property, UnitStatus
-from app.schemas.lease import LeaseCreate, LeaseUpdate, LeaseRenew, LeaseOut, TenantOut, TenantDocumentOut
+from app.schemas.lease import LeaseCreate, LeaseUpdate, LeaseRenew, LeaseOut, TenantOut, TenantDocumentOut, DocuSignConfigIn, DocuSignConfigOut
 from app.api.v1.endpoints.payments import generate_monthly_payments
 
 router = APIRouter(prefix="/leases", tags=["leases"])
@@ -1052,6 +1052,132 @@ async def download_lease_document(
 
 # ── DocuSign e-signature ────────────────────────────────────────────────────
 
+async def _get_org(organization_id, db: AsyncSession):
+    from app.models.organization import Organization
+    result = await db.execute(select(Organization).where(Organization.id == organization_id))
+    org = result.scalar_one_or_none()
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    return org
+
+
+@router.get("/docusign/config", response_model=DocuSignConfigOut)
+async def get_docusign_config(
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Current org's own DocuSign developer-account credentials, if connected.
+    The private key is never echoed back — only whether one is on file."""
+    from app.core.config import settings
+
+    _, member = current
+    org = await _get_org(member.organization_id, db)
+    return DocuSignConfigOut(
+        integration_key=org.docusign_integration_key,
+        account_id=org.docusign_account_id,
+        user_id=org.docusign_user_id,
+        private_key_set=bool(org.docusign_private_key),
+        using_platform_default=not bool(
+            org.docusign_integration_key or org.docusign_account_id or org.docusign_user_id or org.docusign_private_key
+        ) and bool(settings.DOCUSIGN_INTEGRATION_KEY),
+    )
+
+
+@router.patch("/docusign/config", response_model=DocuSignConfigOut)
+async def update_docusign_config(
+    body: DocuSignConfigIn,
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Save this org's own DocuSign developer-account credentials (integration key,
+    API account ID, API username, RSA private key) instead of relying on the
+    platform-wide integration. Only fields present in the request are changed;
+    send an empty string to clear a field back to the platform default."""
+    from app.core.config import settings
+
+    _, member = current
+    org = await _get_org(member.organization_id, db)
+
+    data = body.model_dump(exclude_unset=True)
+    if "integration_key" in data:
+        org.docusign_integration_key = data["integration_key"] or None
+    if "account_id" in data:
+        org.docusign_account_id = data["account_id"] or None
+    if "user_id" in data:
+        org.docusign_user_id = data["user_id"] or None
+    if "private_key" in data:
+        org.docusign_private_key = data["private_key"] or None
+
+    await db.commit()
+    await db.refresh(org)
+    return DocuSignConfigOut(
+        integration_key=org.docusign_integration_key,
+        account_id=org.docusign_account_id,
+        user_id=org.docusign_user_id,
+        private_key_set=bool(org.docusign_private_key),
+        using_platform_default=not bool(
+            org.docusign_integration_key or org.docusign_account_id or org.docusign_user_id or org.docusign_private_key
+        ) and bool(settings.DOCUSIGN_INTEGRATION_KEY),
+    )
+
+
+@router.get("/docusign/status")
+async def docusign_status(
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Whether this org's DocuSign integration (its own developer account, or the
+    platform default) has API credentials configured, and whether the one-time
+    JWT consent grant has been completed (a real token can be minted). When
+    connected, also returns the real DocuSign account details (name, email,
+    account name/ID) so Settings can show exactly which account is in use."""
+    from app.core import docusign
+
+    _, member = current
+    org = await _get_org(member.organization_id, db)
+    creds = docusign.resolve_credentials(org)
+
+    configured = docusign.is_configured(creds)
+    connected = False
+    account = None
+    if configured:
+        try:
+            access_token = await docusign.get_access_token(creds)
+            connected = True
+            account = await docusign.get_user_info(creds, access_token)
+        except Exception:
+            connected = False
+    return {"configured": configured, "connected": connected, "account": account}
+
+
+@router.get("/docusign/consent-url")
+async def docusign_consent_url(
+    redirect_uri: str,
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Builds the DocuSign individual-consent OAuth URL. JWT Grant requires the
+    configured DocuSign API user to click "Allow" here once before send_envelope
+    calls will succeed — this is the "connect your DocuSign account" step."""
+    from app.core import docusign
+    from urllib.parse import urlencode
+
+    _, member = current
+    org = await _get_org(member.organization_id, db)
+    creds = docusign.resolve_credentials(org)
+
+    if not docusign.is_configured(creds):
+        raise HTTPException(status_code=503, detail="DocuSign is not configured")
+
+    params = {
+        "response_type": "code",
+        "scope": "signature impersonation",
+        "client_id": creds["integration_key"],
+        "redirect_uri": redirect_uri,
+    }
+    return {"url": f"https://{creds['auth_server']}/oauth/auth?{urlencode(params)}"}
+
+
 @router.post("/{lease_id}/send-for-signature", response_model=LeaseOut)
 async def send_lease_for_signature(
     lease_id: str,
@@ -1062,8 +1188,10 @@ async def send_lease_for_signature(
 
     _, member = current
     lease = await _get_lease(lease_id, member.organization_id, db)
+    org = await _get_org(member.organization_id, db)
+    creds = docusign.resolve_credentials(org)
 
-    if not docusign.is_configured():
+    if not docusign.is_configured(creds):
         raise HTTPException(status_code=503, detail="DocuSign is not configured")
     if not lease.document_path:
         raise HTTPException(status_code=400, detail="Upload or generate a lease document first")
@@ -1081,8 +1209,9 @@ async def send_lease_for_signature(
     tenant_name = lease.tenant.display_name
 
     try:
-        access_token = await docusign.get_access_token()
+        access_token = await docusign.get_access_token(creds)
         envelope_id = await docusign.send_envelope(
+            creds,
             access_token,
             document_bytes,
             file_path.name,
@@ -1112,21 +1241,23 @@ async def check_lease_signature_status(
 
     _, member = current
     lease = await _get_lease(lease_id, member.organization_id, db)
+    org = await _get_org(member.organization_id, db)
+    creds = docusign.resolve_credentials(org)
 
-    if not docusign.is_configured():
+    if not docusign.is_configured(creds):
         raise HTTPException(status_code=503, detail="DocuSign is not configured")
     if not lease.docusign_envelope_id:
         raise HTTPException(status_code=400, detail="This lease has not been sent for signature yet")
 
     try:
-        access_token = await docusign.get_access_token()
-        envelope_status = await docusign.get_envelope_status(access_token, lease.docusign_envelope_id)
+        access_token = await docusign.get_access_token(creds)
+        envelope_status = await docusign.get_envelope_status(creds, access_token, lease.docusign_envelope_id)
 
         resolved_status = envelope_status
         if envelope_status not in ("completed", "declined", "voided"):
             # Distinguish "tenant signed, awaiting landlord" from the envelope's
             # overall status, which stays "sent"/"delivered" until everyone signs.
-            signers = await docusign.get_signer_statuses(access_token, lease.docusign_envelope_id)
+            signers = await docusign.get_signer_statuses(creds, access_token, lease.docusign_envelope_id)
             tenant_signer = next((s for s in signers if s.get("recipientId") == "2"), None)
             if tenant_signer and tenant_signer.get("status") == "completed":
                 resolved_status = "tenant_signed"
@@ -1135,7 +1266,7 @@ async def check_lease_signature_status(
             # DocuSign's combined-document download is always a PDF regardless of the
             # original file type, so it gets its own .pdf path rather than overwriting
             # the old file's bytes under whatever extension it originally had.
-            signed_bytes = await docusign.get_combined_document(access_token, lease.docusign_envelope_id)
+            signed_bytes = await docusign.get_combined_document(creds, access_token, lease.docusign_envelope_id)
             old_path = lease.document_path
             new_filename = f"leases/signed_lease_{lease.id}_{uuid.uuid4()}.pdf"
             LEASE_DOC_DIR.mkdir(parents=True, exist_ok=True)

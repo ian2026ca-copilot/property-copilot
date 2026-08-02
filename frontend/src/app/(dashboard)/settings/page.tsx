@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
-import { profileApi, campaignsApi, type MarketingSiteOut } from "@/lib/api";
+import { profileApi, campaignsApi, leasesApi, type MarketingSiteOut, type DocuSignConfigOut } from "@/lib/api";
 import { MOCK_MODE } from "@/lib/useApiData";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -472,15 +472,235 @@ function ScreeningTab() {
   );
 }
 
+// ─── DocuSign tab ─────────────────────────────────────────────────────────────
+
+function DocuSignTab() {
+  const [status, setStatus] = useState<{
+    configured: boolean;
+    connected: boolean;
+    account: { name: string | null; email: string | null; account_id: string | null; account_name: string | null; is_sandbox: boolean } | null;
+  } | null>(null);
+  const [config, setConfig] = useState<DocuSignConfigOut | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [connecting, setConnecting] = useState(false);
+  const [error, setError] = useState("");
+
+  const [form, setForm] = useState({ integration_key: "", account_id: "", user_id: "", private_key: "" });
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const [saveSuccess, setSaveSuccess] = useState(false);
+
+  async function loadAll() {
+    setLoading(true); setError("");
+    try {
+      const [s, c] = await Promise.all([leasesApi.docusignStatus(), leasesApi.getDocusignConfig()]);
+      setStatus(s);
+      setConfig(c);
+      setForm({ integration_key: c.integration_key ?? "", account_id: c.account_id ?? "", user_id: c.user_id ?? "", private_key: "" });
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to load DocuSign status");
+    } finally { setLoading(false); }
+  }
+
+  useEffect(() => { loadAll(); }, []);
+
+  async function handleClearKey() {
+    setSaving(true); setSaveError(""); setSaveSuccess(false);
+    try {
+      const c = await leasesApi.updateDocusignConfig({ private_key: "" });
+      setConfig(c);
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3000);
+      await loadAll();
+    } catch (e: unknown) {
+      setSaveError(e instanceof Error ? e.message : "Failed to remove key");
+    } finally { setSaving(false); }
+  }
+
+  async function handleConnect() {
+    setConnecting(true); setError("");
+    try {
+      const redirectUri = `${window.location.origin}/settings?tab=docusign`;
+      const { url } = await leasesApi.docusignConsentUrl(redirectUri);
+      window.open(url, "_blank", "noopener,noreferrer");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to build consent link");
+    } finally { setConnecting(false); }
+  }
+
+  async function handleSaveConfig(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true); setSaveError(""); setSaveSuccess(false);
+    try {
+      const body: Record<string, string> = {
+        integration_key: form.integration_key.trim(),
+        account_id: form.account_id.trim(),
+        user_id: form.user_id.trim(),
+      };
+      if (form.private_key.trim()) body.private_key = form.private_key.trim();
+      const c = await leasesApi.updateDocusignConfig(body);
+      setConfig(c);
+      setForm((f) => ({ ...f, private_key: "" }));
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3000);
+      await loadAll();
+    } catch (e: unknown) {
+      setSaveError(e instanceof Error ? e.message : "Save failed");
+    } finally { setSaving(false); }
+  }
+
+  return (
+    <div className="max-w-lg space-y-6">
+      <div className="bg-white rounded-xl border border-slate-200 p-6 space-y-5">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-900">DocuSign e-signature</h3>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Connect DocuSign so lease agreements can be sent for signature directly from the Leases page.
+          </p>
+        </div>
+
+        {loading ? (
+          <p className="text-xs text-slate-400">Checking status…</p>
+        ) : !status?.configured ? (
+          <div className="flex items-start gap-3">
+            <span className="w-2 h-2 rounded-full bg-slate-300 mt-1.5 shrink-0" />
+            <div>
+              <p className="text-sm font-medium text-slate-900">Not configured</p>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Add your DocuSign developer account credentials below to get started.
+              </p>
+            </div>
+          </div>
+        ) : status.connected ? (
+          <div className="flex items-start gap-3">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 mt-1.5 shrink-0" />
+            <div>
+              <p className="text-sm font-medium text-slate-900">Connected{config && !config.using_platform_default ? " — using your own account" : ""}</p>
+              <p className="text-xs text-slate-400 mt-0.5">Leases can be sent for signature via DocuSign.</p>
+              {status.account && (
+                <div className="mt-2 bg-slate-50 rounded-lg px-3 py-2 space-y-1">
+                  <p className="text-xs text-slate-700">
+                    <span className="text-slate-400">Signed in as</span>{" "}
+                    <span className="font-medium">{status.account.name ?? "Unknown"}</span>
+                    {status.account.email ? ` (${status.account.email})` : ""}
+                  </p>
+                  <p className="text-xs text-slate-700">
+                    <span className="text-slate-400">Account</span>{" "}
+                    <span className="font-medium">{status.account.account_name ?? "Unknown"}</span>
+                    {status.account.account_id ? ` · ${status.account.account_id}` : ""}
+                  </p>
+                  <p className="text-[11px] text-slate-400">
+                    {status.account.is_sandbox ? "Sandbox (demo) environment" : "Production environment"}
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-start gap-3">
+            <span className="w-2 h-2 rounded-full bg-amber-500 mt-1.5 shrink-0" />
+            <div>
+              <p className="text-sm font-medium text-slate-900">Needs one-time setup</p>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Credentials are configured, but the DocuSign account hasn't granted access yet. Click below, sign
+                in to DocuSign, and click Allow.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {error && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleConnect}
+            disabled={!status?.configured || connecting}
+            className="px-4 py-2 text-sm bg-black text-white rounded-lg hover:bg-slate-800 font-medium disabled:opacity-50 transition-colors"
+          >
+            {connecting ? "Opening…" : status?.connected ? "Reconnect DocuSign" : "Connect DocuSign"}
+          </button>
+          <button
+            type="button"
+            onClick={loadAll}
+            className="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 font-medium transition-colors"
+          >
+            Refresh status
+          </button>
+        </div>
+      </div>
+
+      <form onSubmit={handleSaveConfig} className="bg-white rounded-xl border border-slate-200 p-6 space-y-4">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-900">Your developer account</h3>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Bring your own DocuSign developer (sandbox) account instead of the shared default. Create one at
+            DocuSign's developer portal, add a JWT integration key, generate an RSA keypair, and paste the values
+            below. Leave everything blank to keep using the shared default.
+          </p>
+          <a href="https://developers.docusign.com/" target="_blank" rel="noopener noreferrer"
+            className="inline-block text-xs font-medium text-violet-700 hover:text-violet-900 mt-1.5">
+            How to set up a DocuSign developer account →
+          </a>
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-slate-500 mb-1">Integration key (Client ID)</label>
+          <input value={form.integration_key} onChange={(e) => setForm((f) => ({ ...f, integration_key: e.target.value }))}
+            placeholder="e.g. a3327593-a611-4bb1-aada-3687c8a66cb4"
+            className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black" />
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-slate-500 mb-1">API account ID</label>
+          <input value={form.account_id} onChange={(e) => setForm((f) => ({ ...f, account_id: e.target.value }))}
+            placeholder="Your DocuSign API Account ID"
+            className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black" />
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-slate-500 mb-1">API username (User ID)</label>
+          <input value={form.user_id} onChange={(e) => setForm((f) => ({ ...f, user_id: e.target.value }))}
+            placeholder="The GUID of the DocuSign user the integration impersonates"
+            className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black" />
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-slate-500 mb-1">
+            RSA private key {config?.private_key_set && <span className="text-emerald-600 font-normal">(already on file — paste a new one to replace it)</span>}
+          </label>
+          <textarea value={form.private_key} onChange={(e) => setForm((f) => ({ ...f, private_key: e.target.value }))} rows={5}
+            placeholder={config?.private_key_set ? "•••••••• (unchanged)" : "-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----"}
+            className="w-full text-xs font-mono border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black resize-none" />
+          {config?.private_key_set && (
+            <button type="button" onClick={handleClearKey} disabled={saving}
+              className="text-[11px] text-red-600 hover:text-red-700 font-medium mt-1 disabled:opacity-50">
+              Remove saved key
+            </button>
+          )}
+        </div>
+
+        {saveError && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{saveError}</p>}
+        {saveSuccess && <p className="text-xs text-emerald-600 bg-emerald-50 rounded-lg px-3 py-2">DocuSign credentials saved</p>}
+
+        <button type="submit" disabled={saving}
+          className="px-4 py-2 text-sm bg-black text-white rounded-lg hover:bg-slate-800 font-medium disabled:opacity-50 transition-colors">
+          {saving ? "Saving…" : "Save credentials"}
+        </button>
+      </form>
+    </div>
+  );
+}
+
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
   const searchParams = useSearchParams();
-  const [tab, setTab] = useState<"profile" | "roles" | "marketing" | "screening">("profile");
+  const [tab, setTab] = useState<"profile" | "roles" | "marketing" | "screening" | "docusign">("profile");
 
   useEffect(() => {
     const t = searchParams.get("tab");
-    if (t === "roles" || t === "marketing" || t === "profile" || t === "screening") setTab(t);
+    if (t === "roles" || t === "marketing" || t === "profile" || t === "screening" || t === "docusign") setTab(t);
   }, [searchParams]);
 
   return (
@@ -493,7 +713,7 @@ export default function SettingsPage() {
 
       {/* Tabs */}
       <div className="flex gap-1 border-b border-slate-200">
-        {(["profile", "roles", "marketing", "screening"] as const).map((t) => (
+        {(["profile", "roles", "marketing", "screening", "docusign"] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -501,7 +721,7 @@ export default function SettingsPage() {
               tab === t ? "border-black text-slate-900" : "border-transparent text-slate-500 hover:text-slate-700"
             }`}
           >
-            {t === "profile" ? "My profile" : t === "roles" ? "Role guide" : t === "marketing" ? "Marketing" : "Screening"}
+            {t === "profile" ? "My profile" : t === "roles" ? "Role guide" : t === "marketing" ? "Marketing" : t === "screening" ? "Screening" : "DocuSign"}
           </button>
         ))}
       </div>
@@ -514,6 +734,9 @@ export default function SettingsPage() {
 
       {/* Screening tab */}
       {tab === "screening" && <ScreeningTab />}
+
+      {/* DocuSign tab */}
+      {tab === "docusign" && <DocuSignTab />}
 
       {/* Role guide tab */}
       {tab === "roles" && (

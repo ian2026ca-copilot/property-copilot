@@ -173,6 +173,14 @@ export interface LeaseOut {
   property_name: string | null;
 }
 
+export interface DocuSignConfigOut {
+  integration_key: string | null;
+  account_id: string | null;
+  user_id: string | null;
+  private_key_set: boolean;
+  using_platform_default: boolean;
+}
+
 export interface PaymentNoteOut {
   id: string;
   note: string;
@@ -422,6 +430,20 @@ export const leasesApi = {
   }) => api.post<LeaseOut>(`/leases/${id}/renew`, body),
   sendForSignature: (id: string) => api.post<LeaseOut>(`/leases/${id}/send-for-signature`, {}),
   checkSignatureStatus: (id: string) => api.post<LeaseOut>(`/leases/${id}/signature-status`, {}),
+  docusignStatus: () => api.get<{
+    configured: boolean;
+    connected: boolean;
+    account: { name: string | null; email: string | null; account_id: string | null; account_name: string | null; is_sandbox: boolean } | null;
+  }>("/leases/docusign/status"),
+  docusignConsentUrl: (redirectUri: string) =>
+    api.get<{ url: string }>(`/leases/docusign/consent-url?redirect_uri=${encodeURIComponent(redirectUri)}`),
+  getDocusignConfig: () => api.get<DocuSignConfigOut>("/leases/docusign/config"),
+  updateDocusignConfig: (body: {
+    integration_key?: string;
+    account_id?: string;
+    user_id?: string;
+    private_key?: string;
+  }) => api.patch<DocuSignConfigOut>("/leases/docusign/config", body),
   uploadDocument: (leaseId: string, file: File) => {
     const token = typeof document !== "undefined"
       ? (document.cookie.match(/(?:^|; )token=([^;]*)/) || [])[1]

@@ -161,3 +161,23 @@ class LeaseOut(BaseModel):
     property_name: str | None = None
 
     model_config = {"from_attributes": True}
+
+
+# ── DocuSign developer account config ──────────────────────────────────────────
+
+class DocuSignConfigIn(BaseModel):
+    """All fields optional — only the ones provided are updated. Send an empty
+    string to clear a previously-saved value and fall back to the platform default."""
+    integration_key: str | None = None
+    account_id: str | None = None
+    user_id: str | None = None
+    private_key: str | None = None
+
+
+class DocuSignConfigOut(BaseModel):
+    """Never echoes the private key back — only whether one is on file."""
+    integration_key: str | None = None
+    account_id: str | None = None
+    user_id: str | None = None
+    private_key_set: bool = False
+    using_platform_default: bool = True
