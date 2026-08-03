@@ -489,6 +489,7 @@ function DocuSignTab() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [togglingOwnAccount, setTogglingOwnAccount] = useState(false);
 
   async function loadAll() {
     setLoading(true); setError("");
@@ -500,6 +501,17 @@ function DocuSignTab() {
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to load DocuSign status");
     } finally { setLoading(false); }
+  }
+
+  async function handleToggleUseOwnAccount(checked: boolean) {
+    setTogglingOwnAccount(true); setSaveError("");
+    try {
+      const c = await leasesApi.updateDocusignConfig({ use_own_account: checked });
+      setConfig(c);
+      await loadAll();
+    } catch (e: unknown) {
+      setSaveError(e instanceof Error ? e.message : "Failed to update");
+    } finally { setTogglingOwnAccount(false); }
   }
 
   useEffect(() => { loadAll(); }, []);
@@ -644,11 +656,32 @@ function DocuSignTab() {
           </a>
         </div>
 
+        <label className="flex items-start gap-3 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={config?.use_own_account ?? false}
+            disabled={togglingOwnAccount}
+            onChange={(e) => handleToggleUseOwnAccount(e.target.checked)}
+            className="mt-0.5"
+          />
+          <span>
+            <span className="block text-sm font-medium text-slate-900">Use your developer account</span>
+            <span className="block text-xs text-slate-400 mt-0.5">
+              Off by default — leases are sent using the shared system developer account. Turn this on to use the
+              credentials you save below instead.
+            </span>
+          </span>
+        </label>
+
         <div>
           <label className="block text-xs font-medium text-slate-500 mb-1">Integration key (Client ID)</label>
           <input value={form.integration_key} onChange={(e) => setForm((f) => ({ ...f, integration_key: e.target.value }))}
             placeholder="e.g. a3327593-a611-4bb1-aada-3687c8a66cb4"
             className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black" />
+          <p className="text-[11px] text-slate-400 mt-1">
+            In the DocuSign Admin console, go to <span className="font-medium">Apps and Keys</span> and click
+            <span className="font-medium"> Add App and Integration Key</span>. The key it generates (a GUID) is this value.
+          </p>
         </div>
 
         <div>
@@ -656,6 +689,10 @@ function DocuSignTab() {
           <input value={form.account_id} onChange={(e) => setForm((f) => ({ ...f, account_id: e.target.value }))}
             placeholder="Your DocuSign API Account ID"
             className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black" />
+          <p className="text-[11px] text-slate-400 mt-1">
+            Shown at the top of the same <span className="font-medium">Apps and Keys</span> page, next to your
+            account name (also visible under your DocuSign profile menu → Settings).
+          </p>
         </div>
 
         <div>
@@ -663,6 +700,11 @@ function DocuSignTab() {
           <input value={form.user_id} onChange={(e) => setForm((f) => ({ ...f, user_id: e.target.value }))}
             placeholder="The GUID of the DocuSign user the integration impersonates"
             className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black" />
+          <p className="text-[11px] text-slate-400 mt-1">
+            The GUID of the DocuSign user your integration signs in as — find it under
+            <span className="font-medium"> Apps and Keys → your user's name</span>, or your profile's
+            <span className="font-medium"> API Username</span> field. This is who needs to click "Allow" during Connect.
+          </p>
         </div>
 
         <div>
@@ -672,6 +714,11 @@ function DocuSignTab() {
           <textarea value={form.private_key} onChange={(e) => setForm((f) => ({ ...f, private_key: e.target.value }))} rows={5}
             placeholder={config?.private_key_set ? "•••••••• (unchanged)" : "-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----"}
             className="w-full text-xs font-mono border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black resize-none" />
+          <p className="text-[11px] text-slate-400 mt-1">
+            On your integration key's row in <span className="font-medium">Apps and Keys</span>, choose
+            <span className="font-medium"> Actions → Generate RSA</span>. DocuSign shows the private key only once —
+            copy the whole block, including the BEGIN/END lines, right away.
+          </p>
           {config?.private_key_set && (
             <button type="button" onClick={handleClearKey} disabled={saving}
               className="text-[11px] text-red-600 hover:text-red-700 font-medium mt-1 disabled:opacity-50">

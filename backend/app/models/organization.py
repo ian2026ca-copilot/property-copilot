@@ -23,6 +23,7 @@ class Organization(Base, TimestampMixin):
     docusign_account_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     docusign_user_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     docusign_private_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    docusign_use_own_account: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
 
     members: Mapped[list["OrganizationMember"]] = relationship(back_populates="organization")
     properties: Mapped[list["Property"]] = relationship(back_populates="organization")  # noqa: F821

@@ -1066,10 +1066,9 @@ async def get_docusign_config(
     current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
-    """Current org's own DocuSign developer-account credentials, if connected.
-    The private key is never echoed back — only whether one is on file."""
-    from app.core.config import settings
-
+    """Current org's own DocuSign developer-account credentials, if any, and
+    whether the org has opted in to using them. The private key is never
+    echoed back — only whether one is on file."""
     _, member = current
     org = await _get_org(member.organization_id, db)
     return DocuSignConfigOut(
@@ -1077,9 +1076,8 @@ async def get_docusign_config(
         account_id=org.docusign_account_id,
         user_id=org.docusign_user_id,
         private_key_set=bool(org.docusign_private_key),
-        using_platform_default=not bool(
-            org.docusign_integration_key or org.docusign_account_id or org.docusign_user_id or org.docusign_private_key
-        ) and bool(settings.DOCUSIGN_INTEGRATION_KEY),
+        use_own_account=org.docusign_use_own_account,
+        using_platform_default=not org.docusign_use_own_account,
     )
 
 
@@ -1090,11 +1088,11 @@ async def update_docusign_config(
     db: AsyncSession = Depends(get_db),
 ):
     """Save this org's own DocuSign developer-account credentials (integration key,
-    API account ID, API username, RSA private key) instead of relying on the
-    platform-wide integration. Only fields present in the request are changed;
-    send an empty string to clear a field back to the platform default."""
-    from app.core.config import settings
-
+    API account ID, API username, RSA private key) and/or the use_own_account
+    toggle. Only fields present in the request are changed; send an empty
+    string to clear a credential field. use_own_account defaults to False
+    (use the platform-wide integration) and must be explicitly turned on
+    before saved credentials take effect."""
     _, member = current
     org = await _get_org(member.organization_id, db)
 
@@ -1107,6 +1105,8 @@ async def update_docusign_config(
         org.docusign_user_id = data["user_id"] or None
     if "private_key" in data:
         org.docusign_private_key = data["private_key"] or None
+    if "use_own_account" in data:
+        org.docusign_use_own_account = bool(data["use_own_account"])
 
     await db.commit()
     await db.refresh(org)
@@ -1115,9 +1115,8 @@ async def update_docusign_config(
         account_id=org.docusign_account_id,
         user_id=org.docusign_user_id,
         private_key_set=bool(org.docusign_private_key),
-        using_platform_default=not bool(
-            org.docusign_integration_key or org.docusign_account_id or org.docusign_user_id or org.docusign_private_key
-        ) and bool(settings.DOCUSIGN_INTEGRATION_KEY),
+        use_own_account=org.docusign_use_own_account,
+        using_platform_default=not org.docusign_use_own_account,
     )
 
 

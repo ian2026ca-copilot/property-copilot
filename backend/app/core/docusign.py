@@ -19,7 +19,19 @@ from app.core.config import settings
 
 
 def resolve_credentials(org) -> dict:
-    """org-level fields win when set; otherwise fall back to the platform env config."""
+    """The platform env config is used unless the org has explicitly opted in to
+    its own developer account (docusign_use_own_account) — even if it has saved
+    credentials, they're only used when that toggle is on. Any org field left
+    blank still falls back to the platform value field-by-field."""
+    if not getattr(org, "docusign_use_own_account", False):
+        return {
+            "integration_key": settings.DOCUSIGN_INTEGRATION_KEY,
+            "account_id": settings.DOCUSIGN_ACCOUNT_ID,
+            "user_id": settings.DOCUSIGN_USER_ID,
+            "private_key": settings.DOCUSIGN_PRIVATE_KEY,
+            "base_path": settings.DOCUSIGN_BASE_PATH,
+            "auth_server": settings.DOCUSIGN_AUTH_SERVER,
+        }
     return {
         "integration_key": org.docusign_integration_key or settings.DOCUSIGN_INTEGRATION_KEY,
         "account_id": org.docusign_account_id or settings.DOCUSIGN_ACCOUNT_ID,

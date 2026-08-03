@@ -178,6 +178,7 @@ export interface DocuSignConfigOut {
   account_id: string | null;
   user_id: string | null;
   private_key_set: boolean;
+  use_own_account: boolean;
   using_platform_default: boolean;
 }
 
@@ -443,6 +444,7 @@ export const leasesApi = {
     account_id?: string;
     user_id?: string;
     private_key?: string;
+    use_own_account?: boolean;
   }) => api.patch<DocuSignConfigOut>("/leases/docusign/config", body),
   uploadDocument: (leaseId: string, file: File) => {
     const token = typeof document !== "undefined"

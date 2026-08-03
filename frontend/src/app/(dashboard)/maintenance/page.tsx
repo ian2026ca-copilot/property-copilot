@@ -630,148 +630,6 @@ function ManageModal({req,vendors,onClose,onSave}:{req:MaintenanceOut;vendors:Ve
   );
 }
 
-// ─── Detail Drawer ────────────────────────────────────────────────────────────
-
-function DetailDrawer({req,onClose,onUpdate}:{req:MaintenanceOut;onClose:()=>void;onUpdate:(r:MaintenanceOut)=>void}) {
-  const { user } = useAuth();
-  const [status,setStatus]=useState(req.status);
-  const [newNote,setNewNote]=useState("");
-  const [saving,setSaving]=useState(false);
-  const [addingNote,setAddingNote]=useState(false);
-  const fileRef=useRef<HTMLInputElement>(null);
-  const [uploading,setUploading]=useState(false);
-
-  async function saveStatus(){
-    setSaving(true);
-    try{const u=await maintenanceApi.update(req.id,{status});onUpdate(u);}
-    finally{setSaving(false);}
-  }
-  async function handleFile(e:React.ChangeEvent<HTMLInputElement>){
-    const file=e.target.files?.[0];if(!file)return;
-    setUploading(true);
-    try{onUpdate(await maintenanceApi.uploadAttachment(req.id,file));}finally{setUploading(false);}
-  }
-  async function deleteAtt(attId:string){
-    await maintenanceApi.deleteAttachment(req.id,attId);
-    onUpdate({...req,attachments:req.attachments.filter(a=>a.id!==attId)});
-  }
-  async function addNote(){
-    if(!newNote.trim())return;
-    setAddingNote(true);
-    try{onUpdate(await maintenanceApi.addNote(req.id,newNote.trim()));setNewNote("");}
-    finally{setAddingNote(false);}
-  }
-  async function deleteNote(noteId:string){
-    await maintenanceApi.removeNote(req.id,noteId);
-    onUpdate({...req,notes:req.notes.filter(n=>n.id!==noteId)});
-  }
-
-  return (
-    <div className="fixed inset-0 z-40" onClick={onClose}>
-      <div className="absolute inset-y-0 right-0 w-full max-w-lg bg-white shadow-2xl flex flex-col" onClick={e=>e.stopPropagation()}>
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 shrink-0">
-          <h2 className="text-base font-semibold truncate pr-4">{req.title}</h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl shrink-0">×</button>
-        </div>
-        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
-          <div className="flex flex-wrap gap-2">
-            <span className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-medium ${STATUS_STYLE[req.status]}`}>{STATUS_LABEL[req.status]}</span>
-            <span className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-medium ${PRIORITY_STYLE[req.priority]}`}>{req.priority}</span>
-            <span className="text-[11px] text-slate-400">{req.category}</span>
-          </div>
-          <div className="text-sm bg-slate-50 rounded-lg px-4 py-3">
-            <p className="font-medium">{req.property_name} — Unit {req.unit_number}</p>
-            <p className="text-xs text-slate-500 mt-0.5">By {req.submitted_by_name} · {req.created_at?new Date(req.created_at).toLocaleDateString():"—"}</p>
-          </div>
-          <p className="text-sm text-slate-700 whitespace-pre-wrap">{req.description}</p>
-          {req.preferred_time_start&&(
-            <div className="bg-blue-50 rounded-lg px-4 py-3">
-              <p className="text-xs font-medium text-blue-700 mb-0.5">Tenant preferred time</p>
-              <p className="text-sm text-blue-900">{fmtDt(req.preferred_time_start)} – {fmtDt(req.preferred_time_end)}</p>
-            </div>
-          )}
-          {(req.est_cost_min||req.est_hours_min)&&(
-            <div className="bg-slate-50 rounded-lg px-4 py-3 grid grid-cols-2 gap-3">
-              {req.est_hours_min&&<div><p className="text-[11px] text-slate-400">Est. hours</p><p className="text-sm font-medium">{req.est_hours_min}–{req.est_hours_max} hrs</p></div>}
-              {req.est_cost_min&&<div><p className="text-[11px] text-slate-400">Est. cost</p><p className="text-sm font-medium">${req.est_cost_min}–${req.est_cost_max}</p></div>}
-            </div>
-          )}
-          {req.scheduled_start&&(
-            <div className="bg-emerald-50 rounded-lg px-4 py-3">
-              <p className="text-xs font-medium text-emerald-700 mb-0.5">Scheduled with {req.vendor_name}</p>
-              <p className="text-sm text-emerald-900">{fmtDt(req.scheduled_start)} – {fmtDt(req.scheduled_end)}</p>
-            </div>
-          )}
-          {/* Attachments */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-xs font-medium text-slate-500">Attachments ({req.attachments.length})</p>
-              <button onClick={()=>fileRef.current?.click()} disabled={uploading} className="text-xs text-black hover:underline">{uploading?"Uploading…":"+ Add"}</button>
-              <input ref={fileRef} type="file" className="hidden" accept="image/*,application/pdf" onChange={handleFile}/>
-            </div>
-            {req.attachments.length>0?(
-              <div className="grid grid-cols-3 gap-2">
-                {req.attachments.map(a=>(
-                  <div key={a.id} className="relative group rounded-lg overflow-hidden border border-slate-200 aspect-square bg-slate-50 flex items-center justify-center">
-                    {a.original_name.match(/\.(jpg|jpeg|png|webp)$/i)
-                      ?<img src={a.url} alt={a.original_name} className="w-full h-full object-cover"/>
-                      :<p className="text-[10px] text-slate-500 truncate p-2">{a.original_name}</p>}
-                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
-                      <button onClick={()=>deleteAtt(a.id)} className="text-white text-xs bg-red-600 px-2 py-1 rounded">Delete</button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ):<p className="text-xs text-slate-400 italic">No attachments</p>}
-          </div>
-          {/* Update status */}
-          <div className="border-t border-slate-100 pt-4 space-y-3">
-            <div><label className="block text-xs font-medium text-slate-500 mb-1">Update status</label>
-              <select value={status} onChange={e=>setStatus(e.target.value as MaintenanceStatus)} className={inp}>
-                {STATUSES.map(s=><option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
-              </select>
-            </div>
-            <button onClick={saveStatus} disabled={saving||status===req.status}
-              className="w-full px-4 py-2 bg-black text-white rounded-lg text-sm font-medium hover:bg-slate-800 disabled:opacity-50">
-              {saving?"Saving…":"Save status"}
-            </button>
-          </div>
-
-          {/* Notes log */}
-          <div className="border-t border-slate-100 pt-4 space-y-3">
-            <p className="text-xs font-medium text-slate-500">Notes ({req.notes.length})</p>
-            {req.notes.length>0?(
-              <div className="space-y-2.5 max-h-64 overflow-y-auto pr-1">
-                {req.notes.map(n=>(
-                  <div key={n.id} className="bg-slate-50 rounded-lg px-3 py-2.5">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-xs font-medium text-slate-700">{n.author_name}</p>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <p className="text-[11px] text-slate-400">{fmtDt(n.created_at)}</p>
-                        {(n.author_user_id===user?.id)&&(
-                          <button onClick={()=>deleteNote(n.id)} className="text-[11px] text-slate-400 hover:text-red-500">Delete</button>
-                        )}
-                      </div>
-                    </div>
-                    <p className="text-sm text-slate-700 whitespace-pre-wrap mt-0.5">{n.note}</p>
-                  </div>
-                ))}
-              </div>
-            ):<p className="text-xs text-slate-400 italic">No notes yet.</p>}
-            <div>
-              <textarea value={newNote} onChange={e=>setNewNote(e.target.value)} rows={2} className={`${inp} resize-none`} placeholder="Add a note…"/>
-              <button onClick={addNote} disabled={addingNote||!newNote.trim()}
-                className="mt-1.5 w-full px-4 py-2 border border-slate-200 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
-                {addingNote?"Adding…":"Add note"}
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ─── Calendar View ────────────────────────────────────────────────────────────
 
 const WEEKDAY_LABELS=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
@@ -864,7 +722,6 @@ export default function MaintenancePage() {
 
   type Modal={type:"submit"}|{type:"edit";req:MaintenanceOut}|{type:"manage";req:MaintenanceOut}|{type:"remove";req:MaintenanceOut};
   const [modal,setModal]=useState<Modal|null>(null);
-  const [detail,setDetail]=useState<MaintenanceOut|null>(null);
 
   const load=useCallback(async()=>{
     try{
@@ -878,7 +735,6 @@ export default function MaintenancePage() {
   async function handleRemove(req:MaintenanceOut){
     try{await maintenanceApi.remove(req.id);}catch{return;}
     setRequests(prev=>prev.filter(r=>r.id!==req.id));
-    if(detail&&detail.id===req.id) setDetail(null);
     setModal(null);
   }
 
@@ -888,11 +744,10 @@ export default function MaintenancePage() {
       const idx=prev.findIndex(r=>String(r.id)===id);
       return idx>=0?prev.map((r,i)=>i===idx?req:r):[req,...prev];
     });
-    if(detail&&String(detail.id)===id) setDetail(req);
     setModal(null);
     // Refresh from server to ensure UI is in sync
     maintenanceApi.list().then(reqs=>setRequests(reqs)).catch(()=>{});
-  },[detail]);
+  },[]);
 
   const filtered=requests.filter(r=>{
     if(filter!=="ALL"&&r.status!==filter)return false;
@@ -939,7 +794,7 @@ export default function MaintenancePage() {
       </div>
 
       {view==="calendar"?(
-        <CalendarView requests={filtered} onSelect={setDetail}/>
+        <CalendarView requests={filtered} onSelect={r=>setModal({type:"edit",req:r})}/>
       ):(
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
         <table className="w-full text-sm">
@@ -958,7 +813,7 @@ export default function MaintenancePage() {
               </td></tr>
             )}
             {filtered.map(r=>(
-              <tr key={r.id} className="hover:bg-slate-50 transition-colors group cursor-pointer" onClick={()=>setDetail(r)}>
+              <tr key={r.id} className="hover:bg-slate-50 transition-colors group cursor-pointer" onClick={()=>setModal({type:"edit",req:r})}>
                 <td className="px-4 py-3 max-w-[200px]">
                   <p className="text-xs font-medium text-slate-900 truncate">{r.title}</p>
                   <p className="text-[11px] text-slate-400">{r.submitted_by_name}</p>
@@ -1019,7 +874,6 @@ export default function MaintenancePage() {
           onCancel={()=>setModal(null)}
         />
       )}
-      {detail&&<DetailDrawer req={detail} onClose={()=>setDetail(null)} onUpdate={r=>{handleSave(r);setDetail(r);}}/>}
     </div>
   );
 }

@@ -172,6 +172,7 @@ class DocuSignConfigIn(BaseModel):
     account_id: str | None = None
     user_id: str | None = None
     private_key: str | None = None
+    use_own_account: bool | None = None
 
 
 class DocuSignConfigOut(BaseModel):
@@ -180,4 +181,5 @@ class DocuSignConfigOut(BaseModel):
     account_id: str | None = None
     user_id: str | None = None
     private_key_set: bool = False
+    use_own_account: bool = False
     using_platform_default: bool = True
