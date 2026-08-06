@@ -12,6 +12,8 @@ PROVIDER_ENV_VARS = {
     "grok_api_key": "GROK_API_KEY",
 }
 
+VALID_PROVIDERS = {"openai", "deepseek", "gemini", "grok"}
+
 # Snapshot of whatever the container's own .env provided at process start,
 # so removing a DB-stored key falls back to that instead of leaving the
 # last-saved value stuck in the process env forever.
@@ -39,6 +41,7 @@ def apply_to_env(row: PlatformSettings) -> None:
     for field, env_var in PROVIDER_ENV_VARS.items():
         value = getattr(row, field)
         os.environ[env_var] = value or _ENV_DEFAULTS[env_var]
+    os.environ["ACTIVE_AI_PROVIDER"] = row.active_ai_provider or "gemini"
 
 
 async def load_platform_settings_into_env(session_factory) -> None:

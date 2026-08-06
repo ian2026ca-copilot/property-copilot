@@ -1,14 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { adminApi, AISettingsOut, AISettingsIn } from "@/lib/adminApi";
+import { adminApi, AISettingsOut, AISettingsIn, AIProvider } from "@/lib/adminApi";
 import { AdminUser } from "@/lib/adminAuth";
 
-const AI_PROVIDERS: { key: keyof AISettingsIn; setField: keyof AISettingsOut; label: string; placeholder: string }[] = [
-  { key: "openai_api_key", setField: "openai_key_set", label: "OpenAI", placeholder: "sk-..." },
-  { key: "deepseek_api_key", setField: "deepseek_key_set", label: "DeepSeek", placeholder: "sk-..." },
-  { key: "gemini_api_key", setField: "gemini_key_set", label: "Gemini", placeholder: "AIza..." },
-  { key: "grok_api_key", setField: "grok_key_set", label: "Grok (xAI)", placeholder: "xai-..." },
+type ApiKeyField = "openai_api_key" | "deepseek_api_key" | "gemini_api_key" | "grok_api_key";
+
+const AI_PROVIDERS: { key: ApiKeyField; setField: keyof AISettingsOut; provider: AIProvider; label: string; placeholder: string }[] = [
+  { key: "openai_api_key", setField: "openai_key_set", provider: "openai", label: "OpenAI", placeholder: "sk-..." },
+  { key: "deepseek_api_key", setField: "deepseek_key_set", provider: "deepseek", label: "DeepSeek", placeholder: "sk-..." },
+  { key: "gemini_api_key", setField: "gemini_key_set", provider: "gemini", label: "Gemini", placeholder: "AIza..." },
+  { key: "grok_api_key", setField: "grok_key_set", provider: "grok", label: "Grok (xAI)", placeholder: "xai-..." },
 ];
 
 function AIProvidersCard() {
@@ -16,6 +18,7 @@ function AIProvidersCard() {
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  const [switchingProvider, setSwitchingProvider] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
@@ -48,7 +51,7 @@ function AIProvidersCard() {
     } finally { setSaving(false); }
   }
 
-  async function handleRemove(key: keyof AISettingsIn) {
+  async function handleRemove(key: ApiKeyField) {
     setSaving(true); setError(""); setSuccess("");
     try {
       const updated = await adminApi.updateAiSettings({ [key]: "" });
@@ -58,20 +61,49 @@ function AIProvidersCard() {
     } finally { setSaving(false); }
   }
 
+  async function handleProviderChange(provider: AIProvider) {
+    setSwitchingProvider(true); setError(""); setSuccess("");
+    try {
+      const updated = await adminApi.updateAiSettings({ active_provider: provider });
+      setSettings(updated);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to switch provider");
+    } finally { setSwitchingProvider(false); }
+  }
+
   return (
-    <div className="bg-white rounded-xl border border-slate-200 p-6 space-y-4">
+    <div className="bg-white rounded-xl border border-slate-200 p-6 space-y-5">
       <div>
         <h3 className="text-sm font-semibold text-slate-900">AI provider API keys</h3>
         <p className="text-xs text-slate-400 mt-0.5">
-          Used platform-wide for AI features (screening, drafting, the copilot). Gemini is the only
-          provider currently wired into the app — the others are stored for future use.
+          Used platform-wide for every AI feature (screening, drafting, the copilot). OpenAI, DeepSeek,
+          and Grok all use the same OpenAI-compatible API; Gemini uses its own.
         </p>
       </div>
 
       {loading ? (
         <p className="text-xs text-slate-400">Loading…</p>
       ) : (
-        <form onSubmit={handleSave} className="space-y-4">
+        <>
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Active provider</label>
+            <select
+              value={settings?.active_provider ?? "gemini"}
+              onChange={(e) => handleProviderChange(e.target.value as AIProvider)}
+              disabled={switchingProvider}
+              className="text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black disabled:opacity-50"
+            >
+              {AI_PROVIDERS.map(({ provider, label }) => (
+                <option key={provider} value={provider}>{label}</option>
+              ))}
+            </select>
+            <p className="text-[11px] text-slate-400 mt-1">
+              Every AI call in the app uses whichever provider is selected here. Make sure that
+              provider's key is saved below before switching.
+            </p>
+          </div>
+
+          <form onSubmit={handleSave} className="space-y-4 pt-1 border-t border-slate-100">
           {AI_PROVIDERS.map(({ key, setField, label, placeholder }) => {
             const isSet = settings?.[setField];
             return (
@@ -105,7 +137,8 @@ function AIProvidersCard() {
             className="px-4 py-2 text-sm bg-black text-white rounded-lg hover:bg-slate-800 font-medium disabled:opacity-50">
             {saving ? "Saving…" : "Save keys"}
           </button>
-        </form>
+          </form>
+        </>
       )}
     </div>
   );

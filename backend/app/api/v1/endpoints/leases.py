@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
+from app.core.ai_client import generate_ai_text
 from app.api.deps import get_current_user, require_min_role
 from app.models.user import User, OrganizationMember, UserRole, TenantDocument
 from app.models.profiles import TenantProfile
@@ -345,16 +346,11 @@ async def ai_generate_lease_template(
     current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
-    """Use Gemini to generate a lease agreement template as a Word document."""
+    """Use AI to generate a lease agreement template as a Word document."""
     import io
-    import google.generativeai as genai
     from docx import Document
     from docx.shared import Pt
     from docx.enum.text import WD_ALIGN_PARAGRAPH
-
-    api_key = os.environ.get("GEMINI_API_KEY", "")
-    if not api_key:
-        raise HTTPException(status_code=503, detail="Gemini API key not configured")
 
     _, member = current
 
@@ -379,12 +375,9 @@ async def ai_generate_lease_template(
     )
 
     try:
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel("gemini-2.5-flash")
-        response = model.generate_content(prompt)
-        content = response.text or ""
+        content = generate_ai_text(prompt)
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Gemini error: {str(e)[:200]}")
+        raise HTTPException(status_code=502, detail=f"AI error: {str(e)[:200]}")
 
     # Build Word document
     doc = Document()
@@ -769,9 +762,8 @@ async def generate_lease_document(
     current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
-    """Generate a lease agreement from a template using Gemini."""
+    """Generate a lease agreement from a template using AI."""
     import io
-    import google.generativeai as genai
     from docx import Document
     from docx.shared import Pt
     from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -779,10 +771,6 @@ async def generate_lease_document(
     template_id = body.get("template_id")
     if not template_id:
         raise HTTPException(status_code=400, detail="template_id is required")
-
-    api_key = os.environ.get("GEMINI_API_KEY", "")
-    if not api_key:
-        raise HTTPException(status_code=503, detail="Gemini API key not configured")
 
     _, member = current
 
@@ -918,12 +906,9 @@ async def generate_lease_document(
         )
 
     try:
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel("gemini-2.5-flash")
-        response = model.generate_content(prompt)
-        content = response.text or ""
+        content = generate_ai_text(prompt)
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Gemini error: {str(e)[:200]}")
+        raise HTTPException(status_code=502, detail=f"AI error: {str(e)[:200]}")
 
     out_doc = Document()
     title_para = out_doc.add_paragraph()

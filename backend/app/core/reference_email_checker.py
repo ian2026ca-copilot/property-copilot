@@ -2,13 +2,13 @@ import asyncio
 import imaplib
 import email as email_module
 import json
-import os
 import re
 from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.ai_client import generate_ai_text
 from app.models.organization import Organization
 from app.models.reference_check import ReferenceCheckRequest
 from app.models.tenant_application import TenantScreeningNote
@@ -39,13 +39,10 @@ def _extract_message_ids(header_value: str | None) -> list[str]:
     return _MESSAGE_ID_RE.findall(header_value) if header_value else []
 
 
-def _analyze_with_gemini(reference_type: str, reply_text: str) -> dict:
+def _analyze_reference_reply(reference_type: str, reply_text: str) -> dict:
     fallback = {"confirmed": None, "would_rerent_or_good_standing": None, "red_flags": [], "summary": reply_text[:500]}
-    api_key = os.environ.get("GEMINI_API_KEY", "")
-    if not api_key or not reply_text.strip():
+    if not reply_text.strip():
         return fallback
-
-    import google.generativeai as genai
 
     kind_label = "employer" if reference_type == "EMPLOYER" else "landlord"
     prompt = (
@@ -59,10 +56,8 @@ def _analyze_with_gemini(reference_type: str, reply_text: str) -> dict:
         f"Reply text:\n{reply_text[:3000]}"
     )
     try:
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel("gemini-2.5-flash")
-        response = model.generate_content(prompt)
-        raw = re.sub(r"^```(json)?|```$", "", (response.text or "").strip(), flags=re.MULTILINE).strip()
+        raw_response = generate_ai_text(prompt)
+        raw = re.sub(r"^```(json)?|```$", "", raw_response.strip(), flags=re.MULTILINE).strip()
         parsed = json.loads(raw)
         return {
             "confirmed": parsed.get("confirmed"),
@@ -143,7 +138,7 @@ async def check_org_inbox(org: Organization, db: AsyncSession) -> None:
             continue
 
         reply_text = _strip_quoted_reply(_extract_plain_text(msg))
-        analysis = _analyze_with_gemini(tracking.reference_type, reply_text)
+        analysis = _analyze_reference_reply(tracking.reference_type, reply_text)
 
         db.add(TenantScreeningNote(
             user_id=tracking.tenant_user_id,

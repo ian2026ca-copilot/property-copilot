@@ -91,6 +91,7 @@ class AISettingsOut(BaseModel):
     deepseek_key_set: bool
     gemini_key_set: bool
     grok_key_set: bool
+    active_provider: str
 
 
 class AISettingsIn(BaseModel):
@@ -98,3 +99,4 @@ class AISettingsIn(BaseModel):
     deepseek_api_key: str | None = None
     gemini_api_key: str | None = None
     grok_api_key: str | None = None
+    active_provider: str | None = None

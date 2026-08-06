@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
+from app.core.ai_client import generate_ai_text
 from app.core.email import send_overdue_notice_email
 from app.core.sms import send_sms
 from app.api.deps import get_current_user, require_min_role
@@ -329,9 +330,8 @@ async def ai_generate_notice(
     current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
-    """Use Gemini to draft a polite overdue-rent notice for email/SMS."""
+    """Use AI to draft a polite overdue-rent notice for email/SMS."""
     import json
-    import google.generativeai as genai
 
     user, member = current
     payment = await _load_payment(payment_id, member.organization_id, db)
@@ -340,10 +340,6 @@ async def ai_generate_notice(
     lease = await _load_lease(payment.lease_id, db)
     if not lease:
         raise HTTPException(status_code=404, detail="Lease not found")
-
-    api_key = os.environ.get("GEMINI_API_KEY", "")
-    if not api_key:
-        raise HTTPException(status_code=503, detail="Gemini API key not configured")
 
     org_result = await db.execute(select(Organization).where(Organization.id == member.organization_id))
     org = org_result.scalar_one_or_none()
@@ -385,15 +381,12 @@ async def ai_generate_notice(
     )
 
     try:
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel("gemini-2.5-flash")
-        response = model.generate_content(prompt)
-        raw = response.text or ""
+        raw = generate_ai_text(prompt)
     except Exception as e:
         err_str = str(e)
         if "quota" in err_str.lower() or "429" in err_str:
-            raise HTTPException(status_code=402, detail="Gemini quota exceeded — check your API key at aistudio.google.com")
-        raise HTTPException(status_code=502, detail=f"Gemini error: {err_str[:200]}")
+            raise HTTPException(status_code=402, detail="AI provider quota exceeded — check your API key in admin Settings")
+        raise HTTPException(status_code=502, detail=f"AI error: {err_str[:200]}")
 
     raw = raw.strip()
     if raw.startswith("```"):

@@ -98,11 +98,14 @@ export interface OwnerDetailOut {
   recent_payments: OwnerPaymentOut[];
 }
 
+export type AIProvider = "openai" | "deepseek" | "gemini" | "grok";
+
 export interface AISettingsOut {
   openai_key_set: boolean;
   deepseek_key_set: boolean;
   gemini_key_set: boolean;
   grok_key_set: boolean;
+  active_provider: AIProvider;
 }
 
 export interface AISettingsIn {
@@ -110,6 +113,7 @@ export interface AISettingsIn {
   deepseek_api_key?: string;
   gemini_api_key?: string;
   grok_api_key?: string;
+  active_provider?: AIProvider;
 }
 
 export const adminAuthApi = {

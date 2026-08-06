@@ -1,11 +1,11 @@
 import json
-import os
 import re
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.ai_client import generate_ai_text
 from app.api.deps import require_min_role
 from app.models.user import User, OrganizationMember, UserRole
 from app.schemas.copilot import CopilotChatIn, CopilotChatOut, CopilotExecuteIn, CopilotExecuteOut, CopilotMessage
@@ -96,18 +96,9 @@ async def copilot_chat(
     body: CopilotChatIn,
     current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
 ):
-    import google.generativeai as genai
-
-    api_key = os.environ.get("GEMINI_API_KEY", "")
-    if not api_key:
-        raise HTTPException(status_code=503, detail="AI assistant is not configured (missing Gemini API key)")
-
     prompt = _build_prompt(body.messages, body.created_context)
     try:
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel("gemini-2.5-flash")
-        response = model.generate_content(prompt)
-        raw = (response.text or "").strip()
+        raw = generate_ai_text(prompt).strip()
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"AI assistant unavailable: {str(e)[:200]}")
 

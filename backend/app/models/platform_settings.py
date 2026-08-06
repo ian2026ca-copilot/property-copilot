@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import Text
+from sqlalchemy import String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -19,3 +19,4 @@ class PlatformSettings(Base, TimestampMixin):
     deepseek_api_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     gemini_api_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     grok_api_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    active_ai_provider: Mapped[str] = mapped_column(String(20), nullable=False, default="gemini", server_default="gemini")

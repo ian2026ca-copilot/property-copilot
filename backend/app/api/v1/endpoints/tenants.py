@@ -11,6 +11,7 @@ from sqlalchemy import select, delete
 from sqlalchemy.orm import selectinload, joinedload
 
 from app.core.database import get_db
+from app.core.ai_client import generate_ai_text
 from app.core.security import hash_password
 from app.core.email import send_reference_letter_email
 from app.core.sms import send_sms
@@ -431,13 +432,8 @@ async def ai_extract_tenant(
     file: UploadFile = File(...),
     current: tuple[User, OrganizationMember] = Depends(get_current_user),
 ):
-    """Use Gemini vision to extract tenant info from an uploaded identity document."""
+    """Use AI vision to extract tenant info from an uploaded identity document."""
     import json
-    import google.generativeai as genai
-
-    api_key = os.environ.get("GEMINI_API_KEY", "")
-    if not api_key:
-        raise HTTPException(status_code=503, detail="Gemini API key not configured")
 
     content = await file.read()
     if len(content) > 20 * 1024 * 1024:
@@ -445,7 +441,9 @@ async def ai_extract_tenant(
 
     mime = file.content_type or "image/jpeg"
 
-    # Gemini natively supports PDFs — pass through as-is
+    # Gemini natively supports PDFs passed as-is; other providers expect image
+    # formats only, so a PDF upload may fail there — a provider limitation,
+    # not something worked around here.
     prompt = (
         "You are an expert at reading identity documents. "
         "Extract the following fields from this document image and return ONLY a JSON object with these exact keys "
@@ -461,16 +459,12 @@ async def ai_extract_tenant(
     )
 
     try:
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel("gemini-2.5-flash")
-        image_part = {"mime_type": mime, "data": content}
-        response = model.generate_content([prompt, image_part])
-        raw = response.text or ""
+        raw = generate_ai_text(prompt, images=[{"mime_type": mime, "data": content}])
     except Exception as e:
         err_str = str(e)
         if "quota" in err_str.lower() or "429" in err_str:
-            raise HTTPException(status_code=402, detail="Gemini quota exceeded — check your API key at aistudio.google.com")
-        raise HTTPException(status_code=502, detail=f"Gemini error: {err_str[:200]}")
+            raise HTTPException(status_code=402, detail="AI provider quota exceeded — check your API key in admin Settings")
+        raise HTTPException(status_code=502, detail=f"AI error: {err_str[:200]}")
 
     raw = raw.strip()
     if raw.startswith("```"):
@@ -806,8 +800,6 @@ async def generate_reference_letter(
 ):
     """AI-draft a professional reference-request letter to an employer reference,
     for the landlord to review/edit before sending via the contact-reference endpoint."""
-    import google.generativeai as genai
-
     _, member = current
     mem_res = await db.execute(
         select(OrganizationMember).where(
@@ -842,31 +834,24 @@ async def generate_reference_letter(
     reference_name = employment.employer_reference_name or "there"
     subject = f"Reference check for {applicant_name}"
 
-    api_key = os.environ.get("GEMINI_API_KEY", "")
-    if api_key:
-        context_parts = [
-            f"Applicant name: {applicant_name}",
-            f"Employer reference name: {reference_name}",
-            f"Company: {employment.company}" if employment.company else "",
-            f"Applicant's position at the company: {employment.position}" if employment.position else "",
-            f"Length of employment reported by applicant: {employment.employment_length}" if employment.employment_length else "",
-            f"Landlord / property management organization: {org_name}",
-        ]
-        prompt = (
-            "Write a short, professional email body (3-4 short paragraphs, no subject line) from a Canadian "
-            "landlord to an applicant's employer reference, asking them to confirm the applicant's employment "
-            "details (role, length of employment, and whether they are in good standing) as part of a rental "
-            "application. Be polite and concise. Do not invent facts beyond what's given. Sign off as "
-            f"\"{org_name}\". Use only the facts below.\n\n" + "\n".join(p for p in context_parts if p)
-        )
-        try:
-            genai.configure(api_key=api_key)
-            model = genai.GenerativeModel("gemini-2.5-flash")
-            response = model.generate_content(prompt)
-            letter_body = (response.text or "").strip()
-        except Exception:
-            letter_body = ""
-    else:
+    context_parts = [
+        f"Applicant name: {applicant_name}",
+        f"Employer reference name: {reference_name}",
+        f"Company: {employment.company}" if employment.company else "",
+        f"Applicant's position at the company: {employment.position}" if employment.position else "",
+        f"Length of employment reported by applicant: {employment.employment_length}" if employment.employment_length else "",
+        f"Landlord / property management organization: {org_name}",
+    ]
+    prompt = (
+        "Write a short, professional email body (3-4 short paragraphs, no subject line) from a Canadian "
+        "landlord to an applicant's employer reference, asking them to confirm the applicant's employment "
+        "details (role, length of employment, and whether they are in good standing) as part of a rental "
+        "application. Be polite and concise. Do not invent facts beyond what's given. Sign off as "
+        f"\"{org_name}\". Use only the facts below.\n\n" + "\n".join(p for p in context_parts if p)
+    )
+    try:
+        letter_body = generate_ai_text(prompt).strip()
+    except Exception:
         letter_body = ""
 
     if not letter_body:
@@ -994,8 +979,6 @@ async def generate_landlord_reference_letter(
 ):
     """AI-draft a professional reference-request letter to a landlord reference,
     for the landlord (org) to review/edit before sending via the contact-reference endpoint."""
-    import google.generativeai as genai
-
     _, member = current
     mem_res = await db.execute(
         select(OrganizationMember).where(
@@ -1030,32 +1013,25 @@ async def generate_landlord_reference_letter(
     reference_name = address.landlord_name or "there"
     subject = f"Reference check for {applicant_name}"
 
-    api_key = os.environ.get("GEMINI_API_KEY", "")
-    if api_key:
-        context_parts = [
-            f"Applicant name: {applicant_name}",
-            f"Landlord reference name: {reference_name}",
-            f"Address applicant rented: {address.street_address}, {address.city}" if address.street_address else "",
-            f"Tenancy period: {address.move_in_date} to {address.move_out_date or 'present'}" if address.move_in_date else "",
-            f"Monthly rent reported by applicant: ${address.monthly_rent:,.0f}" if address.monthly_rent else "",
-            f"Property management organization requesting the check: {org_name}",
-        ]
-        prompt = (
-            "Write a short, professional email body (3-4 short paragraphs, no subject line) from a Canadian "
-            "landlord to an applicant's previous landlord reference, asking them to confirm the applicant's "
-            "tenancy details (rent payment history, whether they were in good standing, and whether they'd rent "
-            "to them again) as part of a rental application. Be polite and concise. Do not invent facts beyond "
-            f"what's given. Sign off as \"{org_name}\". Use only the facts below.\n\n"
-            + "\n".join(p for p in context_parts if p)
-        )
-        try:
-            genai.configure(api_key=api_key)
-            model = genai.GenerativeModel("gemini-2.5-flash")
-            response = model.generate_content(prompt)
-            letter_body = (response.text or "").strip()
-        except Exception:
-            letter_body = ""
-    else:
+    context_parts = [
+        f"Applicant name: {applicant_name}",
+        f"Landlord reference name: {reference_name}",
+        f"Address applicant rented: {address.street_address}, {address.city}" if address.street_address else "",
+        f"Tenancy period: {address.move_in_date} to {address.move_out_date or 'present'}" if address.move_in_date else "",
+        f"Monthly rent reported by applicant: ${address.monthly_rent:,.0f}" if address.monthly_rent else "",
+        f"Property management organization requesting the check: {org_name}",
+    ]
+    prompt = (
+        "Write a short, professional email body (3-4 short paragraphs, no subject line) from a Canadian "
+        "landlord to an applicant's previous landlord reference, asking them to confirm the applicant's "
+        "tenancy details (rent payment history, whether they were in good standing, and whether they'd rent "
+        "to them again) as part of a rental application. Be polite and concise. Do not invent facts beyond "
+        f"what's given. Sign off as \"{org_name}\". Use only the facts below.\n\n"
+        + "\n".join(p for p in context_parts if p)
+    )
+    try:
+        letter_body = generate_ai_text(prompt).strip()
+    except Exception:
         letter_body = ""
 
     if not letter_body:
@@ -1076,11 +1052,9 @@ async def ai_screen_tenant(
     current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
-    """Compute a deterministic screening score from real applicant data, plus a
-    Gemini-written plain-language summary. The numeric score is never generated
+    """Compute a deterministic screening score from real applicant data, plus an
+    AI-written plain-language summary. The numeric score is never generated
     by the LLM — it's derived from concrete inputs so it stays explainable."""
-    import google.generativeai as genai
-
     _, member = current
     mem_res = await db.execute(
         select(OrganizationMember).where(
@@ -1132,33 +1106,27 @@ async def ai_screen_tenant(
     score -= 20 * len(disclosed_flags)
     score = max(0, min(100, score))
 
-    api_key = os.environ.get("GEMINI_API_KEY", "")
-    verdict = "AI summary unavailable — Gemini API key not configured."
-    if api_key:
-        context_parts = [
-            f"Applicant: {tenant_user.display_name}",
-            f"Annual income reported: ${annual_income:,.0f}" if annual_income else "No income reported.",
-            f"Unit rent: ${unit_rent:,.0f}/mo, income-to-rent ratio: {income_ratio:.1f}x" if income_ratio else "No specific unit / rent to compare against.",
-            f"Employment on file: {len(employment)} record(s)." if employment else "No employment history on file.",
-            f"Supporting documents uploaded: {len(documents)}." if documents else "No supporting documents uploaded.",
-            f"Self-disclosed flags: {', '.join(disclosed_flags) if disclosed_flags else 'none'}.",
-            f"Applicant's message: {profile.personal_message}" if profile and profile.personal_message else "",
-        ]
-        prompt = (
-            "You are helping a Canadian landlord review a rental applicant. Based ONLY on the facts below, "
-            "write a short (2-3 sentence) plain-language assessment: mention income-to-rent ratio if available, "
-            "document/reference completeness, and any disclosed flags. Do not invent facts. Do not suggest a "
-            "numeric score. Do not comment on protected characteristics (race, family status, source of income, "
-            "disability, etc.) — focus only on income, documentation, and disclosed rental history.\n\n"
-            + "\n".join(p for p in context_parts if p)
-        )
-        try:
-            genai.configure(api_key=api_key)
-            model = genai.GenerativeModel("gemini-2.5-flash")
-            response = model.generate_content(prompt)
-            verdict = (response.text or "").strip()
-        except Exception as e:
-            verdict = f"AI summary unavailable: {str(e)[:200]}"
+    context_parts = [
+        f"Applicant: {tenant_user.display_name}",
+        f"Annual income reported: ${annual_income:,.0f}" if annual_income else "No income reported.",
+        f"Unit rent: ${unit_rent:,.0f}/mo, income-to-rent ratio: {income_ratio:.1f}x" if income_ratio else "No specific unit / rent to compare against.",
+        f"Employment on file: {len(employment)} record(s)." if employment else "No employment history on file.",
+        f"Supporting documents uploaded: {len(documents)}." if documents else "No supporting documents uploaded.",
+        f"Self-disclosed flags: {', '.join(disclosed_flags) if disclosed_flags else 'none'}.",
+        f"Applicant's message: {profile.personal_message}" if profile and profile.personal_message else "",
+    ]
+    prompt = (
+        "You are helping a Canadian landlord review a rental applicant. Based ONLY on the facts below, "
+        "write a short (2-3 sentence) plain-language assessment: mention income-to-rent ratio if available, "
+        "document/reference completeness, and any disclosed flags. Do not invent facts. Do not suggest a "
+        "numeric score. Do not comment on protected characteristics (race, family status, source of income, "
+        "disability, etc.) — focus only on income, documentation, and disclosed rental history.\n\n"
+        + "\n".join(p for p in context_parts if p)
+    )
+    try:
+        verdict = generate_ai_text(prompt).strip()
+    except Exception as e:
+        verdict = f"AI summary unavailable: {str(e)[:200]}"
 
     return {"score": score, "verdict": verdict}
 
