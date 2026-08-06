@@ -27,6 +27,7 @@ class User(Base, TimestampMixin):
     phone: Mapped[str] = mapped_column(String(30), nullable=False, default="")
     avatar_filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_active: Mapped[bool] = mapped_column(default=True)
+    is_platform_admin: Mapped[bool] = mapped_column(default=False, server_default="false")
 
     memberships: Mapped[list["OrganizationMember"]] = relationship(back_populates="user")
     tenant_documents: Mapped[list["TenantDocument"]] = relationship(back_populates="user", cascade="all, delete-orphan")

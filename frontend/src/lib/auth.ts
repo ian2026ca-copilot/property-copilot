@@ -8,6 +8,8 @@ export interface AuthUser {
   role: "OWNER" | "TENANT" | "VENDOR";
   screening_criminal_record_enabled?: boolean;
   screening_rental_history_enabled?: boolean;
+  reference_reply_email?: string | null;
+  impersonated?: boolean;
 }
 
 export function setToken(token: string) {

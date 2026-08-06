@@ -6,7 +6,7 @@ from email.mime.text import MIMEText
 from html import escape as _escape_html
 
 
-def _smtp_send(to_email: str, subject: str, html: str) -> None:
+def _smtp_send(to_email: str, subject: str, html: str, reply_to: str | None = None, message_id: str | None = None) -> None:
     smtp_host = os.getenv("SMTP_HOST", "")
     if not smtp_host:
         return  # dev fallback: caller prints to log before calling this
@@ -20,6 +20,10 @@ def _smtp_send(to_email: str, subject: str, html: str) -> None:
     msg["Subject"] = subject
     msg["From"] = from_email
     msg["To"] = to_email
+    if reply_to:
+        msg["Reply-To"] = reply_to
+    if message_id:
+        msg["Message-ID"] = message_id
     msg.attach(MIMEText(html, "html"))
 
     if smtp_port == 465:
@@ -181,9 +185,9 @@ def send_welcome_email(to_email: str, full_name: str, org_name: str, role: str, 
     _smtp_send(to_email, f"Welcome to Property Copilot, {first}! 🎉", html)
 
 
-def send_reference_letter_email(to_email: str, subject: str, body_text: str) -> None:
+def send_reference_letter_email(to_email: str, subject: str, body_text: str, reply_to: str | None = None, message_id: str | None = None) -> None:
     if not os.getenv("SMTP_HOST"):
-        print(f"\n[Reference Letter Email] To: {to_email}\nSubject: {subject}\n{body_text}\n", flush=True)
+        print(f"\n[Reference Letter Email] To: {to_email}\nReply-To: {reply_to or '(none)'}\nMessage-ID: {message_id or '(none)'}\nSubject: {subject}\n{body_text}\n", flush=True)
         return
 
     safe_body = _escape_html(body_text).replace("\n", "<br>")
@@ -193,7 +197,7 @@ def send_reference_letter_email(to_email: str, subject: str, body_text: str) -> 
       <div style="color:#333;line-height:1.7">{safe_body}</div>
     </div>
     """
-    _smtp_send(to_email, subject, html)
+    _smtp_send(to_email, subject, html, reply_to=reply_to, message_id=message_id)
 
 
 def send_overdue_notice_email(to_email: str, subject: str, message: str) -> None:

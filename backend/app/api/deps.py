@@ -7,6 +7,7 @@ from sqlalchemy import select
 from app.core.database import get_db
 from app.core.security import decode_token
 from app.models.user import User, OrganizationMember, UserRole
+from app.models.organization import Organization
 
 bearer = HTTPBearer()
 
@@ -42,7 +43,34 @@ async def get_current_user(
     if not member:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not a member of this org")
 
+    org_result = await db.execute(select(Organization.is_suspended).where(Organization.id == org_id))
+    if org_result.scalar_one_or_none():
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This organization has been suspended")
+
     return user, member
+
+
+async def get_current_admin(
+    credentials: HTTPAuthorizationCredentials = Depends(bearer),
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    """Platform-admin-only auth: a separate JWT shape (no org_id, `is_admin: true`)
+    minted by POST /admin/login, entirely independent of the org-scoped
+    get_current_user above — an admin isn't a member of any organization."""
+    try:
+        payload = decode_token(credentials.credentials)
+        if not payload.get("is_admin"):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+        user_id: str = payload.get("sub")
+    except JWTError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user or not user.is_active or not user.is_platform_admin:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not an admin")
+
+    return user
 
 
 def require_min_role(min_role: UserRole):

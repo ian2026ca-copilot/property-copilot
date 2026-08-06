@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
-import { profileApi, campaignsApi, leasesApi, type MarketingSiteOut, type DocuSignConfigOut } from "@/lib/api";
+import { profileApi, campaignsApi, leasesApi, tenantsApi, billingApi, type MarketingSiteOut, type DocuSignConfigOut, type ReferenceEmailConfigOut, type BillingStatusOut } from "@/lib/api";
 import { MOCK_MODE } from "@/lib/useApiData";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -395,10 +395,46 @@ function ScreeningTab() {
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState("");
 
+  const [replyEmail, setReplyEmail] = useState(user?.reference_reply_email || user?.email || "");
+  const [savingEmail, setSavingEmail] = useState(false);
+  const [emailSuccess, setEmailSuccess] = useState(false);
+  const [emailError, setEmailError] = useState("");
+
+  const [imapConfig, setImapConfig] = useState<ReferenceEmailConfigOut | null>(null);
+  const [loadingImap, setLoadingImap] = useState(true);
+  const [imapForm, setImapForm] = useState({ imap_host: "", imap_port: "993", app_password: "", check_enabled: false });
+  const [savingImap, setSavingImap] = useState(false);
+  const [imapSuccess, setImapSuccess] = useState(false);
+  const [imapError, setImapError] = useState("");
+
   useEffect(() => {
     setCriminalEnabled(user?.screening_criminal_record_enabled ?? false);
     setRentalHistoryEnabled(user?.screening_rental_history_enabled ?? false);
   }, [user?.screening_criminal_record_enabled, user?.screening_rental_history_enabled]);
+
+  useEffect(() => {
+    setReplyEmail(user?.reference_reply_email || user?.email || "");
+  }, [user?.reference_reply_email, user?.email]);
+
+  async function loadImapConfig() {
+    setLoadingImap(true);
+    try {
+      const c = await tenantsApi.getReferenceEmailConfig();
+      setImapConfig(c);
+      setImapForm({
+        imap_host: c.imap_host ?? "",
+        imap_port: c.imap_port ? String(c.imap_port) : "993",
+        app_password: "",
+        check_enabled: c.check_enabled,
+      });
+    } catch {
+      // no config yet / not reachable — leave form at defaults
+    } finally {
+      setLoadingImap(false);
+    }
+  }
+
+  useEffect(() => { loadImapConfig(); }, []);
 
   async function handleSave() {
     setSaving(true); setError(""); setSuccess(false);
@@ -413,6 +449,51 @@ function ScreeningTab() {
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Save failed");
     } finally { setSaving(false); }
+  }
+
+  async function handleSaveEmail(e: React.FormEvent) {
+    e.preventDefault();
+    setSavingEmail(true); setEmailError(""); setEmailSuccess(false);
+    try {
+      await profileApi.updateOrg({ reference_reply_email: replyEmail.trim() });
+      await refresh();
+      setEmailSuccess(true);
+      setTimeout(() => setEmailSuccess(false), 3000);
+    } catch (e: unknown) {
+      setEmailError(e instanceof Error ? e.message : "Save failed");
+    } finally { setSavingEmail(false); }
+  }
+
+  async function handleSaveImap(e: React.FormEvent) {
+    e.preventDefault();
+    setSavingImap(true); setImapError(""); setImapSuccess(false);
+    try {
+      const body: { imap_host: string; imap_port: number; check_enabled: boolean; app_password?: string } = {
+        imap_host: imapForm.imap_host.trim(),
+        imap_port: Number(imapForm.imap_port) || 993,
+        check_enabled: imapForm.check_enabled,
+      };
+      if (imapForm.app_password.trim()) body.app_password = imapForm.app_password.trim();
+      const c = await tenantsApi.updateReferenceEmailConfig(body);
+      setImapConfig(c);
+      setImapForm((f) => ({ ...f, app_password: "" }));
+      setImapSuccess(true);
+      setTimeout(() => setImapSuccess(false), 3000);
+    } catch (e: unknown) {
+      setImapError(e instanceof Error ? e.message : "Save failed");
+    } finally { setSavingImap(false); }
+  }
+
+  async function handleClearImapPassword() {
+    setSavingImap(true); setImapError("");
+    try {
+      const c = await tenantsApi.updateReferenceEmailConfig({ app_password: "" });
+      setImapConfig(c);
+      setImapSuccess(true);
+      setTimeout(() => setImapSuccess(false), 3000);
+    } catch (e: unknown) {
+      setImapError(e instanceof Error ? e.message : "Failed to remove password");
+    } finally { setSavingImap(false); }
   }
 
   return (
@@ -468,6 +549,120 @@ function ScreeningTab() {
           {saving ? "Saving…" : "Save changes"}
         </button>
       </div>
+
+      <form onSubmit={handleSaveEmail} className="bg-white rounded-xl border border-slate-200 p-6 space-y-4">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-900">Reference reply email</h3>
+          <p className="text-xs text-slate-400 mt-0.5">
+            When you email an employer or landlord reference from the Screening page, this is the address their
+            reply goes to. Defaults to your own account email below — change it if replies should land somewhere else.
+          </p>
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-slate-500 mb-1">Reply-to address</label>
+          <input
+            type="email"
+            value={replyEmail}
+            onChange={(e) => setReplyEmail(e.target.value)}
+            placeholder={user?.email}
+            className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black"
+          />
+        </div>
+
+        {emailError && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{emailError}</p>}
+        {emailSuccess && <p className="text-xs text-emerald-600 bg-emerald-50 rounded-lg px-3 py-2">Reply-to address saved</p>}
+        <button
+          type="submit"
+          disabled={savingEmail}
+          className="px-4 py-2 text-sm bg-black text-white rounded-lg hover:bg-slate-800 font-medium disabled:opacity-50 transition-colors"
+        >
+          {savingEmail ? "Saving…" : "Save email"}
+        </button>
+      </form>
+
+      <form onSubmit={handleSaveImap} className="bg-white rounded-xl border border-slate-200 p-6 space-y-4">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-900">Automatic reference-reply checking</h3>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Connect the inbox above via IMAP and the app will check it periodically, match replies back to the
+            reference request that was sent, and post an AI-summarized note on the applicant automatically —
+            no manual copy-paste needed.
+          </p>
+          <a href="https://support.google.com/mail/answer/185833" target="_blank" rel="noopener noreferrer"
+            className="inline-block text-xs font-medium text-violet-700 hover:text-violet-900 mt-1.5">
+            How to generate a Gmail App Password →
+          </a>
+        </div>
+
+        {loadingImap ? (
+          <p className="text-xs text-slate-400">Loading…</p>
+        ) : (
+          <>
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">IMAP host</label>
+              <input value={imapForm.imap_host} onChange={(e) => setImapForm((f) => ({ ...f, imap_host: e.target.value }))}
+                placeholder="imap.gmail.com"
+                className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black" />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">IMAP port</label>
+              <input value={imapForm.imap_port} onChange={(e) => setImapForm((f) => ({ ...f, imap_port: e.target.value }))}
+                placeholder="993"
+                className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black" />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">
+                App password {imapConfig?.password_set && <span className="text-emerald-600 font-normal">(already on file — enter a new one to replace it)</span>}
+              </label>
+              <input
+                type="password"
+                value={imapForm.app_password}
+                onChange={(e) => setImapForm((f) => ({ ...f, app_password: e.target.value }))}
+                placeholder={imapConfig?.password_set ? "•••••••• (unchanged)" : "16-character app password"}
+                className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black"
+              />
+              <p className="text-[11px] text-slate-400 mt-1">
+                Not your regular password — generate a dedicated App Password from your Google Account
+                (Security → 2-Step Verification → App passwords) so this app never sees your real login.
+              </p>
+              {imapConfig?.password_set && (
+                <button type="button" onClick={handleClearImapPassword} disabled={savingImap}
+                  className="text-[11px] text-red-600 hover:text-red-700 font-medium mt-1 disabled:opacity-50">
+                  Remove saved password
+                </button>
+              )}
+            </div>
+
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={imapForm.check_enabled}
+                onChange={(e) => setImapForm((f) => ({ ...f, check_enabled: e.target.checked }))}
+                className="mt-0.5"
+              />
+              <span>
+                <span className="block text-sm font-medium text-slate-900">Enable automatic reply checking</span>
+                <span className="block text-xs text-slate-400 mt-0.5">
+                  Off by default. Turn on once the fields above are saved.
+                </span>
+              </span>
+            </label>
+          </>
+        )}
+
+        {imapError && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{imapError}</p>}
+        {imapSuccess && <p className="text-xs text-emerald-600 bg-emerald-50 rounded-lg px-3 py-2">Settings saved</p>}
+        <button
+          type="submit"
+          disabled={savingImap || loadingImap}
+          className="px-4 py-2 text-sm bg-black text-white rounded-lg hover:bg-slate-800 font-medium disabled:opacity-50 transition-colors"
+        >
+          {savingImap ? "Saving…" : "Save settings"}
+        </button>
+      </form>
     </div>
   );
 }
@@ -739,15 +934,161 @@ function DocuSignTab() {
   );
 }
 
+// ─── Billing tab ──────────────────────────────────────────────────────────────
+
+const BILLING_STATUS_LABELS: Record<string, string> = {
+  trialing: "Trial active",
+  active: "Active",
+  past_due: "Payment past due",
+  canceled: "Canceled",
+};
+
+function BillingTab({ showWelcome }: { showWelcome: boolean }) {
+  const [status, setStatus] = useState<BillingStatusOut | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [redirecting, setRedirecting] = useState(false);
+  const [error, setError] = useState("");
+  const [plan, setPlan] = useState<"monthly" | "yearly">("monthly");
+
+  async function load() {
+    setLoading(true); setError("");
+    try {
+      setStatus(await billingApi.status());
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to load billing status");
+    } finally { setLoading(false); }
+  }
+
+  useEffect(() => { load(); }, []);
+
+  async function handleSetUpBilling() {
+    setRedirecting(true); setError("");
+    try {
+      const { url } = await billingApi.checkoutSession(plan);
+      window.location.href = url;
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to start checkout");
+      setRedirecting(false);
+    }
+  }
+
+  async function handleManageBilling() {
+    setRedirecting(true); setError("");
+    try {
+      const { url } = await billingApi.portalSession();
+      window.location.href = url;
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to open billing portal");
+      setRedirecting(false);
+    }
+  }
+
+  const hasSubscription = !!status?.status;
+
+  return (
+    <div className="max-w-lg space-y-6">
+      {showWelcome && (
+        <div className="bg-violet-50 border border-violet-200 rounded-xl px-4 py-3">
+          <p className="text-sm font-medium text-violet-900">Welcome! One last step.</p>
+          <p className="text-xs text-violet-700 mt-0.5">
+            Property Copilot is $20/month with a 31-day free trial. Set up billing below whenever you're ready —
+            you can also skip this for now and come back later.
+          </p>
+        </div>
+      )}
+
+      <div className="bg-white rounded-xl border border-slate-200 p-6 space-y-4">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-900">Subscription</h3>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Property Copilot is $20/month, billed via Stripe, with a 31-day free trial for new accounts.
+          </p>
+        </div>
+
+        {loading ? (
+          <p className="text-xs text-slate-400">Loading…</p>
+        ) : status?.billing_exempt ? (
+          <div className="flex items-start gap-3">
+            <span className="w-2 h-2 rounded-full bg-violet-500 mt-1.5 shrink-0" />
+            <div>
+              <p className="text-sm font-medium text-slate-900">Comped account</p>
+              <p className="text-xs text-slate-400 mt-0.5">No billing required — this account has been comped by an admin.</p>
+            </div>
+          </div>
+        ) : hasSubscription ? (
+          <div className="flex items-start gap-3">
+            <span className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${status?.cancel_at_period_end ? "bg-amber-500" : status?.status === "past_due" ? "bg-amber-500" : "bg-emerald-500"}`} />
+            <div>
+              <p className="text-sm font-medium text-slate-900">{BILLING_STATUS_LABELS[status?.status ?? ""] ?? status?.status}</p>
+              {status?.trial_ends_at && (
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Trial ends {new Date(status.trial_ends_at).toLocaleDateString()}
+                </p>
+              )}
+              {status?.cancel_at_period_end && (
+                <p className="text-xs text-amber-600 mt-0.5">
+                  Cancellation scheduled — access continues until the date above, then won&apos;t renew.
+                </p>
+              )}
+              {status?.status === "past_due" && (
+                <p className="text-xs text-amber-600 mt-0.5">Your last payment failed — update your card to avoid interruption.</p>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-start gap-3">
+            <span className="w-2 h-2 rounded-full bg-slate-300 mt-1.5 shrink-0" />
+            <div>
+              <p className="text-sm font-medium text-slate-900">No billing set up yet</p>
+              <p className="text-xs text-slate-400 mt-0.5">Start your free trial — you won't be charged for 31 days.</p>
+            </div>
+          </div>
+        )}
+
+        {error && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
+
+        {!status?.billing_exempt && !hasSubscription && !loading && (
+          <div className="grid grid-cols-2 gap-2">
+            <button type="button" onClick={() => setPlan("monthly")}
+              className={`text-left rounded-lg border px-3 py-2.5 transition-colors ${plan === "monthly" ? "border-black bg-slate-50" : "border-slate-200 hover:border-slate-300"}`}>
+              <p className="text-sm font-medium text-slate-900">Monthly</p>
+              <p className="text-xs text-slate-400">$20/month CAD</p>
+            </button>
+            <button type="button" onClick={() => setPlan("yearly")}
+              className={`text-left rounded-lg border px-3 py-2.5 transition-colors ${plan === "yearly" ? "border-black bg-slate-50" : "border-slate-200 hover:border-slate-300"}`}>
+              <p className="text-sm font-medium text-slate-900">Yearly <span className="text-emerald-600 font-normal">save $40</span></p>
+              <p className="text-xs text-slate-400">$200/year CAD</p>
+            </button>
+          </div>
+        )}
+
+        {!status?.billing_exempt && (
+          hasSubscription ? (
+            <button type="button" onClick={handleManageBilling} disabled={redirecting}
+              className="px-4 py-2 text-sm bg-black text-white rounded-lg hover:bg-slate-800 font-medium disabled:opacity-50 transition-colors">
+              {redirecting ? "Redirecting…" : "Manage billing"}
+            </button>
+          ) : (
+            <button type="button" onClick={handleSetUpBilling} disabled={redirecting || loading}
+              className="px-4 py-2 text-sm bg-black text-white rounded-lg hover:bg-slate-800 font-medium disabled:opacity-50 transition-colors">
+              {redirecting ? "Redirecting…" : `Set up billing — ${plan === "yearly" ? "$200/yr" : "$20/mo"}`}
+            </button>
+          )
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
   const searchParams = useSearchParams();
-  const [tab, setTab] = useState<"profile" | "roles" | "marketing" | "screening" | "docusign">("profile");
+  const [tab, setTab] = useState<"profile" | "roles" | "marketing" | "screening" | "docusign" | "billing">("profile");
 
   useEffect(() => {
     const t = searchParams.get("tab");
-    if (t === "roles" || t === "marketing" || t === "profile" || t === "screening" || t === "docusign") setTab(t);
+    if (t === "roles" || t === "marketing" || t === "profile" || t === "screening" || t === "docusign" || t === "billing") setTab(t);
   }, [searchParams]);
 
   return (
@@ -760,7 +1101,7 @@ export default function SettingsPage() {
 
       {/* Tabs */}
       <div className="flex gap-1 border-b border-slate-200">
-        {(["profile", "roles", "marketing", "screening", "docusign"] as const).map((t) => (
+        {(["profile", "roles", "marketing", "screening", "docusign", "billing"] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -768,7 +1109,7 @@ export default function SettingsPage() {
               tab === t ? "border-black text-slate-900" : "border-transparent text-slate-500 hover:text-slate-700"
             }`}
           >
-            {t === "profile" ? "My profile" : t === "roles" ? "Role guide" : t === "marketing" ? "Marketing" : t === "screening" ? "Screening" : "DocuSign"}
+            {t === "profile" ? "My profile" : t === "roles" ? "Role guide" : t === "marketing" ? "Marketing" : t === "screening" ? "Screening" : t === "docusign" ? "DocuSign" : "Billing"}
           </button>
         ))}
       </div>
@@ -784,6 +1125,9 @@ export default function SettingsPage() {
 
       {/* DocuSign tab */}
       {tab === "docusign" && <DocuSignTab />}
+
+      {/* Billing tab */}
+      {tab === "billing" && <BillingTab showWelcome={searchParams.get("welcome") === "1"} />}
 
       {/* Role guide tab */}
       {tab === "roles" && (

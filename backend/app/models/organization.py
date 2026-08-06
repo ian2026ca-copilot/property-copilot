@@ -1,6 +1,7 @@
 import uuid
+from datetime import datetime
 
-from sqlalchemy import String, Text, Boolean
+from sqlalchemy import String, Text, Boolean, Integer, DateTime
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -24,6 +25,18 @@ class Organization(Base, TimestampMixin):
     docusign_user_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     docusign_private_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     docusign_use_own_account: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    reference_reply_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    reference_email_imap_host: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    reference_email_imap_port: Mapped[int | None] = mapped_column(Integer, nullable=True, default=993)
+    reference_email_app_password: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reference_email_check_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    stripe_customer_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    stripe_subscription_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    subscription_status: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    trial_ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancel_at_period_end: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    billing_exempt: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    is_suspended: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
 
     members: Mapped[list["OrganizationMember"]] = relationship(back_populates="organization")
     properties: Mapped[list["Property"]] = relationship(back_populates="organization")  # noqa: F821

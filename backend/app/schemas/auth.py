@@ -71,6 +71,8 @@ class UserOut(BaseModel):
     role: str
     screening_criminal_record_enabled: bool = False
     screening_rental_history_enabled: bool = False
+    reference_reply_email: str | None = None
+    impersonated: bool = False
 
     class Config:
         from_attributes = True
@@ -107,3 +109,4 @@ class OrganizationUpdate(BaseModel):
     slug: str | None = None
     screening_criminal_record_enabled: bool | None = None
     screening_rental_history_enabled: bool | None = None
+    reference_reply_email: str | None = None

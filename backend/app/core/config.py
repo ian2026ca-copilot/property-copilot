@@ -13,6 +13,10 @@ class Settings(BaseSettings):
     DOCUSIGN_PRIVATE_KEY: str = ""
     DOCUSIGN_BASE_PATH: str = "https://demo.docusign.net/restapi"
     DOCUSIGN_AUTH_SERVER: str = "account-d.docusign.com"
+    STRIPE_SECRET_KEY: str = ""
+    STRIPE_WEBHOOK_SECRET: str = ""
+    STRIPE_PRICE_ID: str = ""
+    STRIPE_PRICE_ID_YEARLY: str = ""
 
     class Config:
         env_file = ".env"

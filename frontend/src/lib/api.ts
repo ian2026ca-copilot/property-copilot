@@ -182,6 +182,13 @@ export interface DocuSignConfigOut {
   using_platform_default: boolean;
 }
 
+export interface ReferenceEmailConfigOut {
+  imap_host: string | null;
+  imap_port: number | null;
+  password_set: boolean;
+  check_enabled: boolean;
+}
+
 export interface PaymentNoteOut {
   id: string;
   note: string;
@@ -570,6 +577,13 @@ export const tenantsApi = {
     api.post<TenantScreeningNoteOut>(`/tenants/person/${id}/address/${addressId}/contact-reference`, { channel, ...letter }),
   generateLandlordReferenceLetter: (id: string, addressId: string) =>
     api.post<EmployerReferenceLetterOut>(`/tenants/person/${id}/address/${addressId}/reference-letter`, {}),
+  getReferenceEmailConfig: () => api.get<ReferenceEmailConfigOut>("/tenants/reference-email/config"),
+  updateReferenceEmailConfig: (body: {
+    imap_host?: string;
+    imap_port?: number;
+    app_password?: string;
+    check_enabled?: boolean;
+  }) => api.patch<ReferenceEmailConfigOut>("/tenants/reference-email/config", body),
   aiExtract: (file: File) => upload<Record<string, string | null>>("/tenants/ai-extract", file),
   createPerson: (body: object) => api.post<TenantOut>("/tenants/person", body),
   updatePerson: (id: string, body: object) => api.put<TenantOut>(`/tenants/person/${id}`, body),
@@ -747,14 +761,30 @@ export interface UserOut {
   role: string;
   screening_criminal_record_enabled: boolean;
   screening_rental_history_enabled: boolean;
+  reference_reply_email: string | null;
+  impersonated: boolean;
 }
 
 export const profileApi = {
   me: () => api.get<UserOut>("/auth/me"),
   update: (body: { full_name?: string; phone?: string }) =>
     api.patch<UserOut>("/auth/me", body),
-  updateOrg: (body: { name?: string; slug?: string; screening_criminal_record_enabled?: boolean; screening_rental_history_enabled?: boolean }) =>
+  updateOrg: (body: { name?: string; slug?: string; screening_criminal_record_enabled?: boolean; screening_rental_history_enabled?: boolean; reference_reply_email?: string }) =>
     api.patch<UserOut>("/auth/org", body),
+};
+
+export interface BillingStatusOut {
+  status: string | null;
+  trial_ends_at: string | null;
+  billing_exempt: boolean;
+  cancel_at_period_end: boolean;
+}
+
+export const billingApi = {
+  status: () => api.get<BillingStatusOut>("/billing/status"),
+  checkoutSession: (plan: "monthly" | "yearly" = "monthly") =>
+    api.post<{ url: string }>("/billing/checkout-session", { plan }),
+  portalSession: () => api.post<{ url: string }>("/billing/portal-session", {}),
 };
 
 export interface VacantUnitOut {

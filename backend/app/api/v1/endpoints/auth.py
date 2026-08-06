@@ -3,11 +3,12 @@ import os
 import secrets
 from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
 from app.core.database import get_db
-from app.core.security import hash_password, verify_password, create_access_token
+from app.core.security import hash_password, verify_password, create_access_token, decode_token
 from app.core.email import send_reset_email, send_welcome_email
 from app.models.organization import Organization
 from app.models.user import User, OrganizationMember, UserRole
@@ -24,7 +25,7 @@ from app.schemas.auth import (
     RegisterRequest, LoginRequest, TokenResponse, UserOut, UserUpdate,
     ForgotPasswordRequest, ResetPasswordRequest, OrganizationPublicOut, OrganizationUpdate, VacantUnitOut,
 )
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, bearer
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -273,11 +274,16 @@ async def reset_password(body: ResetPasswordRequest, db: AsyncSession = Depends(
 @router.get("/me", response_model=UserOut)
 async def me(
     current=Depends(get_current_user),
+    credentials: HTTPAuthorizationCredentials = Depends(bearer),
     db: AsyncSession = Depends(get_db),
 ):
     user, member = current
     org_result = await db.execute(select(Organization).where(Organization.id == member.organization_id))
     org = org_result.scalar_one()
+    # Re-decoded here (rather than threading through get_current_user, which dozens of
+    # other endpoints destructure as `user, member = current`) just to surface whether
+    # this session was minted by admin impersonation, for the frontend banner.
+    impersonated = bool(decode_token(credentials.credentials).get("impersonated_by"))
     return UserOut(
         id=str(user.id),
         email=user.email,
@@ -289,6 +295,8 @@ async def me(
         role=member.role,
         screening_criminal_record_enabled=org.screening_criminal_record_enabled,
         screening_rental_history_enabled=org.screening_rental_history_enabled,
+        reference_reply_email=org.reference_reply_email,
+        impersonated=impersonated,
     )
 
 
@@ -318,6 +326,7 @@ async def update_me(
         role=member.role,
         screening_criminal_record_enabled=org.screening_criminal_record_enabled,
         screening_rental_history_enabled=org.screening_rental_history_enabled,
+        reference_reply_email=org.reference_reply_email,
     )
 
 
@@ -354,6 +363,8 @@ async def update_organization(
         org.screening_criminal_record_enabled = body.screening_criminal_record_enabled
     if body.screening_rental_history_enabled is not None:
         org.screening_rental_history_enabled = body.screening_rental_history_enabled
+    if body.reference_reply_email is not None:
+        org.reference_reply_email = body.reference_reply_email.strip() or None
 
     await db.commit()
     return UserOut(
@@ -367,4 +378,5 @@ async def update_organization(
         role=member.role,
         screening_criminal_record_enabled=org.screening_criminal_record_enabled,
         screening_rental_history_enabled=org.screening_rental_history_enabled,
+        reference_reply_email=org.reference_reply_email,
     )

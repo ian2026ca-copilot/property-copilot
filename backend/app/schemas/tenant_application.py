@@ -137,6 +137,23 @@ class TenantScreeningNoteOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class ReferenceEmailConfigIn(BaseModel):
+    """All fields optional — only the ones provided are updated. Send an empty
+    string to clear a previously-saved value."""
+    imap_host: str | None = None
+    imap_port: int | None = None
+    app_password: str | None = None
+    check_enabled: bool | None = None
+
+
+class ReferenceEmailConfigOut(BaseModel):
+    """Never echoes the app password back — only whether one is on file."""
+    imap_host: str | None = None
+    imap_port: int | None = None
+    password_set: bool = False
+    check_enabled: bool = False
+
+
 class EmployerReferenceContactIn(BaseModel):
     channel: str  # "EMAIL" | "SMS"
     subject: str | None = None  # optional AI-drafted (or edited) letter override, EMAIL only

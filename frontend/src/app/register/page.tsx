@@ -91,7 +91,7 @@ export default function RegisterPage() {
       });
       setToken(res.access_token);
       await refresh();
-      router.push(form.role === "VENDOR" ? "/vendor" : "/dashboard");
+      router.push(form.role === "VENDOR" ? "/vendor" : form.role === "OWNER" ? "/settings?tab=billing&welcome=1" : "/dashboard");
     } catch (err: any) {
       setError(err.message ?? "Registration failed");
     } finally {

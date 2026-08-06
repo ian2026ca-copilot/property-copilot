@@ -3,6 +3,7 @@ import secrets
 import uuid
 import pathlib
 from datetime import date, datetime, timezone
+from email.utils import make_msgid
 
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,6 +20,7 @@ from app.models.profiles import TenantProfile
 from app.models.lease import Lease, LeaseStatus
 from app.models.property import Unit, Property, UnitStatus
 from app.models.organization import Organization
+from app.models.reference_check import ReferenceCheckRequest
 from app.models.tenant_application import (
     TenantAddressHistory, TenantEmployment, TenantIncomeSource,
     TenantOccupant, TenantCosigner, TenantPet, TenantVehicle, TenantScreeningNote,
@@ -29,6 +31,7 @@ from app.schemas.tenant_application import (
     TenantApplicationOut, AddressHistoryIn, EmploymentIn, IncomeSourceIn,
     OccupantIn, CosignerIn, PetIn, VehicleIn, TenantScreeningUpdate,
     TenantScreeningNoteIn, TenantScreeningNoteOut, EmployerReferenceContactIn, EmployerReferenceLetterOut,
+    ReferenceEmailConfigIn, ReferenceEmailConfigOut,
     RENTAL_APP_PROFILE_FIELDS, RENTAL_APP_LIST_FIELDS,
 )
 from app.api.v1.endpoints.payments import generate_monthly_payments
@@ -727,14 +730,16 @@ async def contact_employer_reference(
     tenant_user = tenant_res.scalar_one_or_none()
     applicant_name = tenant_user.display_name if tenant_user else "the applicant"
 
+    org_res = await db.execute(select(Organization).where(Organization.id == member.organization_id))
+    org = org_res.scalar_one_or_none()
+    reply_to = (org.reference_reply_email if org else None) or user.email
+
     if channel == "EMAIL":
         if not employment.employer_reference_email:
             raise HTTPException(status_code=400, detail="No email on file for this reference")
         if body.subject and body.body:
             email_subject, email_body = body.subject, body.body
         else:
-            org_res = await db.execute(select(Organization).where(Organization.id == member.organization_id))
-            org = org_res.scalar_one_or_none()
             org_name = org.name if org else "Property Copilot"
             greeting = f"Hi {employment.employer_reference_name}," if employment.employer_reference_name else "Hi,"
             email_subject = f"Reference check for {applicant_name}"
@@ -742,7 +747,16 @@ async def contact_employer_reference(
                 f"{greeting}\n\n{applicant_name} has listed you as an employer reference on a rental application "
                 f"with {org_name}. When you have a moment, please reply to this email to confirm their employment details."
             )
-        send_reference_letter_email(employment.employer_reference_email, email_subject, email_body)
+        message_id = make_msgid()
+        send_reference_letter_email(employment.employer_reference_email, email_subject, email_body, reply_to=reply_to, message_id=message_id)
+        db.add(ReferenceCheckRequest(
+            organization_id=member.organization_id,
+            tenant_user_id=tenant_user_id,
+            reference_type="EMPLOYER",
+            contact_name=employment.employer_reference_name,
+            contact_email=employment.employer_reference_email,
+            sent_message_id=message_id,
+        ))
         recipient = employment.employer_reference_email
         sent_content = f"Subject: {email_subject}\n\n{email_body}"
     elif channel == "SMS":
@@ -904,14 +918,16 @@ async def contact_landlord_reference(
     tenant_user = tenant_res.scalar_one_or_none()
     applicant_name = tenant_user.display_name if tenant_user else "the applicant"
 
+    org_res = await db.execute(select(Organization).where(Organization.id == member.organization_id))
+    org = org_res.scalar_one_or_none()
+    reply_to = (org.reference_reply_email if org else None) or user.email
+
     if channel == "EMAIL":
         if not address.landlord_email:
             raise HTTPException(status_code=400, detail="No email on file for this reference")
         if body.subject and body.body:
             email_subject, email_body = body.subject, body.body
         else:
-            org_res = await db.execute(select(Organization).where(Organization.id == member.organization_id))
-            org = org_res.scalar_one_or_none()
             org_name = org.name if org else "Property Copilot"
             greeting = f"Hi {address.landlord_name}," if address.landlord_name else "Hi,"
             email_subject = f"Reference check for {applicant_name}"
@@ -919,7 +935,16 @@ async def contact_landlord_reference(
                 f"{greeting}\n\n{applicant_name} has listed you as a landlord reference on a rental application "
                 f"with {org_name}. When you have a moment, please reply to this email to confirm their tenancy details."
             )
-        send_reference_letter_email(address.landlord_email, email_subject, email_body)
+        message_id = make_msgid()
+        send_reference_letter_email(address.landlord_email, email_subject, email_body, reply_to=reply_to, message_id=message_id)
+        db.add(ReferenceCheckRequest(
+            organization_id=member.organization_id,
+            tenant_user_id=tenant_user_id,
+            reference_type="LANDLORD",
+            contact_name=address.landlord_name,
+            contact_email=address.landlord_email,
+            sent_message_id=message_id,
+        ))
         recipient = address.landlord_email
         sent_content = f"Subject: {email_subject}\n\n{email_body}"
     elif channel == "SMS":
@@ -1131,6 +1156,62 @@ async def ai_screen_tenant(
             verdict = f"AI summary unavailable: {str(e)[:200]}"
 
     return {"score": score, "verdict": verdict}
+
+
+@router.get("/reference-email/config", response_model=ReferenceEmailConfigOut)
+async def get_reference_email_config(
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Current org's IMAP settings for automatically checking the reference-reply
+    inbox for replies. The app password is never echoed back — only whether one
+    is on file."""
+    _, member = current
+    org_res = await db.execute(select(Organization).where(Organization.id == member.organization_id))
+    org = org_res.scalar_one_or_none()
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    return ReferenceEmailConfigOut(
+        imap_host=org.reference_email_imap_host,
+        imap_port=org.reference_email_imap_port,
+        password_set=bool(org.reference_email_app_password),
+        check_enabled=org.reference_email_check_enabled,
+    )
+
+
+@router.patch("/reference-email/config", response_model=ReferenceEmailConfigOut)
+async def update_reference_email_config(
+    body: ReferenceEmailConfigIn,
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Save this org's IMAP host/port/app password and/or the check_enabled toggle.
+    Only fields present in the request are changed; send an empty string to clear
+    a credential field."""
+    _, member = current
+    org_res = await db.execute(select(Organization).where(Organization.id == member.organization_id))
+    org = org_res.scalar_one_or_none()
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+
+    data = body.model_dump(exclude_unset=True)
+    if "imap_host" in data:
+        org.reference_email_imap_host = data["imap_host"] or None
+    if "imap_port" in data:
+        org.reference_email_imap_port = data["imap_port"] or 993
+    if "app_password" in data:
+        org.reference_email_app_password = data["app_password"] or None
+    if "check_enabled" in data:
+        org.reference_email_check_enabled = bool(data["check_enabled"])
+
+    await db.commit()
+    await db.refresh(org)
+    return ReferenceEmailConfigOut(
+        imap_host=org.reference_email_imap_host,
+        imap_port=org.reference_email_imap_port,
+        password_set=bool(org.reference_email_app_password),
+        check_enabled=org.reference_email_check_enabled,
+    )
 
 
 @router.put("/person/{tenant_user_id}", response_model=TenantOut)
