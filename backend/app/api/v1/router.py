@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.v1.endpoints import auth, properties, tenants, payments, maintenance, team, images, leases, vendors, units, campaigns, billing, admin
+from app.api.v1.endpoints import auth, properties, tenants, payments, maintenance, team, images, leases, vendors, units, campaigns, billing, admin, copilot
 
 router = APIRouter(prefix="/api/v1")
 router.include_router(auth.router)
@@ -15,3 +15,4 @@ router.include_router(units.router)
 router.include_router(campaigns.router)
 router.include_router(billing.router)
 router.include_router(admin.router)
+router.include_router(copilot.router)

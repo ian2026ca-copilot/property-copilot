@@ -326,14 +326,8 @@ async def terminate_tenant(
 
 # ── Person-only CRUD (new decoupled flow) ─────────────────────────────────────
 
-@router.post("/person", response_model=TenantOut, status_code=status.HTTP_201_CREATED)
-async def create_person(
-    body: TenantCreate,
-    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
-    db: AsyncSession = Depends(get_db),
-):
-    """Create a tenant person record without a lease."""
-    _, member = current
+async def _create_tenant_person(org_id, body: TenantCreate, db: AsyncSession) -> User:
+    """Shared by POST /tenants/person and the AI copilot's execute step."""
     result = await db.execute(select(User).where(User.email == body.email))
     tenant_user = result.scalar_one_or_none()
     address_fields = ("street_address", "city", "province", "postal_code", "country")
@@ -401,13 +395,13 @@ async def create_person(
 
     mem_result = await db.execute(
         select(OrganizationMember).where(
-            OrganizationMember.organization_id == member.organization_id,
+            OrganizationMember.organization_id == org_id,
             OrganizationMember.user_id == tenant_user.id,
         )
     )
     if not mem_result.scalar_one_or_none():
         db.add(OrganizationMember(
-            organization_id=member.organization_id,
+            organization_id=org_id,
             user_id=tenant_user.id,
             role=UserRole.TENANT,
         ))
@@ -417,7 +411,18 @@ async def create_person(
         select(User).where(User.id == tenant_user.id)
         .options(selectinload(User.tenant_documents), selectinload(User.tenant_profile))
     )
-    u = result.scalar_one()
+    return result.scalar_one()
+
+
+@router.post("/person", response_model=TenantOut, status_code=status.HTTP_201_CREATED)
+async def create_person(
+    body: TenantCreate,
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a tenant person record without a lease."""
+    _, member = current
+    u = await _create_tenant_person(member.organization_id, body, db)
     return _tenant_to_out(u, u.tenant_documents)
 
 

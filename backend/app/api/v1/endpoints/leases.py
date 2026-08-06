@@ -192,14 +192,8 @@ async def list_leases(
 
 # â”€â”€ Create â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-@router.post("", response_model=LeaseOut, status_code=status.HTTP_201_CREATED)
-async def create_lease(
-    body: LeaseCreate,
-    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
-    db: AsyncSession = Depends(get_db),
-):
-    _, member = current
-
+async def _create_lease_record(org_id, body: LeaseCreate, db: AsyncSession) -> Lease:
+    """Shared by POST /leases and the AI copilot's execute step."""
     # Verify tenant exists
     tenant_result = await db.execute(select(User).where(User.id == body.tenant_user_id, User.is_active == True))
     if not tenant_result.scalar_one_or_none():
@@ -209,7 +203,7 @@ async def create_lease(
     unit_result = await db.execute(
         select(Unit).join(Property).where(
             Unit.id == body.unit_id,
-            Property.organization_id == member.organization_id,
+            Property.organization_id == org_id,
             Property.is_active == True,
         )
     )
@@ -218,7 +212,7 @@ async def create_lease(
         raise HTTPException(status_code=404, detail="Unit not found")
 
     lease = Lease(
-        organization_id=member.organization_id,
+        organization_id=org_id,
         unit_id=body.unit_id,
         tenant_user_id=body.tenant_user_id,
         start_date=body.start_date,
@@ -238,7 +232,7 @@ async def create_lease(
         unit.status = UnitStatus.OCCUPIED
 
     # Generate monthly rent payments
-    monthly_payments = generate_monthly_payments(lease, member.organization_id)
+    monthly_payments = generate_monthly_payments(lease, org_id)
     for p in monthly_payments:
         db.add(p)
 
@@ -256,7 +250,18 @@ async def create_lease(
             )
 
     await db.commit()
-    return _lease_to_out(await _get_lease(str(lease.id), member.organization_id, db))
+    return await _get_lease(str(lease.id), org_id, db)
+
+
+@router.post("", response_model=LeaseOut, status_code=status.HTTP_201_CREATED)
+async def create_lease(
+    body: LeaseCreate,
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
+    db: AsyncSession = Depends(get_db),
+):
+    _, member = current
+    lease = await _create_lease_record(member.organization_id, body, db)
+    return _lease_to_out(lease)
 
 
 # â”€â”€ Read one â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

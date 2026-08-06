@@ -47,6 +47,23 @@ def _to_out(p: Property) -> PropertyOut:
     )
 
 
+async def _create_property_and_unit(
+    org_id, property_data: PropertyCreate, unit_data: UnitCreate, db: AsyncSession
+) -> tuple[Property, Unit]:
+    """Shared by the AI copilot's execute step — mirrors create_property + create_unit
+    below exactly, just combined into one call since the copilot always creates a
+    property with its first unit together."""
+    prop = Property(**property_data.model_dump(), organization_id=org_id)
+    db.add(prop)
+    await db.flush()
+    unit = Unit(**unit_data.model_dump(), property_id=prop.id)
+    db.add(unit)
+    await db.commit()
+    await db.refresh(prop)
+    await db.refresh(unit)
+    return prop, unit
+
+
 @router.get("", response_model=list[PropertyOut])
 async def list_properties(
     current: tuple[User, OrganizationMember] = Depends(get_current_user),

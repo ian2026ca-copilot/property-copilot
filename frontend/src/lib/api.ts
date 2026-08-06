@@ -912,3 +912,32 @@ export const campaignsApi = {
     api.put<MarketingSiteOut>(`/campaigns/marketing-sites/${id}`, body),
   removeMarketingSite: (id: string) => api.delete<void>(`/campaigns/marketing-sites/${id}`),
 };
+
+export interface CopilotMessage {
+  role: "user" | "assistant";
+  text: string;
+}
+
+export interface CopilotPendingAction {
+  action: "create_property" | "create_tenant" | "create_lease";
+  summary: string;
+  payload: Record<string, unknown>;
+}
+
+export interface CopilotChatOut {
+  reply: string;
+  pending_action: CopilotPendingAction | null;
+  created_context: Record<string, unknown>;
+}
+
+export interface CopilotExecuteOut {
+  summary: string;
+  created_context: Record<string, unknown>;
+}
+
+export const copilotApi = {
+  chat: (messages: CopilotMessage[], created_context: Record<string, unknown>) =>
+    api.post<CopilotChatOut>("/copilot/chat", { messages, created_context }),
+  execute: (action: string, payload: Record<string, unknown>, created_context: Record<string, unknown>) =>
+    api.post<CopilotExecuteOut>("/copilot/execute", { action, payload, created_context }),
+};

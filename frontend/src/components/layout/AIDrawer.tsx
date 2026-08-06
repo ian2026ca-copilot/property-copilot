@@ -1,45 +1,69 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-
-interface Message {
-  role: "user" | "assistant";
-  text: string;
-}
-
-const MOCK_RESPONSES = [
-  "Based on current occupancy (93%), your portfolio is performing above the 85% market benchmark. Consider raising rents by 3–5% on renewal for units in the Downtown market.",
-  "Unit 102 HVAC replacement is overdue. Scheduling now could prevent a $4,200 emergency repair. I recommend dispatching a vendor this week.",
-  "2 leases expire within 90 days. Starting renewal conversations 60 days out increases renewal rate by 18% on average.",
-  "Your highest-risk tenant is in Unit 305 — 2 late payments in the last 6 months. Consider a proactive check-in before their lease renewal.",
-];
-
-let mockIdx = 0;
+import { copilotApi, CopilotMessage, CopilotPendingAction } from "@/lib/api";
 
 export default function AIDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const [messages, setMessages] = useState<Message[]>([
-    { role: "assistant", text: "Hi! I'm your Property Copilot. Ask me about vacancy, rent trends, maintenance, or tenant risk." },
+  const [messages, setMessages] = useState<CopilotMessage[]>([
+    { role: "assistant", text: "Hi! I'm your Property Copilot. I can help you create a property, a tenant, or a lease — just tell me what you'd like to start with." },
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [pendingAction, setPendingAction] = useState<CopilotPendingAction | null>(null);
+  const [createdContext, setCreatedContext] = useState<Record<string, unknown>>({});
+  const [confirming, setConfirming] = useState(false);
+  const [error, setError] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [messages, pendingAction]);
 
-  function send(e: React.FormEvent) {
+  async function send(e: React.FormEvent) {
     e.preventDefault();
-    if (!input.trim() || loading) return;
-    const userMsg = input.trim();
+    if (!input.trim() || loading || pendingAction) return;
+    const userMsg: CopilotMessage = { role: "user", text: input.trim() };
+    const nextMessages = [...messages, userMsg];
+    setMessages(nextMessages);
     setInput("");
-    setMessages((m) => [...m, { role: "user", text: userMsg }]);
     setLoading(true);
-    setTimeout(() => {
-      setMessages((m) => [...m, { role: "assistant", text: MOCK_RESPONSES[mockIdx % MOCK_RESPONSES.length] }]);
-      mockIdx++;
+    setError("");
+    try {
+      const res = await copilotApi.chat(nextMessages, createdContext);
+      if (res.reply) setMessages((m) => [...m, { role: "assistant", text: res.reply }]);
+      setPendingAction(res.pending_action);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Something went wrong");
+    } finally {
       setLoading(false);
-    }, 900);
+    }
+  }
+
+  async function handleConfirm() {
+    if (!pendingAction) return;
+    setConfirming(true); setError("");
+    try {
+      const res = await copilotApi.execute(pendingAction.action, pendingAction.payload, createdContext);
+      const confirmMsg: CopilotMessage = { role: "assistant", text: `✅ ${res.summary}` };
+      const nextMessages = [...messages, confirmMsg];
+      setMessages(nextMessages);
+      setCreatedContext(res.created_context);
+      setPendingAction(null);
+      setLoading(true);
+      const followUp = await copilotApi.chat(nextMessages, res.created_context);
+      if (followUp.reply) setMessages((m) => [...m, { role: "assistant", text: followUp.reply }]);
+      setPendingAction(followUp.pending_action);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to create");
+    } finally {
+      setConfirming(false);
+      setLoading(false);
+    }
+  }
+
+  function handleCancel() {
+    setPendingAction(null);
+    setMessages((m) => [...m, { role: "assistant", text: "No problem — let me know if you'd like to change anything." }]);
   }
 
   return (
@@ -65,7 +89,7 @@ export default function AIDrawer({ open, onClose }: { open: boolean; onClose: ()
           {messages.map((m, i) => (
             <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
               <div
-                className={`max-w-[85%] rounded-xl px-3 py-2 text-sm leading-relaxed ${
+                className={`max-w-[85%] rounded-xl px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap ${
                   m.role === "user"
                     ? "bg-black text-white rounded-br-sm"
                     : "bg-slate-100 text-slate-800 rounded-bl-sm"
@@ -75,6 +99,31 @@ export default function AIDrawer({ open, onClose }: { open: boolean; onClose: ()
               </div>
             </div>
           ))}
+
+          {pendingAction && (
+            <div className="bg-violet-50 border border-violet-200 rounded-xl p-3 space-y-2">
+              <p className="text-xs font-medium text-violet-900">{pendingAction.summary}</p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={handleConfirm}
+                  disabled={confirming}
+                  className="px-3 py-1.5 text-xs font-medium bg-black text-white rounded-lg hover:bg-slate-800 disabled:opacity-50 transition-colors"
+                >
+                  {confirming ? "Creating…" : "Confirm"}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCancel}
+                  disabled={confirming}
+                  className="px-3 py-1.5 text-xs font-medium text-slate-500 hover:text-slate-700 disabled:opacity-50 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
           {loading && (
             <div className="flex justify-start">
               <div className="bg-slate-100 rounded-xl rounded-bl-sm px-3 py-2 text-sm text-slate-400">
@@ -82,6 +131,9 @@ export default function AIDrawer({ open, onClose }: { open: boolean; onClose: ()
               </div>
             </div>
           )}
+
+          {error && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
+
           <div ref={bottomRef} />
         </div>
 
@@ -89,12 +141,13 @@ export default function AIDrawer({ open, onClose }: { open: boolean; onClose: ()
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask about rent, vacancy, risk…"
-            className="flex-1 text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black"
+            placeholder={pendingAction ? "Confirm or cancel above first…" : "Ask about rent, vacancy, risk…"}
+            disabled={!!pendingAction || loading}
+            className="flex-1 text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black disabled:bg-slate-50"
           />
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || !!pendingAction}
             className="px-3 py-2 bg-black text-white text-sm rounded-lg hover:bg-slate-800 disabled:opacity-50 transition-colors"
           >
             Send
