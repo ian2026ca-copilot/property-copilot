@@ -10,6 +10,7 @@ from app.core.config import settings
 from app.core.security import verify_password, hash_password, create_access_token
 from app.api.deps import get_current_admin
 from app.core.billing_sync import sync_org_subscription
+from app.core.ai_keys import get_platform_settings, apply_to_env
 from app.models.user import User, OrganizationMember, UserRole
 from app.models.organization import Organization
 from app.models.property import Property, Unit
@@ -17,7 +18,7 @@ from app.models.payment import Payment, PaymentStatus
 from app.schemas.auth import LoginRequest, TokenResponse
 from app.schemas.admin import (
     AdminUserOut, OwnerRowOut, CreateAdminIn, OwnerDetailOut, OwnerPropertyOut, OwnerTeamMemberOut,
-    OwnerPaymentOut, ImpersonateOut,
+    OwnerPaymentOut, ImpersonateOut, AISettingsOut, AISettingsIn,
 )
 
 stripe.api_key = settings.STRIPE_SECRET_KEY
@@ -293,6 +294,48 @@ async def uncomp_owner(org_id: str, admin: User = Depends(get_current_admin), db
     org = await _get_org_or_404(org_id, db)
     org.billing_exempt = False
     await db.commit()
+
+
+@router.get("/ai-settings", response_model=AISettingsOut)
+async def get_ai_settings(admin: User = Depends(get_current_admin), db: AsyncSession = Depends(get_db)):
+    row = await get_platform_settings(db)
+    return AISettingsOut(
+        openai_key_set=bool(row.openai_api_key),
+        deepseek_key_set=bool(row.deepseek_api_key),
+        gemini_key_set=bool(row.gemini_api_key),
+        grok_key_set=bool(row.grok_api_key),
+    )
+
+
+@router.patch("/ai-settings", response_model=AISettingsOut)
+async def update_ai_settings(
+    body: AISettingsIn, admin: User = Depends(get_current_admin), db: AsyncSession = Depends(get_db)
+):
+    """Only fields present in the request are changed; send an empty string
+    to clear a key. Saved keys are mirrored into the process env immediately
+    so every AI call site picks them up without a restart."""
+    row = await get_platform_settings(db)
+
+    data = body.model_dump(exclude_unset=True)
+    if "openai_api_key" in data:
+        row.openai_api_key = data["openai_api_key"] or None
+    if "deepseek_api_key" in data:
+        row.deepseek_api_key = data["deepseek_api_key"] or None
+    if "gemini_api_key" in data:
+        row.gemini_api_key = data["gemini_api_key"] or None
+    if "grok_api_key" in data:
+        row.grok_api_key = data["grok_api_key"] or None
+
+    await db.commit()
+    await db.refresh(row)
+    apply_to_env(row)
+
+    return AISettingsOut(
+        openai_key_set=bool(row.openai_api_key),
+        deepseek_key_set=bool(row.deepseek_api_key),
+        gemini_key_set=bool(row.gemini_api_key),
+        grok_key_set=bool(row.grok_api_key),
+    )
 
 
 @router.post("/owners/{org_id}/refund")

@@ -27,6 +27,8 @@ const adminRequest = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: "POST", body: body !== undefined ? JSON.stringify(body) : undefined }),
+  patch: <T>(path: string, body?: unknown) =>
+    request<T>(path, { method: "PATCH", body: body !== undefined ? JSON.stringify(body) : undefined }),
 };
 
 export interface OwnerRowOut {
@@ -96,6 +98,20 @@ export interface OwnerDetailOut {
   recent_payments: OwnerPaymentOut[];
 }
 
+export interface AISettingsOut {
+  openai_key_set: boolean;
+  deepseek_key_set: boolean;
+  gemini_key_set: boolean;
+  grok_key_set: boolean;
+}
+
+export interface AISettingsIn {
+  openai_api_key?: string;
+  deepseek_api_key?: string;
+  gemini_api_key?: string;
+  grok_api_key?: string;
+}
+
 export const adminAuthApi = {
   login: (email: string, password: string) =>
     adminRequest.post<{ access_token: string; token_type: string }>("/admin/login", { email, password }),
@@ -115,4 +131,6 @@ export const adminApi = {
     adminRequest.post<AdminUser>("/admin/admins", { email, full_name, password }),
   impersonate: (orgId: string) =>
     adminRequest.post<{ access_token: string; token_type: string; owner_name: string | null }>(`/admin/owners/${orgId}/impersonate`),
+  getAiSettings: () => adminRequest.get<AISettingsOut>("/admin/ai-settings"),
+  updateAiSettings: (body: AISettingsIn) => adminRequest.patch<AISettingsOut>("/admin/ai-settings", body),
 };

@@ -84,3 +84,17 @@ class ImpersonateOut(BaseModel):
     access_token: str
     token_type: str = "bearer"
     owner_name: str | None = None
+
+
+class AISettingsOut(BaseModel):
+    openai_key_set: bool
+    deepseek_key_set: bool
+    gemini_key_set: bool
+    grok_key_set: bool
+
+
+class AISettingsIn(BaseModel):
+    openai_api_key: str | None = None
+    deepseek_api_key: str | None = None
+    gemini_api_key: str | None = None
+    grok_api_key: str | None = None

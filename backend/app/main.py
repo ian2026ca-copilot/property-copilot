@@ -11,6 +11,7 @@ from app.api.v1.router import router
 from app.core.database import AsyncSessionLocal
 from app.core.reference_email_checker import poll_all_orgs
 from app.core.billing_sync import sync_all_subscriptions
+from app.core.ai_keys import load_platform_settings_into_env
 
 UPLOAD_DIR = pathlib.Path("/app/uploads")
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
@@ -41,6 +42,7 @@ async def _billing_sync_loop() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    await load_platform_settings_into_env(AsyncSessionLocal)
     tasks = [
         asyncio.create_task(_reference_email_poll_loop()),
         asyncio.create_task(_billing_sync_loop()),
