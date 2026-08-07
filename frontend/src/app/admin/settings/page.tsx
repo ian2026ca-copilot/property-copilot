@@ -110,7 +110,7 @@ function AIProvidersCard() {
           </div>
 
           <form onSubmit={handleSave} className="space-y-4 pt-1 border-t border-slate-100">
-          {AI_PROVIDERS.map(({ key, setField, label, placeholder }) => {
+          {AI_PROVIDERS.filter(({ provider }) => provider === (settings?.active_provider ?? "gemini")).map(({ key, setField, label, placeholder }) => {
             const isSet = settings?.[setField];
             return (
               <div key={key}>
