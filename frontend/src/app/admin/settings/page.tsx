@@ -86,18 +86,24 @@ function AIProvidersCard() {
       ) : (
         <>
           <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">Active provider</label>
-            <select
-              value={settings?.active_provider ?? "gemini"}
-              onChange={(e) => handleProviderChange(e.target.value as AIProvider)}
-              disabled={switchingProvider}
-              className="text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black disabled:opacity-50"
-            >
+            <label className="block text-xs font-medium text-slate-500 mb-2">Active provider</label>
+            <div className="flex flex-wrap gap-4">
               {AI_PROVIDERS.map(({ provider, label }) => (
-                <option key={provider} value={provider}>{label}</option>
+                <label key={provider} className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="active_provider"
+                    value={provider}
+                    checked={(settings?.active_provider ?? "gemini") === provider}
+                    onChange={() => handleProviderChange(provider)}
+                    disabled={switchingProvider}
+                    className="accent-black disabled:opacity-50"
+                  />
+                  {label}
+                </label>
               ))}
-            </select>
-            <p className="text-[11px] text-slate-400 mt-1">
+            </div>
+            <p className="text-[11px] text-slate-400 mt-2">
               Every AI call in the app uses whichever provider is selected here. Make sure that
               provider's key is saved below before switching.
             </p>
