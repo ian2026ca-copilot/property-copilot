@@ -233,16 +233,42 @@ function AdminsCard() {
   );
 }
 
+const SETTINGS_TABS = [
+  { key: "api-provider", label: "API Provider" },
+  { key: "new-admin", label: "New Admin" },
+] as const;
+
+type SettingsTab = (typeof SETTINGS_TABS)[number]["key"];
+
 export default function AdminSettingsPage() {
+  const [tab, setTab] = useState<SettingsTab>("api-provider");
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-lg font-semibold text-slate-900">Settings</h1>
-        <p className="text-sm text-slate-500 mt-0.5">Manage who has platform admin access.</p>
+        <p className="text-sm text-slate-500 mt-0.5">Manage AI providers and platform admin access.</p>
       </div>
 
-      <AIProvidersCard />
-      <AdminsCard />
+      <div className="flex items-center gap-1 border-b border-slate-200">
+        {SETTINGS_TABS.map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            onClick={() => setTab(t.key)}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+              tab === t.key
+                ? "border-black text-slate-900"
+                : "border-transparent text-slate-400 hover:text-slate-700"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "api-provider" && <AIProvidersCard />}
+      {tab === "new-admin" && <AdminsCard />}
     </div>
   );
 }
