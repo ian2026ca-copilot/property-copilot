@@ -20,3 +20,12 @@ class PlatformSettings(Base, TimestampMixin):
     gemini_api_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     grok_api_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     active_ai_provider: Mapped[str] = mapped_column(String(20), nullable=False, default="gemini", server_default="gemini")
+
+    openai_base_url: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    openai_model: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    deepseek_base_url: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    deepseek_model: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    gemini_base_url: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    gemini_model: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    grok_base_url: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    grok_model: Mapped[str | None] = mapped_column(String(100), nullable=True)

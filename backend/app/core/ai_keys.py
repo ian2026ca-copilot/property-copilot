@@ -12,6 +12,20 @@ PROVIDER_ENV_VARS = {
     "grok_api_key": "GROK_API_KEY",
 }
 
+# base_url/model overrides — unlike the keys, these have no .env-provided
+# default to fall back to; an unset DB value just mirrors as "", and
+# ai_client.py's own hardcoded defaults take over from there.
+PROVIDER_OVERRIDE_ENV_VARS = {
+    "openai_base_url": "OPENAI_BASE_URL",
+    "openai_model": "OPENAI_MODEL",
+    "deepseek_base_url": "DEEPSEEK_BASE_URL",
+    "deepseek_model": "DEEPSEEK_MODEL",
+    "gemini_base_url": "GEMINI_BASE_URL",
+    "gemini_model": "GEMINI_MODEL",
+    "grok_base_url": "GROK_BASE_URL",
+    "grok_model": "GROK_MODEL",
+}
+
 VALID_PROVIDERS = {"openai", "deepseek", "gemini", "grok"}
 
 # Snapshot of whatever the container's own .env provided at process start,
@@ -41,6 +55,8 @@ def apply_to_env(row: PlatformSettings) -> None:
     for field, env_var in PROVIDER_ENV_VARS.items():
         value = getattr(row, field)
         os.environ[env_var] = value or _ENV_DEFAULTS[env_var]
+    for field, env_var in PROVIDER_OVERRIDE_ENV_VARS.items():
+        os.environ[env_var] = getattr(row, field) or ""
     os.environ["ACTIVE_AI_PROVIDER"] = row.active_ai_provider or "gemini"
 
 

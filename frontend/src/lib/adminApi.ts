@@ -106,6 +106,14 @@ export interface AISettingsOut {
   gemini_key_set: boolean;
   grok_key_set: boolean;
   active_provider: AIProvider;
+  openai_base_url: string | null;
+  openai_model: string | null;
+  deepseek_base_url: string | null;
+  deepseek_model: string | null;
+  gemini_base_url: string | null;
+  gemini_model: string | null;
+  grok_base_url: string | null;
+  grok_model: string | null;
 }
 
 export interface AISettingsIn {
@@ -114,6 +122,14 @@ export interface AISettingsIn {
   gemini_api_key?: string;
   grok_api_key?: string;
   active_provider?: AIProvider;
+  openai_base_url?: string;
+  openai_model?: string;
+  deepseek_base_url?: string;
+  deepseek_model?: string;
+  gemini_base_url?: string;
+  gemini_model?: string;
+  grok_base_url?: string;
+  grok_model?: string;
 }
 
 export const adminAuthApi = {

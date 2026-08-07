@@ -5,12 +5,24 @@ import { adminApi, AISettingsOut, AISettingsIn, AIProvider } from "@/lib/adminAp
 import { AdminUser } from "@/lib/adminAuth";
 
 type ApiKeyField = "openai_api_key" | "deepseek_api_key" | "gemini_api_key" | "grok_api_key";
+type BaseUrlField = "openai_base_url" | "deepseek_base_url" | "gemini_base_url" | "grok_base_url";
+type ModelField = "openai_model" | "deepseek_model" | "gemini_model" | "grok_model";
 
-const AI_PROVIDERS: { key: ApiKeyField; setField: keyof AISettingsOut; provider: AIProvider; label: string; placeholder: string }[] = [
-  { key: "openai_api_key", setField: "openai_key_set", provider: "openai", label: "OpenAI", placeholder: "sk-..." },
-  { key: "deepseek_api_key", setField: "deepseek_key_set", provider: "deepseek", label: "DeepSeek", placeholder: "sk-..." },
-  { key: "gemini_api_key", setField: "gemini_key_set", provider: "gemini", label: "Gemini", placeholder: "AIza..." },
-  { key: "grok_api_key", setField: "grok_key_set", provider: "grok", label: "Grok (xAI)", placeholder: "xai-..." },
+const AI_PROVIDERS: {
+  key: ApiKeyField;
+  setField: keyof AISettingsOut;
+  baseUrlField: BaseUrlField;
+  modelField: ModelField;
+  provider: AIProvider;
+  label: string;
+  placeholder: string;
+  defaultBaseUrl: string;
+  defaultModel: string;
+}[] = [
+  { key: "openai_api_key", setField: "openai_key_set", baseUrlField: "openai_base_url", modelField: "openai_model", provider: "openai", label: "OpenAI", placeholder: "sk-...", defaultBaseUrl: "https://api.openai.com/v1", defaultModel: "gpt-4o-mini" },
+  { key: "deepseek_api_key", setField: "deepseek_key_set", baseUrlField: "deepseek_base_url", modelField: "deepseek_model", provider: "deepseek", label: "DeepSeek", placeholder: "sk-...", defaultBaseUrl: "https://api.deepseek.com", defaultModel: "deepseek-chat" },
+  { key: "gemini_api_key", setField: "gemini_key_set", baseUrlField: "gemini_base_url", modelField: "gemini_model", provider: "gemini", label: "Gemini", placeholder: "AIza...", defaultBaseUrl: "(default Google endpoint)", defaultModel: "gemini-2.5-flash" },
+  { key: "grok_api_key", setField: "grok_key_set", baseUrlField: "grok_base_url", modelField: "grok_model", provider: "grok", label: "Grok (xAI)", placeholder: "xai-...", defaultBaseUrl: "https://api.x.ai/v1", defaultModel: "grok-4" },
 ];
 
 function AIProvidersCard() {
@@ -38,9 +50,13 @@ function AIProvidersCard() {
     setSaving(true); setError(""); setSuccess("");
     try {
       const body: AISettingsIn = {};
-      for (const { key } of AI_PROVIDERS) {
-        const value = form[key]?.trim();
-        if (value) body[key] = value;
+      for (const { key, baseUrlField, modelField } of AI_PROVIDERS) {
+        const keyValue = form[key]?.trim();
+        if (keyValue) body[key] = keyValue;
+        const baseUrlValue = form[baseUrlField]?.trim();
+        if (baseUrlValue) body[baseUrlField] = baseUrlValue;
+        const modelValue = form[modelField]?.trim();
+        if (modelValue) body[modelField] = modelValue;
       }
       const updated = await adminApi.updateAiSettings(body);
       setSettings(updated);
@@ -58,6 +74,17 @@ function AIProvidersCard() {
       setSettings(updated);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to remove key");
+    } finally { setSaving(false); }
+  }
+
+  async function handleResetOverride(field: BaseUrlField | ModelField) {
+    setSaving(true); setError(""); setSuccess("");
+    try {
+      const updated = await adminApi.updateAiSettings({ [field]: "" });
+      setSettings(updated);
+      setForm((f) => ({ ...f, [field]: "" }));
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to reset");
     } finally { setSaving(false); }
   }
 
@@ -110,28 +137,72 @@ function AIProvidersCard() {
           </div>
 
           <form onSubmit={handleSave} className="space-y-4 pt-1 border-t border-slate-100">
-          {AI_PROVIDERS.filter(({ provider }) => provider === (settings?.active_provider ?? "gemini")).map(({ key, setField, label, placeholder }) => {
+          {AI_PROVIDERS.filter(({ provider }) => provider === (settings?.active_provider ?? "gemini")).map(({ key, setField, baseUrlField, modelField, label, placeholder, defaultBaseUrl, defaultModel }) => {
             const isSet = settings?.[setField];
+            const currentBaseUrl = settings?.[baseUrlField];
+            const currentModel = settings?.[modelField];
             return (
-              <div key={key}>
-                <label className="block text-xs font-medium text-slate-500 mb-1">
-                  {label} {isSet && <span className="text-emerald-600 font-normal">(already on file — enter a new one to replace it)</span>}
-                </label>
-                <div className="flex gap-2">
-                  <input
-                    type="password"
-                    value={form[key] ?? ""}
-                    onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
-                    placeholder={isSet ? "•••••••• (unchanged)" : placeholder}
-                    className="flex-1 text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black"
-                  />
-                  {isSet && (
-                    <button type="button" onClick={() => handleRemove(key)} disabled={saving}
-                      className="text-xs text-slate-400 hover:text-red-600 disabled:opacity-50 whitespace-nowrap">
-                      Remove
-                    </button>
-                  )}
+              <div key={key} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1">
+                    {label} API key {isSet && <span className="text-emerald-600 font-normal">(already on file — enter a new one to replace it)</span>}
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="password"
+                      value={form[key] ?? ""}
+                      onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
+                      placeholder={isSet ? "•••••••• (unchanged)" : placeholder}
+                      className="flex-1 text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black"
+                    />
+                    {isSet && (
+                      <button type="button" onClick={() => handleRemove(key)} disabled={saving}
+                        className="text-xs text-slate-400 hover:text-red-600 disabled:opacity-50 whitespace-nowrap">
+                        Remove
+                      </button>
+                    )}
+                  </div>
                 </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">Base URL</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={form[baseUrlField] ?? currentBaseUrl ?? ""}
+                        onChange={(e) => setForm((f) => ({ ...f, [baseUrlField]: e.target.value }))}
+                        placeholder={defaultBaseUrl}
+                        className="flex-1 text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black"
+                      />
+                      {currentBaseUrl && (
+                        <button type="button" onClick={() => handleResetOverride(baseUrlField)} disabled={saving}
+                          className="text-xs text-slate-400 hover:text-red-600 disabled:opacity-50 whitespace-nowrap">
+                          Reset
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">Model name</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={form[modelField] ?? currentModel ?? ""}
+                        onChange={(e) => setForm((f) => ({ ...f, [modelField]: e.target.value }))}
+                        placeholder={defaultModel}
+                        className="flex-1 text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black"
+                      />
+                      {currentModel && (
+                        <button type="button" onClick={() => handleResetOverride(modelField)} disabled={saving}
+                          className="text-xs text-slate-400 hover:text-red-600 disabled:opacity-50 whitespace-nowrap">
+                          Reset
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <p className="text-[11px] text-slate-400 -mt-2">Leave blank to use the default shown above.</p>
               </div>
             );
           })}

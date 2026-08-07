@@ -296,6 +296,12 @@ async def uncomp_owner(org_id: str, admin: User = Depends(get_current_admin), db
     await db.commit()
 
 
+OVERRIDE_FIELDS = [
+    "openai_base_url", "openai_model", "deepseek_base_url", "deepseek_model",
+    "gemini_base_url", "gemini_model", "grok_base_url", "grok_model",
+]
+
+
 def _ai_settings_out(row) -> AISettingsOut:
     return AISettingsOut(
         openai_key_set=bool(row.openai_api_key),
@@ -303,6 +309,7 @@ def _ai_settings_out(row) -> AISettingsOut:
         gemini_key_set=bool(row.gemini_api_key),
         grok_key_set=bool(row.grok_api_key),
         active_provider=row.active_ai_provider,
+        **{field: getattr(row, field) for field in OVERRIDE_FIELDS},
     )
 
 
@@ -336,6 +343,9 @@ async def update_ai_settings(
         if provider not in VALID_PROVIDERS:
             raise HTTPException(status_code=400, detail=f"Unknown provider: {provider}")
         row.active_ai_provider = provider
+    for field in OVERRIDE_FIELDS:
+        if field in data:
+            setattr(row, field, data[field] or None)
 
     await db.commit()
     await db.refresh(row)

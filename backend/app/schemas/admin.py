@@ -92,6 +92,14 @@ class AISettingsOut(BaseModel):
     gemini_key_set: bool
     grok_key_set: bool
     active_provider: str
+    openai_base_url: str | None = None
+    openai_model: str | None = None
+    deepseek_base_url: str | None = None
+    deepseek_model: str | None = None
+    gemini_base_url: str | None = None
+    gemini_model: str | None = None
+    grok_base_url: str | None = None
+    grok_model: str | None = None
 
 
 class AISettingsIn(BaseModel):
@@ -100,3 +108,11 @@ class AISettingsIn(BaseModel):
     gemini_api_key: str | None = None
     grok_api_key: str | None = None
     active_provider: str | None = None
+    openai_base_url: str | None = None
+    openai_model: str | None = None
+    deepseek_base_url: str | None = None
+    deepseek_model: str | None = None
+    gemini_base_url: str | None = None
+    gemini_model: str | None = None
+    grok_base_url: str | None = None
+    grok_model: str | None = None

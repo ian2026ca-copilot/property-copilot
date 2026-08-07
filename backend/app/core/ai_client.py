@@ -5,20 +5,30 @@ same SDK, just a different base_url/model/key — so they share one code path.
 Gemini keeps its own SDK since it isn't OpenAI-compatible. Which provider is
 "active" is chosen on the admin AI settings page (mirrored into the
 ACTIVE_AI_PROVIDER env var by app.core.ai_keys) and applies platform-wide to
-every AI call site in the app.
+every AI call site in the app. Each provider's base_url/model can also be
+overridden from that same page — falls back to the defaults below when unset.
 """
 import base64
 import os
 
-_OPENAI_COMPATIBLE = {
-    "openai": {"base_url": None, "env_var": "OPENAI_API_KEY", "model": "gpt-4o-mini", "label": "OpenAI"},
-    "deepseek": {"base_url": "https://api.deepseek.com", "env_var": "DEEPSEEK_API_KEY", "model": "deepseek-chat", "label": "DeepSeek"},
-    "grok": {"base_url": "https://api.x.ai/v1", "env_var": "GROK_API_KEY", "model": "grok-4", "label": "Grok"},
+PROVIDER_DEFAULTS = {
+    "openai": {"base_url": None, "model": "gpt-4o-mini", "env_var": "OPENAI_API_KEY", "label": "OpenAI"},
+    "deepseek": {"base_url": "https://api.deepseek.com", "model": "deepseek-chat", "env_var": "DEEPSEEK_API_KEY", "label": "DeepSeek"},
+    "gemini": {"base_url": None, "model": "gemini-2.5-flash", "env_var": "GEMINI_API_KEY", "label": "Gemini"},
+    "grok": {"base_url": "https://api.x.ai/v1", "model": "grok-4", "env_var": "GROK_API_KEY", "label": "Grok"},
 }
 
 
 def active_provider() -> str:
     return os.environ.get("ACTIVE_AI_PROVIDER", "gemini")
+
+
+def _resolved(provider: str) -> tuple[str | None, str]:
+    """(base_url, model) — env override if set, else the hardcoded default."""
+    defaults = PROVIDER_DEFAULTS[provider]
+    base_url = os.environ.get(f"{provider.upper()}_BASE_URL", "") or defaults["base_url"]
+    model = os.environ.get(f"{provider.upper()}_MODEL", "") or defaults["model"]
+    return base_url, model
 
 
 def generate_ai_text(prompt: str, images: list[dict] | None = None) -> str:
@@ -27,11 +37,11 @@ def generate_ai_text(prompt: str, images: list[dict] | None = None) -> str:
     failure — every call site already wraps this in try/except and turns it
     into an HTTPException, so this intentionally doesn't catch anything."""
     provider = active_provider()
+    if provider not in PROVIDER_DEFAULTS:
+        raise RuntimeError(f"Unknown AI provider configured: {provider}")
     if provider == "gemini":
         return _generate_gemini(prompt, images)
-    if provider in _OPENAI_COMPATIBLE:
-        return _generate_openai_compatible(provider, prompt, images)
-    raise RuntimeError(f"Unknown AI provider configured: {provider}")
+    return _generate_openai_compatible(provider, prompt, images)
 
 
 def _generate_gemini(prompt: str, images: list[dict] | None) -> str:
@@ -40,21 +50,24 @@ def _generate_gemini(prompt: str, images: list[dict] | None) -> str:
         raise RuntimeError("Gemini API key not configured")
     import google.generativeai as genai
 
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel("gemini-2.5-flash")
+    base_url, model_name = _resolved("gemini")
+    client_options = {"api_endpoint": base_url} if base_url else None
+    genai.configure(api_key=api_key, client_options=client_options)
+    model = genai.GenerativeModel(model_name)
     content = [prompt, *images] if images else prompt
     response = model.generate_content(content)
     return response.text or ""
 
 
 def _generate_openai_compatible(provider: str, prompt: str, images: list[dict] | None) -> str:
-    cfg = _OPENAI_COMPATIBLE[provider]
-    api_key = os.environ.get(cfg["env_var"], "")
+    defaults = PROVIDER_DEFAULTS[provider]
+    api_key = os.environ.get(defaults["env_var"], "")
     if not api_key:
-        raise RuntimeError(f"{cfg['label']} API key not configured")
+        raise RuntimeError(f"{defaults['label']} API key not configured")
     from openai import OpenAI
 
-    client = OpenAI(api_key=api_key, base_url=cfg["base_url"])
+    base_url, model_name = _resolved(provider)
+    client = OpenAI(api_key=api_key, base_url=base_url)
 
     if images:
         content: list[dict] = [{"type": "text", "text": prompt}]
@@ -65,5 +78,5 @@ def _generate_openai_compatible(provider: str, prompt: str, images: list[dict] |
     else:
         messages = [{"role": "user", "content": prompt}]
 
-    response = client.chat.completions.create(model=cfg["model"], messages=messages)
+    response = client.chat.completions.create(model=model_name, messages=messages)
     return response.choices[0].message.content or ""
