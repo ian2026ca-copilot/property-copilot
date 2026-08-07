@@ -132,6 +132,18 @@ export interface AISettingsIn {
   grok_model?: string;
 }
 
+export interface AITestIn {
+  provider: AIProvider;
+  api_key?: string;
+  base_url?: string;
+  model?: string;
+}
+
+export interface AITestOut {
+  ok: boolean;
+  message: string;
+}
+
 export const adminAuthApi = {
   login: (email: string, password: string) =>
     adminRequest.post<{ access_token: string; token_type: string }>("/admin/login", { email, password }),
@@ -153,4 +165,5 @@ export const adminApi = {
     adminRequest.post<{ access_token: string; token_type: string; owner_name: string | null }>(`/admin/owners/${orgId}/impersonate`),
   getAiSettings: () => adminRequest.get<AISettingsOut>("/admin/ai-settings"),
   updateAiSettings: (body: AISettingsIn) => adminRequest.patch<AISettingsOut>("/admin/ai-settings", body),
+  testAiProvider: (body: AITestIn) => adminRequest.post<AITestOut>("/admin/ai-settings/test", body),
 };

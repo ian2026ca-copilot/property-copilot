@@ -116,3 +116,15 @@ class AISettingsIn(BaseModel):
     gemini_model: str | None = None
     grok_base_url: str | None = None
     grok_model: str | None = None
+
+
+class AITestIn(BaseModel):
+    provider: str
+    api_key: str | None = None
+    base_url: str | None = None
+    model: str | None = None
+
+
+class AITestOut(BaseModel):
+    ok: bool
+    message: str

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { adminApi, AISettingsOut, AISettingsIn, AIProvider } from "@/lib/adminApi";
+import { adminApi, AISettingsOut, AISettingsIn, AIProvider, AITestOut } from "@/lib/adminApi";
 import { AdminUser } from "@/lib/adminAuth";
 
 type ApiKeyField = "openai_api_key" | "deepseek_api_key" | "gemini_api_key" | "grok_api_key";
@@ -31,6 +31,8 @@ function AIProvidersCard() {
   const [form, setForm] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [switchingProvider, setSwitchingProvider] = useState(false);
+  const [testingProvider, setTestingProvider] = useState<AIProvider | null>(null);
+  const [testResults, setTestResults] = useState<Partial<Record<AIProvider, AITestOut>>>({});
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
@@ -88,6 +90,27 @@ function AIProvidersCard() {
     } finally { setSaving(false); }
   }
 
+  async function handleTest(provider: AIProvider, key: ApiKeyField, baseUrlField: BaseUrlField, modelField: ModelField) {
+    setTestingProvider(provider);
+    setTestResults((r) => ({ ...r, [provider]: undefined }));
+    try {
+      const apiKey = form[key]?.trim();
+      const baseUrl = form[baseUrlField]?.trim();
+      const model = form[modelField]?.trim();
+      const result = await adminApi.testAiProvider({
+        provider,
+        ...(apiKey ? { api_key: apiKey } : {}),
+        ...(baseUrl ? { base_url: baseUrl } : {}),
+        ...(model ? { model } : {}),
+      });
+      setTestResults((r) => ({ ...r, [provider]: result }));
+    } catch (e: unknown) {
+      setTestResults((r) => ({ ...r, [provider]: { ok: false, message: e instanceof Error ? e.message : "Test failed" } }));
+    } finally {
+      setTestingProvider(null);
+    }
+  }
+
   async function handleProviderChange(provider: AIProvider) {
     setSwitchingProvider(true); setError(""); setSuccess("");
     try {
@@ -137,10 +160,12 @@ function AIProvidersCard() {
           </div>
 
           <form onSubmit={handleSave} className="space-y-4 pt-1 border-t border-slate-100">
-          {AI_PROVIDERS.filter(({ provider }) => provider === (settings?.active_provider ?? "gemini")).map(({ key, setField, baseUrlField, modelField, label, placeholder, defaultBaseUrl, defaultModel }) => {
+          {AI_PROVIDERS.filter(({ provider }) => provider === (settings?.active_provider ?? "gemini")).map(({ key, setField, baseUrlField, modelField, provider, label, placeholder, defaultBaseUrl, defaultModel }) => {
             const isSet = settings?.[setField];
             const currentBaseUrl = settings?.[baseUrlField];
             const currentModel = settings?.[modelField];
+            const testResult = testResults[provider];
+            const isTesting = testingProvider === provider;
             return (
               <div key={key} className="space-y-4">
                 <div>
@@ -203,6 +228,22 @@ function AIProvidersCard() {
                   </div>
                 </div>
                 <p className="text-[11px] text-slate-400 -mt-2">Leave blank to use the default shown above.</p>
+
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => handleTest(provider, key, baseUrlField, modelField)}
+                    disabled={isTesting}
+                    className="px-3 py-1.5 text-xs font-medium border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    {isTesting ? "Testing…" : "Test connection"}
+                  </button>
+                  {testResult && (
+                    <p className={`text-xs mt-2 rounded-lg px-3 py-2 ${testResult.ok ? "text-emerald-600 bg-emerald-50" : "text-red-600 bg-red-50"}`}>
+                      {testResult.ok ? "✓ Connected — " : "✗ Failed — "}{testResult.message}
+                    </p>
+                  )}
+                </div>
               </div>
             );
           })}

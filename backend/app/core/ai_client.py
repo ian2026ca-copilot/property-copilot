@@ -31,43 +31,63 @@ def _resolved(provider: str) -> tuple[str | None, str]:
     return base_url, model
 
 
-def generate_ai_text(prompt: str, images: list[dict] | None = None) -> str:
+def generate_ai_text(
+    prompt: str,
+    images: list[dict] | None = None,
+    provider: str | None = None,
+    api_key: str | None = None,
+    base_url: str | None = None,
+    model: str | None = None,
+) -> str:
     """images: optional list of {"mime_type": str, "data": bytes}. Raises
     RuntimeError with a caller-safe message on missing config or provider
     failure — every call site already wraps this in try/except and turns it
-    into an HTTPException, so this intentionally doesn't catch anything."""
-    provider = active_provider()
+    into an HTTPException, so this intentionally doesn't catch anything.
+
+    provider/api_key/base_url/model let a caller (the admin "test connection"
+    endpoint) try a specific, possibly-unsaved config without touching the
+    active provider or env vars — every other call site omits these and gets
+    the normal env-configured behavior unchanged."""
+    provider = provider or active_provider()
     if provider not in PROVIDER_DEFAULTS:
         raise RuntimeError(f"Unknown AI provider configured: {provider}")
     if provider == "gemini":
-        return _generate_gemini(prompt, images)
-    return _generate_openai_compatible(provider, prompt, images)
+        return _generate_gemini(prompt, images, api_key, base_url, model)
+    return _generate_openai_compatible(provider, prompt, images, api_key, base_url, model)
 
 
-def _generate_gemini(prompt: str, images: list[dict] | None) -> str:
-    api_key = os.environ.get("GEMINI_API_KEY", "")
-    if not api_key:
+def _generate_gemini(
+    prompt: str, images: list[dict] | None, api_key: str | None, base_url: str | None, model: str | None
+) -> str:
+    resolved_key = api_key or os.environ.get("GEMINI_API_KEY", "")
+    if not resolved_key:
         raise RuntimeError("Gemini API key not configured")
     import google.generativeai as genai
 
-    base_url, model_name = _resolved("gemini")
-    client_options = {"api_endpoint": base_url} if base_url else None
-    genai.configure(api_key=api_key, client_options=client_options)
-    model = genai.GenerativeModel(model_name)
+    default_base_url, default_model = _resolved("gemini")
+    resolved_base_url = base_url or default_base_url
+    resolved_model = model or default_model
+    client_options = {"api_endpoint": resolved_base_url} if resolved_base_url else None
+    genai.configure(api_key=resolved_key, client_options=client_options)
+    gm = genai.GenerativeModel(resolved_model)
     content = [prompt, *images] if images else prompt
-    response = model.generate_content(content)
+    response = gm.generate_content(content)
     return response.text or ""
 
 
-def _generate_openai_compatible(provider: str, prompt: str, images: list[dict] | None) -> str:
+def _generate_openai_compatible(
+    provider: str, prompt: str, images: list[dict] | None, api_key: str | None, base_url: str | None, model: str | None
+) -> str:
     defaults = PROVIDER_DEFAULTS[provider]
-    api_key = os.environ.get(defaults["env_var"], "")
-    if not api_key:
+    resolved_key = api_key or os.environ.get(defaults["env_var"], "")
+    if not resolved_key:
         raise RuntimeError(f"{defaults['label']} API key not configured")
     from openai import OpenAI
 
-    base_url, model_name = _resolved(provider)
-    client = OpenAI(api_key=api_key, base_url=base_url)
+    default_base_url, default_model = _resolved(provider)
+    resolved_base_url = base_url or default_base_url
+    resolved_model = model or default_model
+    client = OpenAI(api_key=resolved_key, base_url=resolved_base_url)
 
     if images:
         content: list[dict] = [{"type": "text", "text": prompt}]
@@ -78,5 +98,5 @@ def _generate_openai_compatible(provider: str, prompt: str, images: list[dict] |
     else:
         messages = [{"role": "user", "content": prompt}]
 
-    response = client.chat.completions.create(model=model_name, messages=messages)
+    response = client.chat.completions.create(model=resolved_model, messages=messages)
     return response.choices[0].message.content or ""

@@ -11,6 +11,7 @@ from app.core.security import verify_password, hash_password, create_access_toke
 from app.api.deps import get_current_admin
 from app.core.billing_sync import sync_org_subscription
 from app.core.ai_keys import get_platform_settings, apply_to_env, VALID_PROVIDERS
+from app.core.ai_client import generate_ai_text
 from app.models.user import User, OrganizationMember, UserRole
 from app.models.organization import Organization
 from app.models.property import Property, Unit
@@ -18,7 +19,7 @@ from app.models.payment import Payment, PaymentStatus
 from app.schemas.auth import LoginRequest, TokenResponse
 from app.schemas.admin import (
     AdminUserOut, OwnerRowOut, CreateAdminIn, OwnerDetailOut, OwnerPropertyOut, OwnerTeamMemberOut,
-    OwnerPaymentOut, ImpersonateOut, AISettingsOut, AISettingsIn,
+    OwnerPaymentOut, ImpersonateOut, AISettingsOut, AISettingsIn, AITestIn, AITestOut,
 )
 
 stripe.api_key = settings.STRIPE_SECRET_KEY
@@ -352,6 +353,32 @@ async def update_ai_settings(
     apply_to_env(row)
 
     return _ai_settings_out(row)
+
+
+@router.post("/ai-settings/test", response_model=AITestOut)
+async def test_ai_provider(body: AITestIn, admin: User = Depends(get_current_admin)):
+    """Tries a real, minimal call against the given provider using whatever
+    key/base_url/model was passed in (so the admin can test a value before
+    saving it). Anything omitted falls through to generate_ai_text's own
+    env-based resolution — the same path every other AI call site uses —
+    rather than re-reading the DB directly here, so this stays in sync with
+    the live-configured value (which may come from .env, not just the DB).
+    Always returns 200; ok=False carries the provider's real error message
+    rather than raising, since a failed test is an expected outcome here."""
+    if body.provider not in VALID_PROVIDERS:
+        raise HTTPException(status_code=400, detail=f"Unknown provider: {body.provider}")
+
+    try:
+        reply = generate_ai_text(
+            "Reply with only the single word OK.",
+            provider=body.provider,
+            api_key=body.api_key or None,
+            base_url=body.base_url or None,
+            model=body.model or None,
+        )
+        return AITestOut(ok=True, message=reply.strip()[:200] or "Connected, but got an empty reply.")
+    except Exception as e:
+        return AITestOut(ok=False, message=str(e)[:300])
 
 
 @router.post("/owners/{org_id}/refund")
