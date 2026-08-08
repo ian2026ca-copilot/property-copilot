@@ -163,3 +163,13 @@ class EmployerReferenceContactIn(BaseModel):
 class EmployerReferenceLetterOut(BaseModel):
     subject: str
     body: str
+
+
+class TenantRegistrationLinkIn(BaseModel):
+    channels: list[str]  # any of "email", "sms"
+
+
+class TenantRegistrationLinkOut(BaseModel):
+    email_sent: bool
+    sms_sent: bool
+    skipped_channels: list[str] = []

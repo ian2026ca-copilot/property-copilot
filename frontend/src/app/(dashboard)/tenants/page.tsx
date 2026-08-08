@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { tenantsApi, leasesApi, type TenantOut, type LeaseOut, type TenantDocumentOut } from "@/lib/api";
+import { tenantsApi, leasesApi, type TenantOut, type LeaseOut, type TenantDocumentOut, type TenantRegistrationLinkOut } from "@/lib/api";
 import { MOCK_MODE } from "@/lib/useApiData";
 import {
   useRentalApplicationState, buildRentalApplicationPayload, RentalApplicationSections,
@@ -1225,6 +1225,93 @@ function LeaseHistoryRow({
   );
 }
 
+// ─── Send Registration Link Modal ─────────────────────────────────────────────
+
+function SendRegistrationLinkModal({ person, onClose }: { person: PersonRow; onClose: () => void }) {
+  const [channels, setChannels] = useState({ email: !!person.email, sms: !!person.phone });
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState("");
+  const [result, setResult] = useState<TenantRegistrationLinkOut | null>(null);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    const selected = (["email", "sms"] as const).filter(c => channels[c]);
+    if (selected.length === 0) {
+      setError("Select at least one channel to send to.");
+      return;
+    }
+    setSending(true);
+    setError("");
+    try {
+      const out = await tenantsApi.sendRegistrationLink(person.id, selected);
+      setResult(out);
+    } catch (err: any) {
+      setError(err.message ?? "Failed to send registration link");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl w-full max-w-md shadow-xl">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+          <h2 className="text-base font-semibold text-slate-900">Send portal registration link</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
+        </div>
+
+        {result ? (
+          <div className="p-6 space-y-4">
+            <p className="text-sm text-slate-700">
+              {result.email_sent && "Sent by email. "}
+              {result.sms_sent && "Sent by SMS. "}
+              {person.full_name} can use the link to set a password and log in to their tenant portal.
+            </p>
+            {result.skipped_channels.length > 0 && (
+              <p className="text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2">
+                Skipped: {result.skipped_channels.join(", ")}
+              </p>
+            )}
+            <button onClick={onClose}
+              className="w-full bg-black text-white rounded-lg py-2 text-sm font-medium hover:bg-slate-800">
+              Done
+            </button>
+          </div>
+        ) : (
+          <form onSubmit={submit} className="p-6 space-y-4">
+            <p className="text-sm text-slate-500">
+              Sends {person.full_name} a link to set a password and log in to their tenant portal. The link expires in 7 days.
+            </p>
+            <div className="space-y-2">
+              <label className="flex items-center gap-2 text-sm text-slate-700">
+                <input type="checkbox" checked={channels.email} disabled={!person.email}
+                  onChange={e => setChannels(c => ({ ...c, email: e.target.checked }))}
+                  className="rounded border-slate-300" />
+                Email {person.email ? `(${person.email})` : "(no email on file)"}
+              </label>
+              <label className="flex items-center gap-2 text-sm text-slate-700">
+                <input type="checkbox" checked={channels.sms} disabled={!person.phone}
+                  onChange={e => setChannels(c => ({ ...c, sms: e.target.checked }))}
+                  className="rounded border-slate-300" />
+                SMS {person.phone ? `(${person.phone})` : "(no phone on file)"}
+              </label>
+            </div>
+            {error && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
+            <div className="flex gap-2 justify-end pt-2">
+              <button type="button" onClick={onClose}
+                className="px-4 py-2 text-sm text-slate-600 hover:text-slate-900">Cancel</button>
+              <button type="submit" disabled={sending}
+                className="px-4 py-2 text-sm bg-black text-white rounded-lg hover:bg-slate-800 disabled:opacity-50">
+                {sending ? "Sending…" : "Send link"}
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Identity Documents Modal ─────────────────────────────────────────────────
 
 const DOC_TYPE_LABELS: Record<string, string> = {
@@ -1249,6 +1336,7 @@ export default function TenantsPage() {
     | { type: "editPerson"; person: TenantOut }
     | { type: "editLease"; lease: LeaseOut }
     | { type: "createLease"; person: PersonRow }
+    | { type: "sendRegistrationLink"; person: PersonRow }
 
   const [modal, setModal] = useState<Modal | null>(null);
 
@@ -1509,6 +1597,12 @@ export default function TenantsPage() {
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
                           </svg>
                         </button>
+                        <button onClick={() => setModal({ type: "sendRegistrationLink", person: p })}
+                          title="Send portal registration link" className="p-1.5 rounded-lg hover:bg-violet-50 text-slate-500 hover:text-violet-700 transition-colors">
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                          </svg>
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -1552,6 +1646,9 @@ export default function TenantsPage() {
           onClose={() => setModal(null)}
           onSave={handleLeaseSaved}
         />
+      )}
+      {modal?.type === "sendRegistrationLink" && (
+        <SendRegistrationLinkModal person={modal.person} onClose={() => setModal(null)} />
       )}
     </div>
   );

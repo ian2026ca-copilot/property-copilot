@@ -2,10 +2,10 @@ import os
 import secrets
 import uuid
 import pathlib
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from email.utils import make_msgid
 
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, UploadFile, File, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 from sqlalchemy.orm import selectinload, joinedload
@@ -13,7 +13,7 @@ from sqlalchemy.orm import selectinload, joinedload
 from app.core.database import get_db
 from app.core.ai_client import generate_ai_text
 from app.core.security import hash_password
-from app.core.email import send_reference_letter_email
+from app.core.email import send_reference_letter_email, send_registration_link_email
 from app.core.sms import send_sms
 from app.api.deps import get_current_user, require_min_role
 from app.models.user import User, OrganizationMember, UserRole, TenantDocument
@@ -22,6 +22,7 @@ from app.models.lease import Lease, LeaseStatus
 from app.models.property import Unit, Property, UnitStatus
 from app.models.organization import Organization
 from app.models.reference_check import ReferenceCheckRequest
+from app.models.password_reset import PasswordResetToken
 from app.models.tenant_application import (
     TenantAddressHistory, TenantEmployment, TenantIncomeSource,
     TenantOccupant, TenantCosigner, TenantPet, TenantVehicle, TenantScreeningNote,
@@ -33,6 +34,7 @@ from app.schemas.tenant_application import (
     OccupantIn, CosignerIn, PetIn, VehicleIn, TenantScreeningUpdate,
     TenantScreeningNoteIn, TenantScreeningNoteOut, EmployerReferenceContactIn, EmployerReferenceLetterOut,
     ReferenceEmailConfigIn, ReferenceEmailConfigOut,
+    TenantRegistrationLinkIn, TenantRegistrationLinkOut,
     RENTAL_APP_PROFILE_FIELDS, RENTAL_APP_LIST_FIELDS,
 )
 from app.api.v1.endpoints.payments import generate_monthly_payments
@@ -518,6 +520,76 @@ async def get_person(
     if not user:
         raise HTTPException(status_code=404, detail="Tenant not found")
     return _tenant_to_out(user, user.tenant_documents)
+
+
+@router.post("/person/{tenant_user_id}/send-registration-link", response_model=TenantRegistrationLinkOut)
+async def send_registration_link(
+    tenant_user_id: str,
+    body: TenantRegistrationLinkIn,
+    background_tasks: BackgroundTasks,
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Tenant records the owner creates directly (via +Add tenant or the AI
+    copilot) start with an unusable random password, so this is how the
+    tenant actually gets into their portal — reuses the exact same
+    PasswordResetToken + /reset-password flow as /auth/forgot-password, just
+    with a week-long expiry suited to an onboarding invite rather than an
+    urgent reset."""
+    _, member = current
+    mem_res = await db.execute(
+        select(OrganizationMember).where(
+            OrganizationMember.organization_id == member.organization_id,
+            OrganizationMember.user_id == tenant_user_id,
+            OrganizationMember.role == UserRole.TENANT,
+        )
+    )
+    if not mem_res.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    tenant_res = await db.execute(select(User).where(User.id == tenant_user_id))
+    tenant_user = tenant_res.scalar_one_or_none()
+    if not tenant_user:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    org_res = await db.execute(select(Organization).where(Organization.id == member.organization_id))
+    org = org_res.scalar_one_or_none()
+    org_name = org.name if org else "Property Copilot"
+
+    token = secrets.token_urlsafe(48)
+    expires_at = datetime.now(timezone.utc) + timedelta(days=7)
+    db.add(PasswordResetToken(user_id=tenant_user.id, token=token, expires_at=expires_at))
+    await db.commit()
+
+    frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
+    register_link = f"{frontend_url}/reset-password?token={token}"
+
+    channels = set(body.channels)
+    email_sent = False
+    sms_sent = False
+    skipped: list[str] = []
+
+    if "email" in channels:
+        if tenant_user.email:
+            background_tasks.add_task(
+                send_registration_link_email, tenant_user.email, register_link, tenant_user.full_name, org_name
+            )
+            email_sent = True
+        else:
+            skipped.append("email (no email on file)")
+
+    if "sms" in channels:
+        if tenant_user.phone:
+            sms_body = f"{org_name} has set up your tenant portal account. Set your password: {register_link}"
+            background_tasks.add_task(send_sms, tenant_user.phone, sms_body)
+            sms_sent = True
+        else:
+            skipped.append("SMS (no phone on file)")
+
+    if not email_sent and not sms_sent:
+        raise HTTPException(status_code=400, detail="No valid channel to send to — tenant has no email/phone on file")
+
+    return TenantRegistrationLinkOut(email_sent=email_sent, sms_sent=sms_sent, skipped_channels=skipped)
 
 
 @router.get("/person/{tenant_user_id}/application", response_model=TenantApplicationOut)

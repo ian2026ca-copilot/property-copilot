@@ -78,6 +78,34 @@ def send_reset_email(to_email: str, reset_link: str, full_name: str = "") -> Non
     _smtp_send(to_email, "Reset your Property Copilot password", html)
 
 
+def send_registration_link_email(to_email: str, register_link: str, full_name: str, org_name: str) -> None:
+    greeting = f"Hi {full_name}," if full_name else "Hi,"
+    if not os.getenv("SMTP_HOST"):
+        print(f"\n[Registration Link] To: {to_email}\nLink: {register_link}\n", flush=True)
+        return
+
+    html = f"""
+    <div style="font-family:sans-serif;max-width:520px;margin:auto;padding:32px 24px;color:#111">
+      {_logo_block()}
+      <h2 style="margin:0 0 8px;font-size:22px">Set up your tenant portal account</h2>
+      <p style="color:#555;margin:0 0 28px;line-height:1.6">{greeting}<br>
+        <strong>{org_name}</strong> has set up a tenant account for you. Click the button below to
+        create a password and log in to your tenant portal — this link expires in <strong>7 days</strong>.
+      </p>
+      <a href="{register_link}"
+         style="display:inline-block;padding:13px 30px;background:#000;color:#fff;
+                text-decoration:none;border-radius:8px;font-weight:600;font-size:15px;margin-bottom:28px">
+        Set up my account →
+      </a>
+      <p style="color:#999;font-size:12px;margin:0;line-height:1.6">
+        If you weren't expecting this, you can safely ignore this email.<br>
+        Or paste: <span style="color:#555;word-break:break-all">{register_link}</span>
+      </p>
+    </div>
+    """
+    _smtp_send(to_email, f"Set up your {org_name} tenant portal account", html)
+
+
 def send_welcome_email(to_email: str, full_name: str, org_name: str, role: str, dashboard_url: str) -> None:
     first = full_name.split()[0] if full_name else "there"
     role_label = {
