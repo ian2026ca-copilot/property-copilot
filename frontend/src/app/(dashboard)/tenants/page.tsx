@@ -409,6 +409,19 @@ function AddPersonModal({ onClose, onAdded }: AddPersonModalProps) {
     setForm(f => ({ ...f, [k]: v }));
   }
 
+  function createPersonPayload() {
+    return {
+      first_name: form.first_name,
+      last_name: form.last_name,
+      email: form.email,
+      phone: form.phone,
+      date_of_birth: form.date_of_birth || null,
+      middle_name: form.middle_name || null,
+      drivers_licence: form.drivers_licence || null,
+      ...buildRentalApplicationPayload(app),
+    };
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!form.first_name || !form.last_name || !form.email) {
@@ -417,16 +430,7 @@ function AddPersonModal({ onClose, onAdded }: AddPersonModalProps) {
     }
     setSaving(true);
     try {
-      const person = await tenantsApi.createPerson({
-        first_name: form.first_name,
-        last_name: form.last_name,
-        email: form.email,
-        phone: form.phone,
-        date_of_birth: form.date_of_birth || null,
-        middle_name: form.middle_name || null,
-        drivers_licence: form.drivers_licence || null,
-        ...buildRentalApplicationPayload(app),
-      });
+      const person = await tenantsApi.createPerson(createPersonPayload());
       setSaved(person);
       onAdded(person);
     } catch (err: any) {
@@ -437,13 +441,25 @@ function AddPersonModal({ onClose, onAdded }: AddPersonModalProps) {
   }
 
   async function sendInvite() {
-    if (!saved) return;
-    const channels = (["email", "sms"] as const).filter(c => (c === "email" ? saved.email : saved.phone));
-    if (channels.length === 0) return;
+    if (!form.first_name || !form.last_name || !form.email) {
+      setInviteError("First name, last name, and email are required to send an invite.");
+      return;
+    }
     setInviteSending(true);
     setInviteError("");
     try {
-      const out = await tenantsApi.sendRegistrationLink(saved.id, channels);
+      let person = saved;
+      if (!person) {
+        person = await tenantsApi.createPerson(createPersonPayload());
+        setSaved(person);
+        onAdded(person);
+      }
+      const channels = (["email", "sms"] as const).filter(c => (c === "email" ? person!.email : person!.phone));
+      if (channels.length === 0) {
+        setInviteError("Tenant has no email or phone on file.");
+        return;
+      }
+      const out = await tenantsApi.sendRegistrationLink(person.id, channels);
       setInviteResult(out);
     } catch (err: any) {
       setInviteError(err.message ?? "Failed to send invite");
@@ -500,14 +516,19 @@ function AddPersonModal({ onClose, onAdded }: AddPersonModalProps) {
                   Invite sent{inviteResult.email_sent && inviteResult.sms_sent ? " by email and SMS" : inviteResult.email_sent ? " by email" : " by SMS"}.
                 </p>
               ) : (
-                <>
-                  <button type="button" onClick={sendInvite} disabled={!saved || inviteSending}
-                    title={!saved ? "Add the tenant first, then you can send their invite" : undefined}
-                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:hover:bg-transparent">
-                    {inviteSending ? "Sending…" : "Send tenant invite"}
-                  </button>
-                  {!saved && <p className="text-[11px] text-slate-400 mt-1">Available after the tenant is added</p>}
-                </>
+                (() => {
+                  const canInvite = !!form.first_name && !!form.last_name && !!form.email;
+                  return (
+                    <>
+                      <button type="button" onClick={sendInvite} disabled={!canInvite || inviteSending}
+                        title={!canInvite ? "Fill in first name, last name, and email first" : undefined}
+                        className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:hover:bg-transparent">
+                        {inviteSending ? "Sending…" : "Send tenant invite"}
+                      </button>
+                      {!canInvite && <p className="text-[11px] text-slate-400 mt-1">Fill in name and email to send an invite</p>}
+                    </>
+                  );
+                })()
               )}
             </div>
           </div>

@@ -522,6 +522,24 @@ async def get_person(
     return _tenant_to_out(user, user.tenant_documents)
 
 
+def _draft_invite_message(tenant_name: str, org_name: str) -> str:
+    """AI-drafted 1-2 sentence invite blurb, personalized per tenant/org.
+    Falls back to a static default if the AI call fails for any reason
+    (missing key, quota, network) so the invite still sends either way."""
+    prompt = (
+        "Write a short, warm 1-2 sentence message from a property management "
+        f"company called \"{org_name}\" inviting a new tenant named {tenant_name} "
+        "to set up their tenant portal account and create a password. Friendly, "
+        "professional tone. Do not include a URL, link, or placeholder for one — "
+        "one will be appended automatically. Plain text only, no markdown, no subject line."
+    )
+    try:
+        drafted = generate_ai_text(prompt).strip()
+        return drafted or f"{org_name} has set up your tenant portal account."
+    except Exception:
+        return f"{org_name} has set up your tenant portal account."
+
+
 @router.post("/person/{tenant_user_id}/send-registration-link", response_model=TenantRegistrationLinkOut)
 async def send_registration_link(
     tenant_user_id: str,
@@ -535,7 +553,7 @@ async def send_registration_link(
     tenant actually gets into their portal — reuses the exact same
     PasswordResetToken + /reset-password flow as /auth/forgot-password, just
     with a week-long expiry suited to an onboarding invite rather than an
-    urgent reset."""
+    urgent reset. The message itself is AI-drafted per tenant/org."""
     _, member = current
     mem_res = await db.execute(
         select(OrganizationMember).where(
@@ -569,10 +587,15 @@ async def send_registration_link(
     sms_sent = False
     skipped: list[str] = []
 
+    if ("email" in channels and tenant_user.email) or ("sms" in channels and tenant_user.phone):
+        message = _draft_invite_message(tenant_user.full_name, org_name)
+    else:
+        message = ""
+
     if "email" in channels:
         if tenant_user.email:
             background_tasks.add_task(
-                send_registration_link_email, tenant_user.email, register_link, tenant_user.full_name, org_name
+                send_registration_link_email, tenant_user.email, register_link, tenant_user.full_name, org_name, message
             )
             email_sent = True
         else:
@@ -580,7 +603,7 @@ async def send_registration_link(
 
     if "sms" in channels:
         if tenant_user.phone:
-            sms_body = f"{org_name} has set up your tenant portal account. Set your password: {register_link}"
+            sms_body = f"{message} {register_link}"
             background_tasks.add_task(send_sms, tenant_user.phone, sms_body)
             sms_sent = True
         else:

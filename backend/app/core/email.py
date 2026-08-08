@@ -78,10 +78,13 @@ def send_reset_email(to_email: str, reset_link: str, full_name: str = "") -> Non
     _smtp_send(to_email, "Reset your Property Copilot password", html)
 
 
-def send_registration_link_email(to_email: str, register_link: str, full_name: str, org_name: str) -> None:
+def send_registration_link_email(
+    to_email: str, register_link: str, full_name: str, org_name: str, message: str = ""
+) -> None:
     greeting = f"Hi {full_name}," if full_name else "Hi,"
+    body_text = message or f"{org_name} has set up a tenant account for you."
     if not os.getenv("SMTP_HOST"):
-        print(f"\n[Registration Link] To: {to_email}\nLink: {register_link}\n", flush=True)
+        print(f"\n[Registration Link] To: {to_email}\nMessage: {body_text}\nLink: {register_link}\n", flush=True)
         return
 
     html = f"""
@@ -89,7 +92,7 @@ def send_registration_link_email(to_email: str, register_link: str, full_name: s
       {_logo_block()}
       <h2 style="margin:0 0 8px;font-size:22px">Set up your tenant portal account</h2>
       <p style="color:#555;margin:0 0 28px;line-height:1.6">{greeting}<br>
-        <strong>{org_name}</strong> has set up a tenant account for you. Click the button below to
+        {_escape_html(body_text)} Click the button below to
         create a password and log in to your tenant portal — this link expires in <strong>7 days</strong>.
       </p>
       <a href="{register_link}"
