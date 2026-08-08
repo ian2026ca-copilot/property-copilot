@@ -469,6 +469,7 @@ function AddPersonModal({ onClose, onAdded }: AddPersonModalProps) {
   }
 
   const input = "w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black";
+  const canInvite = !!form.first_name && !!form.last_name && !!form.email;
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
@@ -510,29 +511,7 @@ function AddPersonModal({ onClose, onAdded }: AddPersonModalProps) {
               <label className="block text-xs font-medium text-slate-500 mb-1">Phone</label>
               <input value={form.phone} onChange={e => set("phone", e.target.value)} placeholder="(555) 000-0000" disabled={!!saved} className={`${input} disabled:opacity-60`} />
             </div>
-            <div className="flex flex-col justify-end">
-              {inviteResult ? (
-                <p className="text-xs text-emerald-600 bg-emerald-50 rounded-lg px-3 py-2 w-full">
-                  Invite sent{inviteResult.email_sent && inviteResult.sms_sent ? " by email and SMS" : inviteResult.email_sent ? " by email" : " by SMS"}.
-                </p>
-              ) : (
-                (() => {
-                  const canInvite = !!form.first_name && !!form.last_name && !!form.email;
-                  return (
-                    <>
-                      <button type="button" onClick={sendInvite} disabled={!canInvite || inviteSending}
-                        title={!canInvite ? "Fill in first name, last name, and email first" : undefined}
-                        className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:hover:bg-transparent">
-                        {inviteSending ? "Sending…" : "Send tenant invite"}
-                      </button>
-                      {!canInvite && <p className="text-[11px] text-slate-400 mt-1">Fill in name and email to send an invite</p>}
-                    </>
-                  );
-                })()
-              )}
-            </div>
           </div>
-          {inviteError && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{inviteError}</p>}
 
           {/* Address history, employment, income, occupants, co-signer, pets, vehicles, screening — same fields as the public tenant application */}
           <div className={saved ? "opacity-60 pointer-events-none space-y-4" : "space-y-4"}>
@@ -559,6 +538,13 @@ function AddPersonModal({ onClose, onAdded }: AddPersonModalProps) {
             )}
           </div>
 
+          {inviteError && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{inviteError}</p>}
+          {inviteResult && (
+            <p className="text-xs text-emerald-600 bg-emerald-50 rounded-lg px-3 py-2">
+              Invite sent{inviteResult.email_sent && inviteResult.sms_sent ? " by email and SMS" : inviteResult.email_sent ? " by email" : " by SMS"}.
+            </p>
+          )}
+
           <div className="pt-2 flex gap-3">
             <button type="button" onClick={onClose}
               className="flex-1 px-4 py-2 border border-slate-200 rounded-lg text-sm text-slate-600 hover:bg-slate-50">
@@ -568,6 +554,12 @@ function AddPersonModal({ onClose, onAdded }: AddPersonModalProps) {
               <button type="submit" disabled={saving}
                 className="flex-1 px-4 py-2 bg-black text-white rounded-lg text-sm font-medium hover:bg-slate-800 disabled:opacity-50">
                 {saving ? "Adding…" : "Add tenant"}
+              </button>
+            )}
+            {!inviteResult && (
+              <button type="button" onClick={sendInvite} disabled={!canInvite || inviteSending}
+                className="flex-1 px-4 py-2 border border-slate-200 rounded-lg text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+                {inviteSending ? "Sending…" : "Send tenant invite"}
               </button>
             )}
           </div>
