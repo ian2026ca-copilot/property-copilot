@@ -401,6 +401,9 @@ function AddPersonModal({ onClose, onAdded }: AddPersonModalProps) {
   const [saved, setSaved] = useState<TenantOut | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [inviteSending, setInviteSending] = useState(false);
+  const [inviteResult, setInviteResult] = useState<TenantRegistrationLinkOut | null>(null);
+  const [inviteError, setInviteError] = useState("");
 
   function set(k: string, v: string) {
     setForm(f => ({ ...f, [k]: v }));
@@ -430,6 +433,22 @@ function AddPersonModal({ onClose, onAdded }: AddPersonModalProps) {
       setError(err.message ?? "Failed to create tenant");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function sendInvite() {
+    if (!saved) return;
+    const channels = (["email", "sms"] as const).filter(c => (c === "email" ? saved.email : saved.phone));
+    if (channels.length === 0) return;
+    setInviteSending(true);
+    setInviteError("");
+    try {
+      const out = await tenantsApi.sendRegistrationLink(saved.id, channels);
+      setInviteResult(out);
+    } catch (err: any) {
+      setInviteError(err.message ?? "Failed to send invite");
+    } finally {
+      setInviteSending(false);
     }
   }
 
@@ -475,7 +494,21 @@ function AddPersonModal({ onClose, onAdded }: AddPersonModalProps) {
               <label className="block text-xs font-medium text-slate-500 mb-1">Phone</label>
               <input value={form.phone} onChange={e => set("phone", e.target.value)} placeholder="(555) 000-0000" disabled={!!saved} className={`${input} disabled:opacity-60`} />
             </div>
+            <div className="flex items-end">
+              {saved && !inviteResult && (
+                <button type="button" onClick={sendInvite} disabled={inviteSending}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+                  {inviteSending ? "Sending…" : "Send tenant invite"}
+                </button>
+              )}
+              {inviteResult && (
+                <p className="text-xs text-emerald-600 bg-emerald-50 rounded-lg px-3 py-2 w-full">
+                  Invite sent{inviteResult.email_sent && inviteResult.sms_sent ? " by email and SMS" : inviteResult.email_sent ? " by email" : " by SMS"}.
+                </p>
+              )}
+            </div>
           </div>
+          {inviteError && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{inviteError}</p>}
 
           {/* Address history, employment, income, occupants, co-signer, pets, vehicles, screening — same fields as the public tenant application */}
           <div className={saved ? "opacity-60 pointer-events-none space-y-4" : "space-y-4"}>
