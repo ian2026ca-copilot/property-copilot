@@ -494,17 +494,20 @@ function AddPersonModal({ onClose, onAdded }: AddPersonModalProps) {
               <label className="block text-xs font-medium text-slate-500 mb-1">Phone</label>
               <input value={form.phone} onChange={e => set("phone", e.target.value)} placeholder="(555) 000-0000" disabled={!!saved} className={`${input} disabled:opacity-60`} />
             </div>
-            <div className="flex items-end">
-              {saved && !inviteResult && (
-                <button type="button" onClick={sendInvite} disabled={inviteSending}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg text-slate-700 hover:bg-slate-50 disabled:opacity-50">
-                  {inviteSending ? "Sending…" : "Send tenant invite"}
-                </button>
-              )}
-              {inviteResult && (
+            <div className="flex flex-col justify-end">
+              {inviteResult ? (
                 <p className="text-xs text-emerald-600 bg-emerald-50 rounded-lg px-3 py-2 w-full">
                   Invite sent{inviteResult.email_sent && inviteResult.sms_sent ? " by email and SMS" : inviteResult.email_sent ? " by email" : " by SMS"}.
                 </p>
+              ) : (
+                <>
+                  <button type="button" onClick={sendInvite} disabled={!saved || inviteSending}
+                    title={!saved ? "Add the tenant first, then you can send their invite" : undefined}
+                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:hover:bg-transparent">
+                    {inviteSending ? "Sending…" : "Send tenant invite"}
+                  </button>
+                  {!saved && <p className="text-[11px] text-slate-400 mt-1">Available after the tenant is added</p>}
+                </>
               )}
             </div>
           </div>
