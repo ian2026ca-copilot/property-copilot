@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useAuth } from "@/context/AuthContext";
 
 type Tab = "home" | "payments" | "maintenance" | "documents" | "messages";
 
@@ -373,6 +374,7 @@ function MessagesTab() {
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function PortalPage() {
+  const { user } = useAuth();
   const [tab, setTab] = useState<Tab>("home");
   const [showPay, setShowPay] = useState(false);
   const [showNewRequest, setShowNewRequest] = useState(false);
@@ -385,7 +387,7 @@ export default function PortalPage() {
       {/* Greeting */}
       <div className="mb-5">
         <p className="text-[11px] uppercase tracking-widest text-slate-400 font-medium">Welcome back</p>
-        <h1 className="text-xl font-bold text-slate-900 mt-0.5">Emma Jones</h1>
+        <h1 className="text-xl font-bold text-slate-900 mt-0.5">{user?.full_name ?? "Tenant"}</h1>
       </div>
 
       {/* Tab bar */}
