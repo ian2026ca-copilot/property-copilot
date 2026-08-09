@@ -511,6 +511,19 @@ async def get_person(
     current: tuple[User, OrganizationMember] = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    caller, member = current
+    if tenant_user_id != str(caller.id):
+        if member.role != UserRole.OWNER:
+            raise HTTPException(status_code=403, detail="Not authorized")
+        mem_res = await db.execute(
+            select(OrganizationMember).where(
+                OrganizationMember.organization_id == member.organization_id,
+                OrganizationMember.user_id == tenant_user_id,
+            )
+        )
+        if not mem_res.scalar_one_or_none():
+            raise HTTPException(status_code=404, detail="Tenant not found")
+
     result = await db.execute(
         select(User)
         .where(User.id == tenant_user_id)
@@ -1320,11 +1333,16 @@ async def update_reference_email_config(
 async def update_person(
     tenant_user_id: str,
     body: TenantUpdate,
-    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
+    current: tuple[User, OrganizationMember] = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Update tenant person info."""
-    _, member = current
+    """Update tenant person info. Owners can update any tenant in their org;
+    a tenant can update their own record — this is what powers the tenant
+    portal's editable profile (the same rental-application fields as the
+    owner's Add Tenant form)."""
+    caller, member = current
+    if member.role != UserRole.OWNER and tenant_user_id != str(caller.id):
+        raise HTTPException(status_code=403, detail="Not authorized")
     result = await db.execute(select(User).where(User.id == tenant_user_id, User.is_active == True))
     tenant = result.scalar_one_or_none()
     if not tenant:

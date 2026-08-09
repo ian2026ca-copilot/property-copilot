@@ -1,8 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/context/AuthContext";
-import { profileApi } from "@/lib/api";
+import { tenantsApi, type TenantDocumentOut } from "@/lib/api";
+import {
+  useRentalApplicationState, buildRentalApplicationPayload, RentalApplicationSections, Section,
+} from "@/components/rental-application/RentalApplicationFields";
+
+const PROFILE_ACCEPT_DOCS = "application/pdf,image/jpeg,image/png,image/webp,image/gif,.doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
 type Tab = "home" | "profile" | "payments" | "maintenance" | "documents" | "messages";
 
@@ -373,28 +378,192 @@ function MessagesTab() {
   );
 }
 
-function ProfileTab() {
-  const { user, refresh } = useAuth();
-  const [editing, setEditing] = useState(false);
-  const [fullName, setFullName] = useState(user?.full_name ?? "");
-  const [phone, setPhone] = useState(user?.phone ?? "");
-  const [saving, setSaving] = useState(false);
+function MyDocumentsSection({ tenantId }: { tenantId: string }) {
+  const [docs, setDocs] = useState<TenantDocumentOut[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
+  const fileRef = useRef<HTMLInputElement | null>(null);
 
-  function startEditing() {
-    setFullName(user?.full_name ?? "");
-    setPhone(user?.phone ?? "");
-    setError("");
-    setEditing(true);
-  }
+  useEffect(() => {
+    let cancelled = false;
+    tenantsApi.listDocuments(tenantId)
+      .then(d => { if (!cancelled) setDocs(d); })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [tenantId]);
 
-  async function handleSave() {
-    setSaving(true);
+  async function handleUpload(file: File) {
+    setUploading(true);
     setError("");
     try {
-      await profileApi.update({ full_name: fullName, phone });
+      const doc = await tenantsApi.uploadMyDocument("id_document", file);
+      setDocs(d => [...d, doc]);
+    } catch (e: any) {
+      setError(e.message ?? "Upload failed");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  const idDocs = docs.filter(d => d.doc_type === "id_document");
+
+  return (
+    <Section title="Identity documents">
+      <div className="border border-slate-200 rounded-xl overflow-hidden">
+        <div className="flex items-center justify-between px-3 py-2 bg-slate-50 border-b border-slate-100">
+          <p className="text-xs font-medium text-slate-700">ID Document</p>
+          <button type="button" disabled={uploading} onClick={() => fileRef.current?.click()}
+            className="text-xs px-2.5 py-1 bg-black text-white rounded-lg hover:bg-slate-800 disabled:opacity-50 font-medium">
+            {uploading ? "Uploading…" : "+ Upload"}
+          </button>
+          <input type="file" accept={PROFILE_ACCEPT_DOCS} className="hidden" ref={fileRef}
+            onChange={e => { const f = e.target.files?.[0]; if (f) handleUpload(f); e.target.value = ""; }} />
+        </div>
+        {loading ? (
+          <p className="text-xs text-slate-400 px-3 py-2 italic">Loading…</p>
+        ) : idDocs.length === 0 ? (
+          <p className="text-xs text-slate-400 px-3 py-2 italic">No file uploaded</p>
+        ) : (
+          <ul className="divide-y divide-slate-100">
+            {idDocs.map(doc => (
+              <li key={doc.id} className="p-3">
+                <a href={doc.url} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline truncate block">
+                  {doc.original_name}
+                </a>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      {error && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2 mt-2">{error}</p>}
+    </Section>
+  );
+}
+
+function ProfileTab() {
+  const { user, refresh } = useAuth();
+  const [form, setForm] = useState({
+    first_name: "", last_name: "", middle_name: "",
+    date_of_birth: "", drivers_licence: "",
+    email: "", phone: "",
+  });
+  const app = useRentalApplicationState();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [saved, setSaved] = useState(false);
+
+  // Pre-fill personal details + the full rental-application sections — same
+  // fields and shape as the owner's Add Tenant / Edit tenant form.
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    Promise.all([tenantsApi.getPerson(user.id), tenantsApi.getApplication(user.id)])
+      .then(([person, data]: [any, any]) => {
+        if (cancelled) return;
+        setForm({
+          first_name: person.first_name ?? "",
+          last_name: person.last_name ?? "",
+          middle_name: data.middle_name ?? "",
+          date_of_birth: person.date_of_birth ?? "",
+          drivers_licence: data.drivers_licence ?? "",
+          email: person.email ?? "",
+          phone: person.phone ?? "",
+        });
+        if (data.address_history?.length) {
+          app.setAddresses(data.address_history.map((a: any) => ({
+            is_current: a.is_current, residential_status: a.residential_status ?? "Rent",
+            street_address: a.street_address ?? "", city: a.city ?? "", postal_code: a.postal_code ?? "",
+            country: a.country ?? "", province: a.province ?? "",
+            move_in_date: a.move_in_date ?? "", move_out_date: a.move_out_date ?? "",
+            monthly_rent: a.monthly_rent != null ? String(a.monthly_rent) : "",
+            reason_for_moving: a.reason_for_moving ?? "",
+            landlord_name: a.landlord_name ?? "", landlord_phone: a.landlord_phone ?? "", landlord_email: a.landlord_email ?? "",
+          })));
+        }
+        if (data.employment_history?.length) {
+          app.setEmployments(data.employment_history.map((e: any) => ({
+            is_current: e.is_current, employment_type: e.employment_type ?? "Full time employment",
+            company: e.company ?? "", position: e.position ?? "", employment_length: e.employment_length ?? "",
+            company_website: e.company_website ?? "", company_linkedin_url: e.company_linkedin_url ?? "",
+            additional_notes: e.additional_notes ?? "",
+            employer_reference_name: e.employer_reference_name ?? "", employer_reference_phone: e.employer_reference_phone ?? "",
+            employer_reference_email: e.employer_reference_email ?? "",
+          })));
+        }
+        app.setPersonalIncome(data.personal_income_annual != null ? String(data.personal_income_annual) : "");
+        app.setHouseholdIncome(data.household_income_annual != null ? String(data.household_income_annual) : "");
+        if (data.income_sources?.length) {
+          app.setIncomeSources(data.income_sources.map((s: any) => ({ source_name: s.source_name, amount_annual: String(s.amount_annual) })));
+        }
+        if (data.occupants?.length) {
+          app.setOccupants(data.occupants.map((o: any) => ({
+            name: o.name, relationship_label: o.relationship_label ?? "", email: o.email ?? "", phone: o.phone ?? "",
+            share_of_rent: o.share_of_rent != null ? String(o.share_of_rent) : "", is_dependent: !!o.is_dependent,
+          })));
+        }
+        if (data.cosigners?.length) {
+          app.setHasCosigner(true);
+          app.setCosigners(data.cosigners.map((c: any) => ({
+            name: c.name, relationship_label: c.relationship_label ?? "", email: c.email ?? "", phone: c.phone ?? "",
+          })));
+        }
+        if (data.pets?.length) {
+          app.setHasPets(true);
+          app.setPets(data.pets.map((p: any) => ({
+            animal_type: p.animal_type, breed: p.breed ?? "",
+            weight_lbs: p.weight_lbs != null ? String(p.weight_lbs) : "", sex: p.sex ?? "",
+            age: p.age != null ? String(p.age) : "", is_fixed: !!p.is_fixed,
+          })));
+        }
+        if (data.vehicles?.length) {
+          app.setHasVehicle(true);
+          app.setVehicles(data.vehicles.map((v: any) => ({
+            make: v.make, model: v.model, year: v.year != null ? String(v.year) : "", license_plate: v.license_plate ?? "",
+          })));
+        }
+        app.setScreening({
+          smoke_vape: data.smoke_vape ?? null,
+          given_notice_to_landlord: data.given_notice_to_landlord ?? null,
+          refused_rent: data.refused_rent ?? null,
+          evicted: data.evicted ?? null,
+          criminal_record: data.criminal_record ?? null,
+        });
+        app.setScreeningNotes(data.screening_notes ?? "");
+        app.setPersonalMessage(data.personal_message ?? "");
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
+
+  function set(k: string, v: string) {
+    setForm(f => ({ ...f, [k]: v }));
+    setSaved(false);
+  }
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    if (!user) return;
+    setSaving(true);
+    setError("");
+    setSaved(false);
+    try {
+      await tenantsApi.updatePerson(user.id, {
+        first_name: form.first_name,
+        last_name: form.last_name,
+        middle_name: form.middle_name || null,
+        email: form.email || null,
+        phone: form.phone || null,
+        date_of_birth: form.date_of_birth || null,
+        drivers_licence: form.drivers_licence || null,
+        ...buildRentalApplicationPayload(app),
+      });
       await refresh();
-      setEditing(false);
+      setSaved(true);
     } catch (err: any) {
       setError(err.message ?? "Failed to update profile");
     } finally {
@@ -402,9 +571,21 @@ function ProfileTab() {
     }
   }
 
+  const input = "w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black";
+
+  if (loading) {
+    return (
+      <div className="space-y-4">
+        <h2 className="text-sm font-semibold text-slate-900">My profile</h2>
+        <p className="text-sm text-slate-400">Loading your profile…</p>
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-4">
+    <form onSubmit={handleSave} className="space-y-4">
       <h2 className="text-sm font-semibold text-slate-900">My profile</h2>
+
       <div className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
         <div className="flex items-center gap-3">
           <div className="w-12 h-12 rounded-full bg-black text-white text-sm font-bold flex items-center justify-center shrink-0">
@@ -415,60 +596,50 @@ function ProfileTab() {
             <p className="text-[11px] text-slate-500">Tenant</p>
           </div>
         </div>
-
-        {editing ? (
-          <div className="space-y-3">
-            <div>
-              <label className="block text-[11px] font-medium text-slate-500 mb-1">Full name</label>
-              <input
-                value={fullName}
-                onChange={e => setFullName(e.target.value)}
-                className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black"
-              />
-            </div>
-            <div>
-              <label className="block text-[11px] font-medium text-slate-500 mb-1">Phone</label>
-              <input
-                value={phone}
-                onChange={e => setPhone(e.target.value)}
-                placeholder="+15550001234"
-                className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black"
-              />
-            </div>
-            <div>
-              <label className="block text-[11px] font-medium text-slate-500 mb-1">Email</label>
-              <p className="text-sm text-slate-400 px-3 py-2 bg-slate-50 rounded-lg">{user?.email}</p>
-            </div>
-            {error && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
-            <div className="flex gap-2 pt-1">
-              <button onClick={handleSave} disabled={saving}
-                className="flex-1 py-2 bg-black text-white text-sm rounded-lg font-medium hover:bg-slate-800 disabled:opacity-50">
-                {saving ? "Saving…" : "Save changes"}
-              </button>
-              <button onClick={() => setEditing(false)} disabled={saving}
-                className="px-4 py-2 text-sm text-slate-500 hover:text-slate-700 disabled:opacity-50">
-                Cancel
-              </button>
-            </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">First name</label>
+            <input value={form.first_name} onChange={e => set("first_name", e.target.value)} className={input} />
           </div>
-        ) : (
-          <div className="space-y-3">
-            <div className="flex justify-between text-sm">
-              <span className="text-slate-500">Email</span>
-              <span className="text-slate-900 font-medium">{user?.email}</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-slate-500">Phone</span>
-              <span className="text-slate-900 font-medium">{user?.phone || "Not set"}</span>
-            </div>
-            <button onClick={startEditing}
-              className="w-full py-2 border border-slate-200 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50">
-              Edit profile
-            </button>
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Middle name</label>
+            <input value={form.middle_name} onChange={e => set("middle_name", e.target.value)} className={input} />
           </div>
-        )}
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Last name</label>
+            <input value={form.last_name} onChange={e => set("last_name", e.target.value)} className={input} />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Date of birth</label>
+            <input type="date" value={form.date_of_birth} onChange={e => set("date_of_birth", e.target.value)} className={input} />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Driver's licence</label>
+            <input value={form.drivers_licence} onChange={e => set("drivers_licence", e.target.value)} placeholder="Optional" className={input} />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Email</label>
+            <input type="email" value={form.email} onChange={e => set("email", e.target.value)} className={input} />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Phone</label>
+            <input value={form.phone} onChange={e => set("phone", e.target.value)} className={input} />
+          </div>
+        </div>
       </div>
-    </div>
+
+      <RentalApplicationSections state={app} />
+
+      {user && <MyDocumentsSection tenantId={user.id} />}
+
+      {error && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
+      {saved && <p className="text-xs text-emerald-600 bg-emerald-50 rounded-lg px-3 py-2">Profile updated.</p>}
+
+      <button type="submit" disabled={saving}
+        className="w-full py-2.5 bg-black text-white text-sm rounded-lg font-medium hover:bg-slate-800 disabled:opacity-50">
+        {saving ? "Saving…" : "Save changes"}
+      </button>
+    </form>
   );
 }
 
