@@ -522,22 +522,27 @@ async def get_person(
     return _tenant_to_out(user, user.tenant_documents)
 
 
-def _draft_invite_message(tenant_name: str, org_name: str) -> str:
-    """AI-drafted 1-2 sentence invite blurb, personalized per tenant/org.
-    Falls back to a static default if the AI call fails for any reason
-    (missing key, quota, network) so the invite still sends either way."""
+def _draft_invite_message(tenant_name: str, org_name: str, email: str, register_link: str) -> str:
+    """AI-drafted invite blurb personalized per tenant/org, with the tenant's
+    login username (their email) and their real portal link appended. Falls
+    back to a static default if the AI call fails for any reason (missing
+    key, quota, network) so the invite still sends either way. The link is
+    always appended deterministically rather than left to the model, so it's
+    never malformed or hallucinated."""
     prompt = (
-        "Write a short, warm 1-2 sentence message from a property management "
+        "Write a short, warm 2-3 sentence message from a property management "
         f"company called \"{org_name}\" inviting a new tenant named {tenant_name} "
-        "to set up their tenant portal account and create a password. Friendly, "
-        "professional tone. Do not include a URL, link, or placeholder for one — "
+        "to set up their tenant portal account and create a password. Mention that "
+        f"they will log in using their email address ({email}) as their username. "
+        "Friendly, professional tone. Do not include a URL, link, or placeholder for one — "
         "one will be appended automatically. Plain text only, no markdown, no subject line."
     )
     try:
         drafted = generate_ai_text(prompt).strip()
-        return drafted or f"{org_name} has set up your tenant portal account."
+        body = drafted or f"{org_name} has set up your tenant portal account. Log in with your email ({email}) as your username."
     except Exception:
-        return f"{org_name} has set up your tenant portal account."
+        body = f"{org_name} has set up your tenant portal account. Log in with your email ({email}) as your username."
+    return f"{body}\n\nPortal link: {register_link}"
 
 
 async def _get_tenant_and_org(tenant_user_id: str, member: OrganizationMember, db: AsyncSession) -> tuple[User, str]:
@@ -561,6 +566,19 @@ async def _get_tenant_and_org(tenant_user_id: str, member: OrganizationMember, d
     return tenant_user, (org.name if org else "Property Copilot")
 
 
+async def _create_registration_link(tenant_user_id: str, db: AsyncSession) -> str:
+    """Creates a fresh 7-day PasswordResetToken and returns its /reset-password
+    link. Multiple valid tokens per tenant can coexist harmlessly (no
+    uniqueness constraint), so it's safe to call this once per draft even if
+    the owner discards it and re-drafts."""
+    token = secrets.token_urlsafe(48)
+    expires_at = datetime.now(timezone.utc) + timedelta(days=7)
+    db.add(PasswordResetToken(user_id=tenant_user_id, token=token, expires_at=expires_at))
+    await db.commit()
+    frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
+    return f"{frontend_url}/reset-password?token={token}"
+
+
 @router.post("/person/{tenant_user_id}/registration-invite-draft", response_model=TenantInviteDraftOut)
 async def draft_registration_invite(
     tenant_user_id: str,
@@ -568,12 +586,14 @@ async def draft_registration_invite(
     db: AsyncSession = Depends(get_db),
 ):
     """AI-drafts the invite message for the owner to review (and optionally
-    edit) before sending — a pure preview, same shape as the reference-letter
-    draft flow. No token is generated and nothing is sent here."""
+    edit) before sending — same shape as the reference-letter draft flow. The
+    registration token is created here (not at send time) so the link the
+    owner reviews is the exact link that gets sent."""
     _, member = current
     tenant_user, org_name = await _get_tenant_and_org(tenant_user_id, member, db)
-    message = _draft_invite_message(tenant_user.full_name, org_name)
-    return TenantInviteDraftOut(message=message)
+    register_link = await _create_registration_link(tenant_user.id, db)
+    message = _draft_invite_message(tenant_user.full_name, org_name, tenant_user.email, register_link)
+    return TenantInviteDraftOut(message=message, register_link=register_link)
 
 
 @router.post("/person/{tenant_user_id}/send-registration-link", response_model=TenantRegistrationLinkOut)
@@ -589,28 +609,23 @@ async def send_registration_link(
     tenant actually gets into their portal — reuses the exact same
     PasswordResetToken + /reset-password flow as /auth/forgot-password, just
     with a week-long expiry suited to an onboarding invite rather than an
-    urgent reset. Uses the owner-reviewed message if one was passed in
-    (from the draft step), otherwise drafts a fresh one via AI."""
+    urgent reset. Uses the owner-reviewed message and link if passed in (from
+    the draft step) so what was reviewed is exactly what gets sent; otherwise
+    generates a fresh token/link and drafts a message via AI (fallback for
+    calling this endpoint directly without a prior draft)."""
     _, member = current
     tenant_user, org_name = await _get_tenant_and_org(tenant_user_id, member, db)
 
-    token = secrets.token_urlsafe(48)
-    expires_at = datetime.now(timezone.utc) + timedelta(days=7)
-    db.add(PasswordResetToken(user_id=tenant_user.id, token=token, expires_at=expires_at))
-    await db.commit()
-
-    frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
-    register_link = f"{frontend_url}/reset-password?token={token}"
+    message = (body.message or "").strip()
+    register_link = body.register_link
+    if not message or not register_link:
+        register_link = await _create_registration_link(tenant_user.id, db)
+        message = _draft_invite_message(tenant_user.full_name, org_name, tenant_user.email, register_link)
 
     channels = set(body.channels)
     email_sent = False
     sms_sent = False
     skipped: list[str] = []
-
-    if ("email" in channels and tenant_user.email) or ("sms" in channels and tenant_user.phone):
-        message = (body.message or "").strip() or _draft_invite_message(tenant_user.full_name, org_name)
-    else:
-        message = ""
 
     if "email" in channels:
         if tenant_user.email:
@@ -623,8 +638,7 @@ async def send_registration_link(
 
     if "sms" in channels:
         if tenant_user.phone:
-            sms_body = f"{message} {register_link}"
-            background_tasks.add_task(send_sms, tenant_user.phone, sms_body)
+            background_tasks.add_task(send_sms, tenant_user.phone, message)
             sms_sent = True
         else:
             skipped.append("SMS (no phone on file)")

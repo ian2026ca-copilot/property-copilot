@@ -167,11 +167,13 @@ class EmployerReferenceLetterOut(BaseModel):
 
 class TenantInviteDraftOut(BaseModel):
     message: str
+    register_link: str
 
 
 class TenantRegistrationLinkIn(BaseModel):
     channels: list[str]  # any of "email", "sms"
     message: str | None = None  # owner-reviewed/edited draft; regenerated via AI if omitted
+    register_link: str | None = None  # the link the draft's token points to; regenerated if omitted
 
 
 class TenantRegistrationLinkOut(BaseModel):

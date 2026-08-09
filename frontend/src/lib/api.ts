@@ -556,6 +556,7 @@ export interface EmployerReferenceLetterOut {
 
 export interface TenantInviteDraftOut {
   message: string;
+  register_link: string;
 }
 
 export interface TenantRegistrationLinkOut {
@@ -600,8 +601,8 @@ export const tenantsApi = {
   deactivatePerson: (id: string) => api.delete<void>(`/tenants/person/${id}`),
   draftRegistrationInvite: (id: string) =>
     api.post<TenantInviteDraftOut>(`/tenants/person/${id}/registration-invite-draft`, {}),
-  sendRegistrationLink: (id: string, channels: ("email" | "sms")[], message?: string) =>
-    api.post<TenantRegistrationLinkOut>(`/tenants/person/${id}/send-registration-link`, { channels, message }),
+  sendRegistrationLink: (id: string, channels: ("email" | "sms")[], message?: string, registerLink?: string) =>
+    api.post<TenantRegistrationLinkOut>(`/tenants/person/${id}/send-registration-link`, { channels, message, register_link: registerLink }),
   listDocuments: (tenantUserId: string) =>
     api.get<TenantDocumentOut[]>(`/tenants/${tenantUserId}/documents`),
   deleteDocument: (tenantUserId: string, docId: string) =>

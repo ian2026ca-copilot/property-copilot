@@ -403,6 +403,7 @@ function AddPersonModal({ onClose, onAdded }: AddPersonModalProps) {
   const [error, setError] = useState("");
   const [draftingInvite, setDraftingInvite] = useState(false);
   const [inviteDraft, setInviteDraft] = useState<string | null>(null);
+  const [inviteRegisterLink, setInviteRegisterLink] = useState<string | null>(null);
   const [inviteChannels, setInviteChannels] = useState({ email: false, sms: false });
   const [inviteSending, setInviteSending] = useState(false);
   const [inviteResult, setInviteResult] = useState<TenantRegistrationLinkOut | null>(null);
@@ -459,6 +460,7 @@ function AddPersonModal({ onClose, onAdded }: AddPersonModalProps) {
       }
       const draft = await tenantsApi.draftRegistrationInvite(person.id);
       setInviteDraft(draft.message);
+      setInviteRegisterLink(draft.register_link);
       setInviteChannels({ email: !!person.email, sms: !!person.phone });
     } catch (err: any) {
       setInviteError(err.message ?? "Failed to draft invite");
@@ -477,7 +479,7 @@ function AddPersonModal({ onClose, onAdded }: AddPersonModalProps) {
     setInviteSending(true);
     setInviteError("");
     try {
-      const out = await tenantsApi.sendRegistrationLink(saved.id, channels, inviteDraft);
+      const out = await tenantsApi.sendRegistrationLink(saved.id, channels, inviteDraft, inviteRegisterLink ?? undefined);
       setInviteResult(out);
     } catch (err: any) {
       setInviteError(err.message ?? "Failed to send invite");
@@ -488,6 +490,7 @@ function AddPersonModal({ onClose, onAdded }: AddPersonModalProps) {
 
   function handleDiscardInvite() {
     setInviteDraft(null);
+    setInviteRegisterLink(null);
     setInviteError("");
   }
 
@@ -1344,6 +1347,7 @@ function LeaseHistoryRow({
 function SendRegistrationLinkModal({ person, onClose }: { person: PersonRow; onClose: () => void }) {
   const [channels, setChannels] = useState({ email: !!person.email, sms: !!person.phone });
   const [message, setMessage] = useState<string | null>(null);
+  const [registerLink, setRegisterLink] = useState<string | null>(null);
   const [drafting, setDrafting] = useState(true);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
@@ -1352,7 +1356,7 @@ function SendRegistrationLinkModal({ person, onClose }: { person: PersonRow; onC
   useEffect(() => {
     let cancelled = false;
     tenantsApi.draftRegistrationInvite(person.id)
-      .then(draft => { if (!cancelled) setMessage(draft.message); })
+      .then(draft => { if (!cancelled) { setMessage(draft.message); setRegisterLink(draft.register_link); } })
       .catch((err: any) => { if (!cancelled) setError(err.message ?? "Failed to draft invite"); })
       .finally(() => { if (!cancelled) setDrafting(false); });
     return () => { cancelled = true; };
@@ -1367,7 +1371,7 @@ function SendRegistrationLinkModal({ person, onClose }: { person: PersonRow; onC
     setSending(true);
     setError("");
     try {
-      const out = await tenantsApi.sendRegistrationLink(person.id, selected, message ?? undefined);
+      const out = await tenantsApi.sendRegistrationLink(person.id, selected, message ?? undefined, registerLink ?? undefined);
       setResult(out);
     } catch (err: any) {
       setError(err.message ?? "Failed to send registration link");
