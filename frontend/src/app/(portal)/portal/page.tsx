@@ -2,11 +2,13 @@
 
 import { useState } from "react";
 import { useAuth } from "@/context/AuthContext";
+import { profileApi } from "@/lib/api";
 
-type Tab = "home" | "payments" | "maintenance" | "documents" | "messages";
+type Tab = "home" | "profile" | "payments" | "maintenance" | "documents" | "messages";
 
 const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: "home",        label: "Home",        icon: "🏠" },
+  { id: "profile",     label: "Profile",     icon: "👤" },
   { id: "payments",    label: "Payments",    icon: "💳" },
   { id: "maintenance", label: "Maintenance", icon: "🔧" },
   { id: "documents",   label: "Documents",   icon: "📄" },
@@ -371,6 +373,105 @@ function MessagesTab() {
   );
 }
 
+function ProfileTab() {
+  const { user, refresh } = useAuth();
+  const [editing, setEditing] = useState(false);
+  const [fullName, setFullName] = useState(user?.full_name ?? "");
+  const [phone, setPhone] = useState(user?.phone ?? "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  function startEditing() {
+    setFullName(user?.full_name ?? "");
+    setPhone(user?.phone ?? "");
+    setError("");
+    setEditing(true);
+  }
+
+  async function handleSave() {
+    setSaving(true);
+    setError("");
+    try {
+      await profileApi.update({ full_name: fullName, phone });
+      await refresh();
+      setEditing(false);
+    } catch (err: any) {
+      setError(err.message ?? "Failed to update profile");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <h2 className="text-sm font-semibold text-slate-900">My profile</h2>
+      <div className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
+        <div className="flex items-center gap-3">
+          <div className="w-12 h-12 rounded-full bg-black text-white text-sm font-bold flex items-center justify-center shrink-0">
+            {(user?.full_name ?? "T").split(" ").map(p => p[0]).join("").slice(0, 2).toUpperCase()}
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-slate-900 truncate">{user?.full_name}</p>
+            <p className="text-[11px] text-slate-500">Tenant</p>
+          </div>
+        </div>
+
+        {editing ? (
+          <div className="space-y-3">
+            <div>
+              <label className="block text-[11px] font-medium text-slate-500 mb-1">Full name</label>
+              <input
+                value={fullName}
+                onChange={e => setFullName(e.target.value)}
+                className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-medium text-slate-500 mb-1">Phone</label>
+              <input
+                value={phone}
+                onChange={e => setPhone(e.target.value)}
+                placeholder="+15550001234"
+                className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-medium text-slate-500 mb-1">Email</label>
+              <p className="text-sm text-slate-400 px-3 py-2 bg-slate-50 rounded-lg">{user?.email}</p>
+            </div>
+            {error && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
+            <div className="flex gap-2 pt-1">
+              <button onClick={handleSave} disabled={saving}
+                className="flex-1 py-2 bg-black text-white text-sm rounded-lg font-medium hover:bg-slate-800 disabled:opacity-50">
+                {saving ? "Saving…" : "Save changes"}
+              </button>
+              <button onClick={() => setEditing(false)} disabled={saving}
+                className="px-4 py-2 text-sm text-slate-500 hover:text-slate-700 disabled:opacity-50">
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="flex justify-between text-sm">
+              <span className="text-slate-500">Email</span>
+              <span className="text-slate-900 font-medium">{user?.email}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-slate-500">Phone</span>
+              <span className="text-slate-900 font-medium">{user?.phone || "Not set"}</span>
+            </div>
+            <button onClick={startEditing}
+              className="w-full py-2 border border-slate-200 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50">
+              Edit profile
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function PortalPage() {
@@ -406,6 +507,7 @@ export default function PortalPage() {
 
       {/* Tab content */}
       {tab === "home"        && <HomeTab setTab={setTab} onPay={() => setShowPay(true)} />}
+      {tab === "profile"     && <ProfileTab />}
       {tab === "payments"    && <PaymentsTab onPay={() => setShowPay(true)} />}
       {tab === "maintenance" && <MaintenanceTab onNew={() => setShowNewRequest(true)} />}
       {tab === "documents"   && <DocumentsTab />}

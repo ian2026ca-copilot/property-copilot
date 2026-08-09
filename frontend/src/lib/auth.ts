@@ -2,6 +2,7 @@ export interface AuthUser {
   id: string;
   email: string;
   full_name: string;
+  phone: string;
   org_id: string;
   org_name: string;
   org_slug: string;

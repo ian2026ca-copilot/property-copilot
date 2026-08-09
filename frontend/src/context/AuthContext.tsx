@@ -31,6 +31,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         id: "mock-1",
         email: "demo@propertycopilot.com",
         full_name: "Alex Morgan",
+        phone: "+15550001234",
         org_id: "org-1",
         org_name: "Copilot Demo Co.",
         org_slug: "copilot-demo-co",
