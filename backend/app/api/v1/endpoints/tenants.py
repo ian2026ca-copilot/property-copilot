@@ -34,7 +34,7 @@ from app.schemas.tenant_application import (
     OccupantIn, CosignerIn, PetIn, VehicleIn, TenantScreeningUpdate,
     TenantScreeningNoteIn, TenantScreeningNoteOut, EmployerReferenceContactIn, EmployerReferenceLetterOut,
     ReferenceEmailConfigIn, ReferenceEmailConfigOut,
-    TenantRegistrationLinkIn, TenantRegistrationLinkOut,
+    TenantRegistrationLinkIn, TenantRegistrationLinkOut, TenantInviteDraftOut,
     RENTAL_APP_PROFILE_FIELDS, RENTAL_APP_LIST_FIELDS,
 )
 from app.api.v1.endpoints.payments import generate_monthly_payments
@@ -540,21 +540,7 @@ def _draft_invite_message(tenant_name: str, org_name: str) -> str:
         return f"{org_name} has set up your tenant portal account."
 
 
-@router.post("/person/{tenant_user_id}/send-registration-link", response_model=TenantRegistrationLinkOut)
-async def send_registration_link(
-    tenant_user_id: str,
-    body: TenantRegistrationLinkIn,
-    background_tasks: BackgroundTasks,
-    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
-    db: AsyncSession = Depends(get_db),
-):
-    """Tenant records the owner creates directly (via +Add tenant or the AI
-    copilot) start with an unusable random password, so this is how the
-    tenant actually gets into their portal — reuses the exact same
-    PasswordResetToken + /reset-password flow as /auth/forgot-password, just
-    with a week-long expiry suited to an onboarding invite rather than an
-    urgent reset. The message itself is AI-drafted per tenant/org."""
-    _, member = current
+async def _get_tenant_and_org(tenant_user_id: str, member: OrganizationMember, db: AsyncSession) -> tuple[User, str]:
     mem_res = await db.execute(
         select(OrganizationMember).where(
             OrganizationMember.organization_id == member.organization_id,
@@ -572,7 +558,41 @@ async def send_registration_link(
 
     org_res = await db.execute(select(Organization).where(Organization.id == member.organization_id))
     org = org_res.scalar_one_or_none()
-    org_name = org.name if org else "Property Copilot"
+    return tenant_user, (org.name if org else "Property Copilot")
+
+
+@router.post("/person/{tenant_user_id}/registration-invite-draft", response_model=TenantInviteDraftOut)
+async def draft_registration_invite(
+    tenant_user_id: str,
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
+    db: AsyncSession = Depends(get_db),
+):
+    """AI-drafts the invite message for the owner to review (and optionally
+    edit) before sending — a pure preview, same shape as the reference-letter
+    draft flow. No token is generated and nothing is sent here."""
+    _, member = current
+    tenant_user, org_name = await _get_tenant_and_org(tenant_user_id, member, db)
+    message = _draft_invite_message(tenant_user.full_name, org_name)
+    return TenantInviteDraftOut(message=message)
+
+
+@router.post("/person/{tenant_user_id}/send-registration-link", response_model=TenantRegistrationLinkOut)
+async def send_registration_link(
+    tenant_user_id: str,
+    body: TenantRegistrationLinkIn,
+    background_tasks: BackgroundTasks,
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Tenant records the owner creates directly (via +Add tenant or the AI
+    copilot) start with an unusable random password, so this is how the
+    tenant actually gets into their portal — reuses the exact same
+    PasswordResetToken + /reset-password flow as /auth/forgot-password, just
+    with a week-long expiry suited to an onboarding invite rather than an
+    urgent reset. Uses the owner-reviewed message if one was passed in
+    (from the draft step), otherwise drafts a fresh one via AI."""
+    _, member = current
+    tenant_user, org_name = await _get_tenant_and_org(tenant_user_id, member, db)
 
     token = secrets.token_urlsafe(48)
     expires_at = datetime.now(timezone.utc) + timedelta(days=7)
@@ -588,7 +608,7 @@ async def send_registration_link(
     skipped: list[str] = []
 
     if ("email" in channels and tenant_user.email) or ("sms" in channels and tenant_user.phone):
-        message = _draft_invite_message(tenant_user.full_name, org_name)
+        message = (body.message or "").strip() or _draft_invite_message(tenant_user.full_name, org_name)
     else:
         message = ""
 

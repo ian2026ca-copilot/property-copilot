@@ -165,8 +165,13 @@ class EmployerReferenceLetterOut(BaseModel):
     body: str
 
 
+class TenantInviteDraftOut(BaseModel):
+    message: str
+
+
 class TenantRegistrationLinkIn(BaseModel):
     channels: list[str]  # any of "email", "sms"
+    message: str | None = None  # owner-reviewed/edited draft; regenerated via AI if omitted
 
 
 class TenantRegistrationLinkOut(BaseModel):

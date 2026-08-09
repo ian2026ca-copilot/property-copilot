@@ -554,6 +554,10 @@ export interface EmployerReferenceLetterOut {
   body: string;
 }
 
+export interface TenantInviteDraftOut {
+  message: string;
+}
+
 export interface TenantRegistrationLinkOut {
   email_sent: boolean;
   sms_sent: boolean;
@@ -594,8 +598,10 @@ export const tenantsApi = {
   createPerson: (body: object) => api.post<TenantOut>("/tenants/person", body),
   updatePerson: (id: string, body: object) => api.put<TenantOut>(`/tenants/person/${id}`, body),
   deactivatePerson: (id: string) => api.delete<void>(`/tenants/person/${id}`),
-  sendRegistrationLink: (id: string, channels: ("email" | "sms")[]) =>
-    api.post<TenantRegistrationLinkOut>(`/tenants/person/${id}/send-registration-link`, { channels }),
+  draftRegistrationInvite: (id: string) =>
+    api.post<TenantInviteDraftOut>(`/tenants/person/${id}/registration-invite-draft`, {}),
+  sendRegistrationLink: (id: string, channels: ("email" | "sms")[], message?: string) =>
+    api.post<TenantRegistrationLinkOut>(`/tenants/person/${id}/send-registration-link`, { channels, message }),
   listDocuments: (tenantUserId: string) =>
     api.get<TenantDocumentOut[]>(`/tenants/${tenantUserId}/documents`),
   deleteDocument: (tenantUserId: string, docId: string) =>

@@ -401,6 +401,9 @@ function AddPersonModal({ onClose, onAdded }: AddPersonModalProps) {
   const [saved, setSaved] = useState<TenantOut | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [draftingInvite, setDraftingInvite] = useState(false);
+  const [inviteDraft, setInviteDraft] = useState<string | null>(null);
+  const [inviteChannels, setInviteChannels] = useState({ email: false, sms: false });
   const [inviteSending, setInviteSending] = useState(false);
   const [inviteResult, setInviteResult] = useState<TenantRegistrationLinkOut | null>(null);
   const [inviteError, setInviteError] = useState("");
@@ -440,12 +443,12 @@ function AddPersonModal({ onClose, onAdded }: AddPersonModalProps) {
     }
   }
 
-  async function sendInvite() {
+  async function handleDraftInvite() {
     if (!form.first_name || !form.last_name || !form.email) {
       setInviteError("First name, last name, and email are required to send an invite.");
       return;
     }
-    setInviteSending(true);
+    setDraftingInvite(true);
     setInviteError("");
     try {
       let person = saved;
@@ -454,18 +457,38 @@ function AddPersonModal({ onClose, onAdded }: AddPersonModalProps) {
         setSaved(person);
         onAdded(person);
       }
-      const channels = (["email", "sms"] as const).filter(c => (c === "email" ? person!.email : person!.phone));
-      if (channels.length === 0) {
-        setInviteError("Tenant has no email or phone on file.");
-        return;
-      }
-      const out = await tenantsApi.sendRegistrationLink(person.id, channels);
+      const draft = await tenantsApi.draftRegistrationInvite(person.id);
+      setInviteDraft(draft.message);
+      setInviteChannels({ email: !!person.email, sms: !!person.phone });
+    } catch (err: any) {
+      setInviteError(err.message ?? "Failed to draft invite");
+    } finally {
+      setDraftingInvite(false);
+    }
+  }
+
+  async function handleSendInvite() {
+    if (!saved || inviteDraft === null) return;
+    const channels = (["email", "sms"] as const).filter(c => inviteChannels[c]);
+    if (channels.length === 0) {
+      setInviteError("Select at least one channel to send to.");
+      return;
+    }
+    setInviteSending(true);
+    setInviteError("");
+    try {
+      const out = await tenantsApi.sendRegistrationLink(saved.id, channels, inviteDraft);
       setInviteResult(out);
     } catch (err: any) {
       setInviteError(err.message ?? "Failed to send invite");
     } finally {
       setInviteSending(false);
     }
+  }
+
+  function handleDiscardInvite() {
+    setInviteDraft(null);
+    setInviteError("");
   }
 
   const input = "w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black";
@@ -538,11 +561,53 @@ function AddPersonModal({ onClose, onAdded }: AddPersonModalProps) {
             )}
           </div>
 
-          {inviteError && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{inviteError}</p>}
           {inviteResult && (
             <p className="text-xs text-emerald-600 bg-emerald-50 rounded-lg px-3 py-2">
               Invite sent{inviteResult.email_sent && inviteResult.sms_sent ? " by email and SMS" : inviteResult.email_sent ? " by email" : " by SMS"}.
             </p>
+          )}
+
+          {inviteDraft !== null && !inviteResult && (
+            <div className="border border-violet-100 bg-violet-50/50 rounded-lg p-3 space-y-2.5">
+              <p className="text-[11px] uppercase tracking-wider font-medium text-violet-700">
+                AI-drafted invite — review before sending
+              </p>
+              <textarea
+                rows={4}
+                value={inviteDraft}
+                onChange={e => setInviteDraft(e.target.value)}
+                className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black resize-none bg-white"
+              />
+              <div className="flex items-center gap-4">
+                <label className="flex items-center gap-1.5 text-xs text-slate-700">
+                  <input type="checkbox" checked={inviteChannels.email} disabled={!saved?.email}
+                    onChange={e => setInviteChannels(c => ({ ...c, email: e.target.checked }))}
+                    className="rounded border-slate-300" />
+                  Email {!saved?.email && "(none on file)"}
+                </label>
+                <label className="flex items-center gap-1.5 text-xs text-slate-700">
+                  <input type="checkbox" checked={inviteChannels.sms} disabled={!saved?.phone}
+                    onChange={e => setInviteChannels(c => ({ ...c, sms: e.target.checked }))}
+                    className="rounded border-slate-300" />
+                  SMS {!saved?.phone && "(none on file)"}
+                </label>
+              </div>
+              {inviteError && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-2.5 py-1.5">{inviteError}</p>}
+              <div className="flex gap-2">
+                <button type="button" onClick={handleSendInvite}
+                  disabled={inviteSending || (!inviteChannels.email && !inviteChannels.sms)}
+                  className="px-3 py-1.5 text-xs font-medium bg-violet-600 text-white rounded-lg hover:bg-violet-700 disabled:opacity-50">
+                  {inviteSending ? "Sending…" : "Send invite"}
+                </button>
+                <button type="button" onClick={handleDiscardInvite} disabled={inviteSending}
+                  className="px-3 py-1.5 text-xs text-slate-500 hover:text-slate-700 disabled:opacity-50">
+                  Discard
+                </button>
+              </div>
+            </div>
+          )}
+          {inviteError && inviteDraft === null && (
+            <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{inviteError}</p>
           )}
 
           <div className="pt-2 flex gap-3">
@@ -556,10 +621,10 @@ function AddPersonModal({ onClose, onAdded }: AddPersonModalProps) {
                 {saving ? "Adding…" : "Add tenant"}
               </button>
             )}
-            {!inviteResult && (
-              <button type="button" onClick={sendInvite} disabled={!canInvite || inviteSending}
+            {!inviteResult && inviteDraft === null && (
+              <button type="button" onClick={handleDraftInvite} disabled={!canInvite || draftingInvite}
                 className="flex-1 px-4 py-2 border border-slate-200 rounded-lg text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50">
-                {inviteSending ? "Sending…" : "Send tenant invite"}
+                {draftingInvite ? "Drafting…" : "Send tenant invite"}
               </button>
             )}
           </div>
@@ -1278,12 +1343,22 @@ function LeaseHistoryRow({
 
 function SendRegistrationLinkModal({ person, onClose }: { person: PersonRow; onClose: () => void }) {
   const [channels, setChannels] = useState({ email: !!person.email, sms: !!person.phone });
+  const [message, setMessage] = useState<string | null>(null);
+  const [drafting, setDrafting] = useState(true);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState<TenantRegistrationLinkOut | null>(null);
 
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
+  useEffect(() => {
+    let cancelled = false;
+    tenantsApi.draftRegistrationInvite(person.id)
+      .then(draft => { if (!cancelled) setMessage(draft.message); })
+      .catch((err: any) => { if (!cancelled) setError(err.message ?? "Failed to draft invite"); })
+      .finally(() => { if (!cancelled) setDrafting(false); });
+    return () => { cancelled = true; };
+  }, [person.id]);
+
+  async function handleSend() {
     const selected = (["email", "sms"] as const).filter(c => channels[c]);
     if (selected.length === 0) {
       setError("Select at least one channel to send to.");
@@ -1292,7 +1367,7 @@ function SendRegistrationLinkModal({ person, onClose }: { person: PersonRow; onC
     setSending(true);
     setError("");
     try {
-      const out = await tenantsApi.sendRegistrationLink(person.id, selected);
+      const out = await tenantsApi.sendRegistrationLink(person.id, selected, message ?? undefined);
       setResult(out);
     } catch (err: any) {
       setError(err.message ?? "Failed to send registration link");
@@ -1326,11 +1401,21 @@ function SendRegistrationLinkModal({ person, onClose }: { person: PersonRow; onC
               Done
             </button>
           </div>
+        ) : drafting ? (
+          <div className="p-6">
+            <p className="text-sm text-slate-400">Drafting invite…</p>
+          </div>
         ) : (
-          <form onSubmit={submit} className="p-6 space-y-4">
-            <p className="text-sm text-slate-500">
-              Sends {person.full_name} a link to set a password and log in to their tenant portal. The link expires in 7 days.
+          <div className="p-6 space-y-4">
+            <p className="text-[11px] uppercase tracking-wider font-medium text-violet-700">
+              AI-drafted invite — review before sending
             </p>
+            <textarea
+              rows={4}
+              value={message ?? ""}
+              onChange={e => setMessage(e.target.value)}
+              className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black resize-none"
+            />
             <div className="space-y-2">
               <label className="flex items-center gap-2 text-sm text-slate-700">
                 <input type="checkbox" checked={channels.email} disabled={!person.email}
@@ -1349,12 +1434,12 @@ function SendRegistrationLinkModal({ person, onClose }: { person: PersonRow; onC
             <div className="flex gap-2 justify-end pt-2">
               <button type="button" onClick={onClose}
                 className="px-4 py-2 text-sm text-slate-600 hover:text-slate-900">Cancel</button>
-              <button type="submit" disabled={sending}
+              <button type="button" onClick={handleSend} disabled={sending}
                 className="px-4 py-2 text-sm bg-black text-white rounded-lg hover:bg-slate-800 disabled:opacity-50">
-                {sending ? "Sending…" : "Send link"}
+                {sending ? "Sending…" : "Send invite"}
               </button>
             </div>
-          </form>
+          </div>
         )}
       </div>
     </div>
