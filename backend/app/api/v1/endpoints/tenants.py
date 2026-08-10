@@ -1574,10 +1574,14 @@ async def list_tenant_documents(
 async def delete_tenant_document(
     tenant_user_id: str,
     doc_id: str,
-    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
+    current: tuple[User, OrganizationMember] = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    _, member = current
+    """Owners can delete any tenant's document in their org; a tenant can
+    delete their own (used by the tenant portal's Identity documents section)."""
+    caller, member = current
+    if member.role != UserRole.OWNER and tenant_user_id != str(caller.id):
+        raise HTTPException(status_code=403, detail="Not authorized")
     result = await db.execute(
         select(TenantDocument).where(
             TenantDocument.id == doc_id,

@@ -382,6 +382,7 @@ function MyDocumentsSection({ tenantId }: { tenantId: string }) {
   const [docs, setDocs] = useState<TenantDocumentOut[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const fileRef = useRef<HTMLInputElement | null>(null);
 
@@ -407,6 +408,19 @@ function MyDocumentsSection({ tenantId }: { tenantId: string }) {
     }
   }
 
+  async function handleDelete(doc: TenantDocumentOut) {
+    setDeletingId(doc.id);
+    setError("");
+    try {
+      await tenantsApi.deleteDocument(tenantId, doc.id);
+      setDocs(d => d.filter(x => x.id !== doc.id));
+    } catch (e: any) {
+      setError(e.message ?? "Delete failed");
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
   const idDocs = docs.filter(d => d.doc_type === "id_document");
 
   return (
@@ -428,10 +442,23 @@ function MyDocumentsSection({ tenantId }: { tenantId: string }) {
         ) : (
           <ul className="divide-y divide-slate-100">
             {idDocs.map(doc => (
-              <li key={doc.id} className="p-3">
-                <a href={doc.url} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline truncate block">
+              <li key={doc.id} className="p-3 flex items-center gap-2">
+                <a href={doc.url} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline truncate flex-1">
                   {doc.original_name}
                 </a>
+                <button
+                  type="button"
+                  disabled={deletingId === doc.id}
+                  onClick={() => handleDelete(doc)}
+                  className="text-slate-400 hover:text-red-500 disabled:opacity-50 shrink-0 p-1 rounded hover:bg-red-50"
+                  title="Remove"
+                >
+                  {deletingId === doc.id ? <span className="text-xs">…</span> : (
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                  )}
+                </button>
               </li>
             ))}
           </ul>
