@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/context/AuthContext";
-import { tenantsApi, type TenantDocumentOut } from "@/lib/api";
+import { tenantsApi, paymentsApi, type TenantDocumentOut, type PaymentOut } from "@/lib/api";
 import {
   useRentalApplicationState, buildRentalApplicationPayload, RentalApplicationSections, Section,
 } from "@/components/rental-application/RentalApplicationFields";
@@ -20,15 +20,19 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: "messages",    label: "Messages",    icon: "💬" },
 ];
 
-// ─── Mock data ────────────────────────────────────────────────────────────────
+// ─── Payment status display ─────────────────────────────────────────────────
 
-const paymentHistory = [
-  { id: "p1", month: "June 2026",     amount: 1950, status: "Due",  dueDate: "2026-06-15", paid: null },
-  { id: "p2", month: "May 2026",      amount: 1950, status: "Paid", dueDate: "2026-05-01", paid: "2026-04-30" },
-  { id: "p3", month: "April 2026",    amount: 1950, status: "Paid", dueDate: "2026-04-01", paid: "2026-03-29" },
-  { id: "p4", month: "March 2026",    amount: 1950, status: "Paid", dueDate: "2026-03-01", paid: "2026-03-01" },
-  { id: "p5", month: "February 2026", amount: 1950, status: "Paid", dueDate: "2026-02-01", paid: "2026-02-01" },
-];
+const PAYMENT_STATUS_STYLES: Record<string, string> = {
+  PAID: "bg-emerald-100 text-emerald-700",
+  PENDING: "bg-amber-100 text-amber-700",
+  OVERDUE: "bg-red-100 text-red-700",
+  VOIDED: "bg-slate-100 text-slate-400",
+};
+const PAYMENT_STATUS_LABELS: Record<string, string> = {
+  PAID: "Paid", PENDING: "Pending", OVERDUE: "Overdue", VOIDED: "Voided",
+};
+
+// ─── Mock data ────────────────────────────────────────────────────────────────
 
 const maintenanceRequests = [
   { id: "m1", title: "HVAC unit not cooling",         category: "HVAC",      status: "In Progress", submitted: "2026-06-09", update: "Technician dispatched. ETA tomorrow." },
@@ -181,19 +185,48 @@ function NewRequestModal({ onClose }: { onClose: () => void }) {
 
 // ─── Tab panels ───────────────────────────────────────────────────────────────
 
-function HomeTab({ setTab, onPay }: { setTab: (t: Tab) => void; onPay: () => void }) {
-  const daysUntilDue = 4;
+function HomeTab({ setTab, onPay, payments, paymentsLoading }: {
+  setTab: (t: Tab) => void;
+  onPay: () => void;
+  payments: PaymentOut[];
+  paymentsLoading: boolean;
+}) {
+  const nextDue = payments
+    .filter(p => p.status === "PENDING" || p.status === "OVERDUE")
+    .sort((a, b) => a.due_date.localeCompare(b.due_date))[0];
+  const daysUntilDue = nextDue
+    ? Math.ceil((new Date(nextDue.due_date).getTime() - Date.now()) / 86400000)
+    : null;
+
   return (
     <div className="space-y-4">
       {/* Rent card */}
-      <div className="bg-black rounded-2xl p-5 text-white">
-        <p className="text-xs text-white/60 uppercase tracking-wider font-medium">Rent due</p>
-        <p className="text-3xl font-bold mt-1">$1,950</p>
-        <p className="text-sm text-white/60 mt-0.5">June 2026 · Due in {daysUntilDue} days</p>
-        <button onClick={onPay} className="mt-4 px-5 py-2 bg-white text-black text-xs font-bold rounded-xl hover:bg-slate-100 transition-colors">
-          Pay now →
-        </button>
-      </div>
+      {paymentsLoading ? (
+        <div className="bg-black rounded-2xl p-5 text-white">
+          <p className="text-xs text-white/60 uppercase tracking-wider font-medium">Rent due</p>
+          <p className="text-sm text-white/60 mt-2">Loading…</p>
+        </div>
+      ) : nextDue ? (
+        <div className="bg-black rounded-2xl p-5 text-white">
+          <p className="text-xs text-white/60 uppercase tracking-wider font-medium">
+            {nextDue.status === "OVERDUE" ? "Overdue" : "Rent due"}
+          </p>
+          <p className="text-3xl font-bold mt-1">${nextDue.amount.toLocaleString()}</p>
+          <p className="text-sm text-white/60 mt-0.5">
+            {nextDue.description ?? "Rent"} ·{" "}
+            {daysUntilDue !== null && daysUntilDue >= 0 ? `Due in ${daysUntilDue} day${daysUntilDue === 1 ? "" : "s"}` : `Due ${nextDue.due_date}`}
+          </p>
+          <button onClick={onPay} className="mt-4 px-5 py-2 bg-white text-black text-xs font-bold rounded-xl hover:bg-slate-100 transition-colors">
+            Pay now →
+          </button>
+        </div>
+      ) : (
+        <div className="bg-emerald-600 rounded-2xl p-5 text-white">
+          <p className="text-xs text-white/70 uppercase tracking-wider font-medium">Rent</p>
+          <p className="text-lg font-bold mt-1">You're all paid up 🎉</p>
+          <p className="text-sm text-white/70 mt-0.5">No payments currently due</p>
+        </div>
+      )}
 
       {/* Lease info */}
       <div className="bg-white rounded-xl border border-slate-200 p-4">
@@ -237,35 +270,40 @@ function HomeTab({ setTab, onPay }: { setTab: (t: Tab) => void; onPay: () => voi
   );
 }
 
-function PaymentsTab({ onPay }: { onPay: () => void }) {
+function PaymentsTab({ onPay, payments, loading }: { onPay: () => void; payments: PaymentOut[]; loading: boolean }) {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-semibold text-slate-900">Payment history</h2>
         <button onClick={onPay} className="px-3 py-1.5 bg-black text-white text-xs font-medium rounded-lg">Pay rent</button>
       </div>
-      <div className="space-y-2">
-        {paymentHistory.map(p => (
-          <div key={p.id} className="bg-white rounded-xl border border-slate-200 px-4 py-3.5 flex items-center gap-3">
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm shrink-0 ${p.status === "Paid" ? "bg-emerald-100" : "bg-amber-100"}`}>
-              {p.status === "Paid" ? "✓" : "!"}
+      {loading ? (
+        <p className="text-xs text-slate-400 text-center py-6">Loading payments…</p>
+      ) : payments.length === 0 ? (
+        <p className="text-xs text-slate-400 text-center py-6">No payments yet.</p>
+      ) : (
+        <div className="space-y-2">
+          {payments.map(p => (
+            <div key={p.id} className="bg-white rounded-xl border border-slate-200 px-4 py-3.5 flex items-center gap-3">
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm shrink-0 ${p.status === "PAID" ? "bg-emerald-100" : p.status === "OVERDUE" ? "bg-red-100" : "bg-amber-100"}`}>
+                {p.status === "PAID" ? "✓" : "!"}
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-slate-900">{p.description ?? "Rent"}</p>
+                <p className="text-[11px] text-slate-500">
+                  {p.status === "PAID" ? `Paid ${p.paid_date ?? ""}` : `Due ${p.due_date}`}
+                </p>
+              </div>
+              <div className="text-right">
+                <p className={`text-sm font-bold text-slate-900 ${p.status === "VOIDED" ? "line-through text-slate-400" : ""}`}>${p.amount.toLocaleString()}</p>
+                <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${PAYMENT_STATUS_STYLES[p.status] ?? "bg-slate-100 text-slate-500"}`}>
+                  {PAYMENT_STATUS_LABELS[p.status] ?? p.status}
+                </span>
+              </div>
             </div>
-            <div className="flex-1">
-              <p className="text-sm font-semibold text-slate-900">{p.month}</p>
-              <p className="text-[11px] text-slate-500">
-                {p.status === "Paid" ? `Paid ${p.paid}` : `Due ${p.dueDate}`}
-              </p>
-            </div>
-            <div className="text-right">
-              <p className="text-sm font-bold text-slate-900">${p.amount.toLocaleString()}</p>
-              <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${p.status === "Paid" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
-                {p.status}
-              </span>
-            </div>
-          </div>
-        ))}
-      </div>
-      <p className="text-[11px] text-slate-400 text-center">Showing last 5 payments</p>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -697,6 +735,17 @@ export default function PortalPage() {
   const [tab, setTab] = useState<Tab>("home");
   const [showPay, setShowPay] = useState(false);
   const [showNewRequest, setShowNewRequest] = useState(false);
+  const [payments, setPayments] = useState<PaymentOut[]>([]);
+  const [paymentsLoading, setPaymentsLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    paymentsApi.list()
+      .then(p => { if (!cancelled) setPayments(p); })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setPaymentsLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
 
   return (
     <div className="max-w-lg mx-auto px-4 py-6">
@@ -724,9 +773,9 @@ export default function PortalPage() {
       </div>
 
       {/* Tab content */}
-      {tab === "home"        && <HomeTab setTab={setTab} onPay={() => setShowPay(true)} />}
+      {tab === "home"        && <HomeTab setTab={setTab} onPay={() => setShowPay(true)} payments={payments} paymentsLoading={paymentsLoading} />}
       {tab === "profile"     && <ProfileTab />}
-      {tab === "payments"    && <PaymentsTab onPay={() => setShowPay(true)} />}
+      {tab === "payments"    && <PaymentsTab onPay={() => setShowPay(true)} payments={payments} loading={paymentsLoading} />}
       {tab === "maintenance" && <MaintenanceTab onNew={() => setShowNewRequest(true)} />}
       {tab === "documents"   && <DocumentsTab />}
       {tab === "messages"    && <MessagesTab />}
