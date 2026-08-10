@@ -1,11 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/context/AuthContext";
-import { tenantsApi } from "@/lib/api";
+import { tenantsApi, type TenantDocumentOut } from "@/lib/api";
 import {
-  useRentalApplicationState, buildRentalApplicationPayload, RentalApplicationSections,
+  useRentalApplicationState, buildRentalApplicationPayload, RentalApplicationSections, Section,
 } from "@/components/rental-application/RentalApplicationFields";
+
+const PROFILE_ACCEPT_DOCS = "application/pdf,image/jpeg,image/png,image/webp,image/gif,.doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
 type Tab = "home" | "profile" | "payments" | "maintenance" | "documents" | "messages";
 
@@ -376,6 +378,70 @@ function MessagesTab() {
   );
 }
 
+function MyDocumentsSection({ tenantId }: { tenantId: string }) {
+  const [docs, setDocs] = useState<TenantDocumentOut[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState("");
+  const fileRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    tenantsApi.listDocuments(tenantId)
+      .then(d => { if (!cancelled) setDocs(d); })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [tenantId]);
+
+  async function handleUpload(file: File) {
+    setUploading(true);
+    setError("");
+    try {
+      const doc = await tenantsApi.uploadMyDocument("id_document", file);
+      setDocs(d => [...d, doc]);
+    } catch (e: any) {
+      setError(e.message ?? "Upload failed");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  const idDocs = docs.filter(d => d.doc_type === "id_document");
+
+  return (
+    <Section title="Identity documents">
+      <div className="border border-slate-200 rounded-xl overflow-hidden">
+        <div className="flex items-center justify-between px-3 py-2 bg-slate-50 border-b border-slate-100">
+          <p className="text-xs font-medium text-slate-700">ID Document</p>
+          <button type="button" disabled={uploading} onClick={() => fileRef.current?.click()}
+            className="text-xs px-2.5 py-1 bg-black text-white rounded-lg hover:bg-slate-800 disabled:opacity-50 font-medium">
+            {uploading ? "Uploading…" : "+ Upload"}
+          </button>
+          <input type="file" accept={PROFILE_ACCEPT_DOCS} className="hidden" ref={fileRef}
+            onChange={e => { const f = e.target.files?.[0]; if (f) handleUpload(f); e.target.value = ""; }} />
+        </div>
+        {loading ? (
+          <p className="text-xs text-slate-400 px-3 py-2 italic">Loading…</p>
+        ) : idDocs.length === 0 ? (
+          <p className="text-xs text-slate-400 px-3 py-2 italic">No file uploaded</p>
+        ) : (
+          <ul className="divide-y divide-slate-100">
+            {idDocs.map(doc => (
+              <li key={doc.id} className="p-3">
+                <a href={doc.url} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline truncate block">
+                  {doc.original_name}
+                </a>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      {error && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2 mt-2">{error}</p>}
+    </Section>
+  );
+}
+
 function ProfileTab() {
   const { user, refresh } = useAuth();
   const [form, setForm] = useState({
@@ -563,6 +629,8 @@ function ProfileTab() {
       </div>
 
       <RentalApplicationSections state={app} />
+
+      {user && <MyDocumentsSection tenantId={user.id} />}
 
       {error && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
       {saved && <p className="text-xs text-emerald-600 bg-emerald-50 rounded-lg px-3 py-2">Profile updated.</p>}
