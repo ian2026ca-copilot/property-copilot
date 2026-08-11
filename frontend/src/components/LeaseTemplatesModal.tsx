@@ -8,9 +8,9 @@ const CANADIAN_PROVINCES = [
   "Nova Scotia","Ontario","Prince Edward Island","Quebec","Saskatchewan",
 ];
 
-export function LeaseTemplatesModal({ onClose }: { onClose: () => void }) {
+export function LeaseTemplatesModal({ onClose, showList = true }: { onClose: () => void; showList?: boolean }) {
   const [templates, setTemplates] = useState<LeaseTemplateOut[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(showList);
   const [uploading, setUploading] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [error, setError] = useState("");
@@ -25,7 +25,9 @@ export function LeaseTemplatesModal({ onClose }: { onClose: () => void }) {
   const [aiError, setAiError] = useState("");
 
   useEffect(() => {
+    if (!showList) return;
     leasesApi.listTemplates().then(t => { setTemplates(t); setLoading(false); }).catch(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function handleUpload(file: File) {
@@ -180,6 +182,7 @@ export function LeaseTemplatesModal({ onClose }: { onClose: () => void }) {
         )}
 
         {/* Template list */}
+        {showList && (
         <div className="flex-1 overflow-y-auto px-6 py-4">
           {loading ? (
             <p className="text-sm text-slate-400 text-center py-6">Loading…</p>
@@ -215,6 +218,7 @@ export function LeaseTemplatesModal({ onClose }: { onClose: () => void }) {
             </ul>
           )}
         </div>
+        )}
 
         <div className="px-6 py-4 border-t border-slate-100 shrink-0">
           <button onClick={onClose} className="w-full px-4 py-2 border border-slate-200 rounded-xl text-sm text-slate-600 hover:bg-slate-50">

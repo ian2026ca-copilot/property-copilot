@@ -1107,7 +1107,7 @@ function LeaseTemplateTab() {
       </div>
 
       {showLeaseTemplates && (
-        <LeaseTemplatesModal onClose={() => { setShowLeaseTemplates(false); loadTemplates(); }} />
+        <LeaseTemplatesModal showList={false} onClose={() => { setShowLeaseTemplates(false); loadTemplates(); }} />
       )}
     </div>
   );
