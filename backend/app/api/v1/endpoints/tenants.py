@@ -36,7 +36,7 @@ from app.schemas.tenant_application import (
     TenantScreeningNoteIn, TenantScreeningNoteOut, EmployerReferenceContactIn, EmployerReferenceLetterOut,
     ReferenceEmailConfigIn, ReferenceEmailConfigOut,
     TenantRegistrationLinkIn, TenantRegistrationLinkOut, TenantInviteDraftIn, TenantInviteDraftOut,
-    InviteTemplateCreate, InviteTemplateOut,
+    InviteTemplateCreate, InviteTemplateUpdate, InviteTemplateOut,
     RENTAL_APP_PROFILE_FIELDS, RENTAL_APP_LIST_FIELDS,
 )
 from app.api.v1.endpoints.payments import generate_monthly_payments
@@ -733,6 +733,31 @@ async def create_invite_template(
         raise HTTPException(status_code=400, detail="Name and message are required")
     t = InviteTemplate(organization_id=member.organization_id, name=name, body=text)
     db.add(t)
+    await db.commit()
+    await db.refresh(t)
+    return _invite_template_to_out(t)
+
+
+@router.patch("/invite-templates/{template_id}", response_model=InviteTemplateOut)
+async def update_invite_template(
+    template_id: str,
+    body: InviteTemplateUpdate,
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
+    db: AsyncSession = Depends(get_db),
+):
+    _, member = current
+    name = body.name.strip()
+    text = body.body.strip()
+    if not name or not text:
+        raise HTTPException(status_code=400, detail="Name and message are required")
+    result = await db.execute(
+        select(InviteTemplate).where(InviteTemplate.id == template_id, InviteTemplate.organization_id == member.organization_id)
+    )
+    t = result.scalar_one_or_none()
+    if not t:
+        raise HTTPException(status_code=404, detail="Template not found")
+    t.name = name
+    t.body = text
     await db.commit()
     await db.refresh(t)
     return _invite_template_to_out(t)

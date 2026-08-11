@@ -960,7 +960,8 @@ function InviteTemplateTab() {
   const [templates, setTemplates] = useState<InviteTemplateOut[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState<string | null>(null);
-  const [showCreate, setShowCreate] = useState(false);
+  const [formOpen, setFormOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [body, setBody] = useState("");
   const [saving, setSaving] = useState(false);
@@ -973,14 +974,31 @@ function InviteTemplateTab() {
 
   useEffect(() => { loadTemplates(); }, []);
 
-  async function handleCreate(e: React.FormEvent) {
+  function openCreateForm() {
+    setFormOpen(true); setEditingId(null); setName(""); setBody(DEFAULT_INVITE_TEMPLATE); setError("");
+  }
+
+  function openEditForm(t: InviteTemplateOut) {
+    setFormOpen(true); setEditingId(t.id); setName(t.name); setBody(t.body); setError("");
+  }
+
+  function closeForm() {
+    setFormOpen(false); setEditingId(null); setName(""); setBody(""); setError("");
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim() || !body.trim()) { setError("Name and message are required."); return; }
     setSaving(true); setError("");
     try {
-      const t = await tenantsApi.createInviteTemplate(name.trim(), body.trim());
-      setTemplates(prev => [t, ...prev]);
-      setName(""); setBody(""); setShowCreate(false);
+      if (editingId) {
+        const t = await tenantsApi.updateInviteTemplate(editingId, name.trim(), body.trim());
+        setTemplates(prev => prev.map(x => x.id === editingId ? t : x));
+      } else {
+        const t = await tenantsApi.createInviteTemplate(name.trim(), body.trim());
+        setTemplates(prev => [t, ...prev]);
+      }
+      closeForm();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Save failed");
     } finally { setSaving(false); }
@@ -992,6 +1010,7 @@ function InviteTemplateTab() {
     try {
       await tenantsApi.deleteInviteTemplate(id);
       setTemplates(prev => prev.filter(t => t.id !== id));
+      if (editingId === id) closeForm();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Delete failed");
     } finally { setDeleting(null); }
@@ -1015,17 +1034,25 @@ function InviteTemplateTab() {
         ) : templates.length > 0 && (
           <ul className="space-y-2">
             {templates.map(t => (
-              <li key={t.id} className="p-3 border border-slate-200 rounded-xl hover:border-slate-300 transition-colors">
+              <li key={t.id} className={`p-3 border rounded-xl transition-colors ${editingId === t.id ? "border-black" : "border-slate-200 hover:border-slate-300"}`}>
                 <div className="flex items-start justify-between gap-2">
                   <p className="text-sm font-medium text-slate-900">{t.name}</p>
-                  <button onClick={() => handleDelete(t.id, t.name)} disabled={deleting === t.id}
-                    className="p-1.5 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-500 transition-colors shrink-0 disabled:opacity-50">
-                    {deleting === t.id ? <span className="text-xs">…</span> : (
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button onClick={() => openEditForm(t)}
+                      className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors">
                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                       </svg>
-                    )}
-                  </button>
+                    </button>
+                    <button onClick={() => handleDelete(t.id, t.name)} disabled={deleting === t.id}
+                      className="p-1.5 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-500 transition-colors disabled:opacity-50">
+                      {deleting === t.id ? <span className="text-xs">…</span> : (
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
                 </div>
                 <p className="text-xs text-slate-500 mt-1 whitespace-pre-wrap line-clamp-3">{t.body}</p>
               </li>
@@ -1033,8 +1060,9 @@ function InviteTemplateTab() {
           </ul>
         )}
 
-        {showCreate ? (
-          <form onSubmit={handleCreate} className="space-y-3 border-t border-slate-100 pt-4">
+        {formOpen ? (
+          <form onSubmit={handleSubmit} className="space-y-3 border-t border-slate-100 pt-4">
+            <p className="text-xs font-medium text-slate-700">{editingId ? "Edit template" : "New template"}</p>
             <div>
               <label className="block text-xs font-medium text-slate-500 mb-1">Template name</label>
               <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Friendly welcome"
@@ -1061,17 +1089,16 @@ function InviteTemplateTab() {
             <div className="flex gap-2">
               <button type="submit" disabled={saving}
                 className="px-4 py-2 text-sm bg-black text-white rounded-lg hover:bg-slate-800 font-medium disabled:opacity-50 transition-colors">
-                {saving ? "Saving…" : "Save template"}
+                {saving ? "Saving…" : editingId ? "Save changes" : "Save template"}
               </button>
-              <button type="button" disabled={saving}
-                onClick={() => { setShowCreate(false); setName(""); setBody(""); setError(""); }}
+              <button type="button" disabled={saving} onClick={closeForm}
                 className="px-4 py-2 text-sm text-slate-500 hover:text-slate-700 disabled:opacity-50">
                 Cancel
               </button>
             </div>
           </form>
         ) : (
-          <button type="button" onClick={() => { setShowCreate(true); setBody(DEFAULT_INVITE_TEMPLATE); }}
+          <button type="button" onClick={openCreateForm}
             className="px-4 py-2 text-sm bg-black text-white rounded-lg hover:bg-slate-800 font-medium transition-colors">
             + Add invite template
           </button>

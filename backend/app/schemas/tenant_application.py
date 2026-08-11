@@ -186,6 +186,11 @@ class InviteTemplateCreate(BaseModel):
     body: str
 
 
+class InviteTemplateUpdate(BaseModel):
+    name: str
+    body: str
+
+
 class InviteTemplateOut(BaseModel):
     id: str
     name: str

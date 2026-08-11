@@ -613,6 +613,8 @@ export const tenantsApi = {
   listInviteTemplates: () => api.get<InviteTemplateOut[]>("/tenants/invite-templates"),
   createInviteTemplate: (name: string, body: string) =>
     api.post<InviteTemplateOut>("/tenants/invite-templates", { name, body }),
+  updateInviteTemplate: (id: string, name: string, body: string) =>
+    api.patch<InviteTemplateOut>(`/tenants/invite-templates/${id}`, { name, body }),
   deleteInviteTemplate: (id: string) => api.delete<void>(`/tenants/invite-templates/${id}`),
   listDocuments: (tenantUserId: string) =>
     api.get<TenantDocumentOut[]>(`/tenants/${tenantUserId}/documents`),
