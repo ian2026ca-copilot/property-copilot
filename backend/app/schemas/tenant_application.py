@@ -165,6 +165,10 @@ class EmployerReferenceLetterOut(BaseModel):
     body: str
 
 
+class TenantInviteDraftIn(BaseModel):
+    template_id: str | None = None  # a saved InviteTemplate to use instead of AI drafting
+
+
 class TenantInviteDraftOut(BaseModel):
     message: str
     register_link: str
@@ -174,6 +178,19 @@ class TenantRegistrationLinkIn(BaseModel):
     channels: list[str]  # any of "email", "sms"
     message: str | None = None  # owner-reviewed/edited draft; regenerated via AI if omitted
     register_link: str | None = None  # the link the draft's token points to; regenerated if omitted
+    template_id: str | None = None  # used only if message is omitted (fallback re-draft)
+
+
+class InviteTemplateCreate(BaseModel):
+    name: str
+    body: str
+
+
+class InviteTemplateOut(BaseModel):
+    id: str
+    name: str
+    body: str
+    created_at: str
 
 
 class TenantRegistrationLinkOut(BaseModel):

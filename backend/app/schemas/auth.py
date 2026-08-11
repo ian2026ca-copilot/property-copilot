@@ -72,7 +72,6 @@ class UserOut(BaseModel):
     screening_criminal_record_enabled: bool = False
     screening_rental_history_enabled: bool = False
     reference_reply_email: str | None = None
-    invite_message_template: str | None = None
     impersonated: bool = False
 
     class Config:
@@ -111,4 +110,3 @@ class OrganizationUpdate(BaseModel):
     screening_criminal_record_enabled: bool | None = None
     screening_rental_history_enabled: bool | None = None
     reference_reply_email: str | None = None
-    invite_message_template: str | None = None

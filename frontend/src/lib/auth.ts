@@ -10,7 +10,6 @@ export interface AuthUser {
   screening_criminal_record_enabled?: boolean;
   screening_rental_history_enabled?: boolean;
   reference_reply_email?: string | null;
-  invite_message_template?: string | null;
   impersonated?: boolean;
 }
 

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { tenantsApi, leasesApi, type TenantOut, type LeaseOut, type TenantDocumentOut, type TenantRegistrationLinkOut } from "@/lib/api";
+import { tenantsApi, leasesApi, type TenantOut, type LeaseOut, type TenantDocumentOut, type TenantRegistrationLinkOut, type InviteTemplateOut } from "@/lib/api";
 import { MOCK_MODE } from "@/lib/useApiData";
 import {
   useRentalApplicationState, buildRentalApplicationPayload, RentalApplicationSections,
@@ -408,6 +408,12 @@ function AddPersonModal({ onClose, onAdded }: AddPersonModalProps) {
   const [inviteSending, setInviteSending] = useState(false);
   const [inviteResult, setInviteResult] = useState<TenantRegistrationLinkOut | null>(null);
   const [inviteError, setInviteError] = useState("");
+  const [inviteTemplates, setInviteTemplates] = useState<InviteTemplateOut[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
+
+  useEffect(() => {
+    tenantsApi.listInviteTemplates().then(setInviteTemplates).catch(() => {});
+  }, []);
 
   function set(k: string, v: string) {
     setForm(f => ({ ...f, [k]: v }));
@@ -458,7 +464,7 @@ function AddPersonModal({ onClose, onAdded }: AddPersonModalProps) {
         setSaved(person);
         onAdded(person);
       }
-      const draft = await tenantsApi.draftRegistrationInvite(person.id);
+      const draft = await tenantsApi.draftRegistrationInvite(person.id, selectedTemplateId || undefined);
       setInviteDraft(draft.message);
       setInviteRegisterLink(draft.register_link);
       setInviteChannels({ email: !!person.email, sms: !!person.phone });
@@ -572,9 +578,24 @@ function AddPersonModal({ onClose, onAdded }: AddPersonModalProps) {
 
           {inviteDraft !== null && !inviteResult && (
             <div className="border border-violet-100 bg-violet-50/50 rounded-lg p-3 space-y-2.5">
-              <p className="text-[11px] uppercase tracking-wider font-medium text-violet-700">
-                AI-drafted invite — review before sending
-              </p>
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[11px] uppercase tracking-wider font-medium text-violet-700">
+                  Invite draft — review before sending
+                </p>
+                {inviteTemplates.length > 0 && (
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <select value={selectedTemplateId} onChange={e => setSelectedTemplateId(e.target.value)}
+                      className="text-xs border border-slate-200 rounded-lg px-1.5 py-1 outline-none focus:border-black bg-white">
+                      <option value="">AI-generated</option>
+                      {inviteTemplates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                    </select>
+                    <button type="button" onClick={handleDraftInvite} disabled={draftingInvite}
+                      className="text-xs text-violet-700 hover:underline disabled:opacity-50">
+                      {draftingInvite ? "…" : "Regenerate"}
+                    </button>
+                  </div>
+                )}
+              </div>
               <textarea
                 rows={4}
                 value={inviteDraft}
@@ -611,6 +632,17 @@ function AddPersonModal({ onClose, onAdded }: AddPersonModalProps) {
           )}
           {inviteError && inviteDraft === null && (
             <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{inviteError}</p>
+          )}
+
+          {inviteTemplates.length > 0 && !inviteResult && inviteDraft === null && (
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">Invite template</label>
+              <select value={selectedTemplateId} onChange={e => setSelectedTemplateId(e.target.value)}
+                className={input}>
+                <option value="">AI-generated</option>
+                {inviteTemplates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+            </div>
           )}
 
           <div className="pt-2 flex gap-3">
@@ -1352,14 +1384,22 @@ function SendRegistrationLinkModal({ person, onClose }: { person: PersonRow; onC
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState<TenantRegistrationLinkOut | null>(null);
+  const [inviteTemplates, setInviteTemplates] = useState<InviteTemplateOut[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
+
+  function loadDraft(templateId?: string) {
+    setDrafting(true);
+    setError("");
+    tenantsApi.draftRegistrationInvite(person.id, templateId)
+      .then(draft => { setMessage(draft.message); setRegisterLink(draft.register_link); })
+      .catch((err: any) => setError(err.message ?? "Failed to draft invite"))
+      .finally(() => setDrafting(false));
+  }
 
   useEffect(() => {
-    let cancelled = false;
-    tenantsApi.draftRegistrationInvite(person.id)
-      .then(draft => { if (!cancelled) { setMessage(draft.message); setRegisterLink(draft.register_link); } })
-      .catch((err: any) => { if (!cancelled) setError(err.message ?? "Failed to draft invite"); })
-      .finally(() => { if (!cancelled) setDrafting(false); });
-    return () => { cancelled = true; };
+    loadDraft();
+    tenantsApi.listInviteTemplates().then(setInviteTemplates).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [person.id]);
 
   async function handleSend() {
@@ -1411,9 +1451,24 @@ function SendRegistrationLinkModal({ person, onClose }: { person: PersonRow; onC
           </div>
         ) : (
           <div className="p-6 space-y-4">
-            <p className="text-[11px] uppercase tracking-wider font-medium text-violet-700">
-              AI-drafted invite — review before sending
-            </p>
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[11px] uppercase tracking-wider font-medium text-violet-700">
+                Invite draft — review before sending
+              </p>
+              {inviteTemplates.length > 0 && (
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <select value={selectedTemplateId} onChange={e => setSelectedTemplateId(e.target.value)}
+                    className="text-xs border border-slate-200 rounded-lg px-1.5 py-1 outline-none focus:border-black bg-white">
+                    <option value="">AI-generated</option>
+                    {inviteTemplates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                  </select>
+                  <button type="button" onClick={() => loadDraft(selectedTemplateId || undefined)} disabled={drafting}
+                    className="text-xs text-violet-700 hover:underline disabled:opacity-50">
+                    Regenerate
+                  </button>
+                </div>
+              )}
+            </div>
             <textarea
               rows={4}
               value={message ?? ""}

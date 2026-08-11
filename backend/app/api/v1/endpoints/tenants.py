@@ -23,6 +23,7 @@ from app.models.property import Unit, Property, UnitStatus
 from app.models.organization import Organization
 from app.models.reference_check import ReferenceCheckRequest
 from app.models.password_reset import PasswordResetToken
+from app.models.invite_template import InviteTemplate
 from app.models.tenant_application import (
     TenantAddressHistory, TenantEmployment, TenantIncomeSource,
     TenantOccupant, TenantCosigner, TenantPet, TenantVehicle, TenantScreeningNote,
@@ -34,7 +35,8 @@ from app.schemas.tenant_application import (
     OccupantIn, CosignerIn, PetIn, VehicleIn, TenantScreeningUpdate,
     TenantScreeningNoteIn, TenantScreeningNoteOut, EmployerReferenceContactIn, EmployerReferenceLetterOut,
     ReferenceEmailConfigIn, ReferenceEmailConfigOut,
-    TenantRegistrationLinkIn, TenantRegistrationLinkOut, TenantInviteDraftOut,
+    TenantRegistrationLinkIn, TenantRegistrationLinkOut, TenantInviteDraftIn, TenantInviteDraftOut,
+    InviteTemplateCreate, InviteTemplateOut,
     RENTAL_APP_PROFILE_FIELDS, RENTAL_APP_LIST_FIELDS,
 )
 from app.api.v1.endpoints.payments import generate_monthly_payments
@@ -605,23 +607,38 @@ async def _create_registration_link(tenant_user_id: str, db: AsyncSession) -> st
     return f"{frontend_url}/reset-password?token={token}"
 
 
+async def _resolve_invite_template(template_id: str | None, organization_id, db: AsyncSession) -> str | None:
+    """Looks up a saved InviteTemplate by id, scoped to the caller's org.
+    Returns None (falls back to AI drafting) if no id was given or it
+    doesn't resolve to a template in this org."""
+    if not template_id:
+        return None
+    result = await db.execute(
+        select(InviteTemplate).where(InviteTemplate.id == template_id, InviteTemplate.organization_id == organization_id)
+    )
+    t = result.scalar_one_or_none()
+    return t.body if t else None
+
+
 @router.post("/person/{tenant_user_id}/registration-invite-draft", response_model=TenantInviteDraftOut)
 async def draft_registration_invite(
     tenant_user_id: str,
+    body: TenantInviteDraftIn = TenantInviteDraftIn(),
     current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
-    """AI-drafts the invite message for the owner to review (and optionally
+    """Drafts the invite message for the owner to review (and optionally
     edit) before sending — same shape as the reference-letter draft flow. The
     registration token is created here (not at send time) so the link the
-    owner reviews is the exact link that gets sent."""
+    owner reviews is the exact link that gets sent. Uses a saved invite
+    template if body.template_id names one, otherwise drafts fresh via AI."""
     _, member = current
     tenant_user, org = await _get_tenant_and_org(tenant_user_id, member, db)
     org_name = org.name if org else "Property Copilot"
     register_link = await _create_registration_link(tenant_user.id, db)
+    template = await _resolve_invite_template(body.template_id, member.organization_id, db)
     message = _draft_invite_message(
-        tenant_user.full_name, org_name, tenant_user.email, register_link,
-        template=org.invite_message_template if org else None,
+        tenant_user.full_name, org_name, tenant_user.email, register_link, template=template,
     )
     return TenantInviteDraftOut(message=message, register_link=register_link)
 
@@ -651,9 +668,9 @@ async def send_registration_link(
     register_link = body.register_link
     if not message or not register_link:
         register_link = await _create_registration_link(tenant_user.id, db)
+        template = await _resolve_invite_template(body.template_id, member.organization_id, db)
         message = _draft_invite_message(
-            tenant_user.full_name, org_name, tenant_user.email, register_link,
-            template=org.invite_message_template if org else None,
+            tenant_user.full_name, org_name, tenant_user.email, register_link, template=template,
         )
 
     channels = set(body.channels)
@@ -681,6 +698,61 @@ async def send_registration_link(
         raise HTTPException(status_code=400, detail="No valid channel to send to — tenant has no email/phone on file")
 
     return TenantRegistrationLinkOut(email_sent=email_sent, sms_sent=sms_sent, skipped_channels=skipped)
+
+
+# ── Invite templates ────────────────────────────────────────────────────────
+
+def _invite_template_to_out(t: InviteTemplate) -> InviteTemplateOut:
+    return InviteTemplateOut(id=str(t.id), name=t.name, body=t.body, created_at=t.created_at.isoformat())
+
+
+@router.get("/invite-templates", response_model=list[InviteTemplateOut])
+async def list_invite_templates(
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
+    db: AsyncSession = Depends(get_db),
+):
+    _, member = current
+    result = await db.execute(
+        select(InviteTemplate)
+        .where(InviteTemplate.organization_id == member.organization_id)
+        .order_by(InviteTemplate.created_at.desc())
+    )
+    return [_invite_template_to_out(t) for t in result.scalars().all()]
+
+
+@router.post("/invite-templates", response_model=InviteTemplateOut, status_code=status.HTTP_201_CREATED)
+async def create_invite_template(
+    body: InviteTemplateCreate,
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
+    db: AsyncSession = Depends(get_db),
+):
+    _, member = current
+    name = body.name.strip()
+    text = body.body.strip()
+    if not name or not text:
+        raise HTTPException(status_code=400, detail="Name and message are required")
+    t = InviteTemplate(organization_id=member.organization_id, name=name, body=text)
+    db.add(t)
+    await db.commit()
+    await db.refresh(t)
+    return _invite_template_to_out(t)
+
+
+@router.delete("/invite-templates/{template_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_invite_template(
+    template_id: str,
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
+    db: AsyncSession = Depends(get_db),
+):
+    _, member = current
+    result = await db.execute(
+        select(InviteTemplate).where(InviteTemplate.id == template_id, InviteTemplate.organization_id == member.organization_id)
+    )
+    t = result.scalar_one_or_none()
+    if not t:
+        raise HTTPException(status_code=404, detail="Template not found")
+    await db.delete(t)
+    await db.commit()
 
 
 @router.get("/person/{tenant_user_id}/application", response_model=TenantApplicationOut)

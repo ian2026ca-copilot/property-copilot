@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
-import { profileApi, campaignsApi, leasesApi, tenantsApi, billingApi, type MarketingSiteOut, type DocuSignConfigOut, type ReferenceEmailConfigOut, type BillingStatusOut, type LeaseTemplateOut } from "@/lib/api";
+import { profileApi, campaignsApi, leasesApi, tenantsApi, billingApi, type MarketingSiteOut, type DocuSignConfigOut, type ReferenceEmailConfigOut, type BillingStatusOut, type LeaseTemplateOut, type InviteTemplateOut } from "@/lib/api";
 import { MOCK_MODE } from "@/lib/useApiData";
 import { LeaseTemplatesModal } from "@/components/LeaseTemplatesModal";
 
@@ -943,88 +943,126 @@ const DEFAULT_INVITE_TEMPLATE =
   "Portal link: {portal_link}";
 
 function InviteTemplateTab() {
-  const { user, refresh } = useAuth();
-  const [template, setTemplate] = useState(user?.invite_message_template ?? "");
+  const [templates, setTemplates] = useState<InviteTemplateOut[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [showCreate, setShowCreate] = useState(false);
+  const [name, setName] = useState("");
+  const [body, setBody] = useState("");
   const [saving, setSaving] = useState(false);
-  const [success, setSuccess] = useState(false);
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    setTemplate(user?.invite_message_template ?? "");
-  }, [user?.invite_message_template]);
+  function loadTemplates() {
+    setLoading(true);
+    tenantsApi.listInviteTemplates().then(setTemplates).catch(() => {}).finally(() => setLoading(false));
+  }
 
-  async function handleSave(e: React.FormEvent) {
+  useEffect(() => { loadTemplates(); }, []);
+
+  async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
-    setSaving(true); setError(""); setSuccess(false);
+    if (!name.trim() || !body.trim()) { setError("Name and message are required."); return; }
+    setSaving(true); setError("");
     try {
-      await profileApi.updateOrg({ invite_message_template: template });
-      await refresh();
-      setSuccess(true);
-      setTimeout(() => setSuccess(false), 3000);
+      const t = await tenantsApi.createInviteTemplate(name.trim(), body.trim());
+      setTemplates(prev => [t, ...prev]);
+      setName(""); setBody(""); setShowCreate(false);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Save failed");
     } finally { setSaving(false); }
   }
 
-  async function handleReset() {
-    setTemplate("");
-    setSaving(true); setError(""); setSuccess(false);
+  async function handleDelete(id: string, templateName: string) {
+    if (!confirm(`Delete template "${templateName}"?`)) return;
+    setDeleting(id); setError("");
     try {
-      await profileApi.updateOrg({ invite_message_template: "" });
-      await refresh();
-      setSuccess(true);
-      setTimeout(() => setSuccess(false), 3000);
+      await tenantsApi.deleteInviteTemplate(id);
+      setTemplates(prev => prev.filter(t => t.id !== id));
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Reset failed");
-    } finally { setSaving(false); }
+      setError(e instanceof Error ? e.message : "Delete failed");
+    } finally { setDeleting(null); }
   }
 
   return (
     <div className="max-w-lg space-y-6">
-      <form onSubmit={handleSave} className="bg-white rounded-xl border border-slate-200 p-6 space-y-4">
+      <div className="bg-white rounded-xl border border-slate-200 p-6 space-y-4">
         <div>
-          <h3 className="text-sm font-semibold text-slate-900">Tenant invite template</h3>
+          <h3 className="text-sm font-semibold text-slate-900">Tenant invite templates</h3>
           <p className="text-xs text-slate-400 mt-0.5">
-            Write your own message for "Send tenant invite" instead of relying on AI to draft one each time.
-            Leave this blank to keep using AI-generated invites.
-          </p>
-        </div>
-
-        <div>
-          <label className="block text-xs font-medium text-slate-500 mb-1">Message template</label>
-          <textarea
-            rows={6}
-            value={template}
-            onChange={(e) => setTemplate(e.target.value)}
-            placeholder={DEFAULT_INVITE_TEMPLATE}
-            className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black resize-none font-mono"
-          />
-          <p className="text-[11px] text-slate-400 mt-1.5">
-            Placeholders: <code className="bg-slate-100 px-1 rounded">{"{tenant_name}"}</code>{" "}
-            <code className="bg-slate-100 px-1 rounded">{"{org_name}"}</code>{" "}
-            <code className="bg-slate-100 px-1 rounded">{"{email}"}</code>{" "}
-            <code className="bg-slate-100 px-1 rounded">{"{portal_link}"}</code> — if you omit{" "}
-            <code className="bg-slate-100 px-1 rounded">{"{portal_link}"}</code>, the real link is appended
-            automatically at the end.
+            Save reusable messages for "Send tenant invite" — pick one when sending a tenant an invite, or skip to
+            let AI draft one fresh each time.
           </p>
         </div>
 
         {error && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
-        {success && <p className="text-xs text-emerald-600 bg-emerald-50 rounded-lg px-3 py-2">Template saved</p>}
 
-        <div className="flex gap-2">
-          <button type="submit" disabled={saving}
-            className="px-4 py-2 text-sm bg-black text-white rounded-lg hover:bg-slate-800 font-medium disabled:opacity-50 transition-colors">
-            {saving ? "Saving…" : "Save template"}
+        {loading ? (
+          <p className="text-xs text-slate-400 py-2">Loading…</p>
+        ) : templates.length > 0 && (
+          <ul className="space-y-2">
+            {templates.map(t => (
+              <li key={t.id} className="p-3 border border-slate-200 rounded-xl hover:border-slate-300 transition-colors">
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-sm font-medium text-slate-900">{t.name}</p>
+                  <button onClick={() => handleDelete(t.id, t.name)} disabled={deleting === t.id}
+                    className="p-1.5 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-500 transition-colors shrink-0 disabled:opacity-50">
+                    {deleting === t.id ? <span className="text-xs">…</span> : (
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    )}
+                  </button>
+                </div>
+                <p className="text-xs text-slate-500 mt-1 whitespace-pre-wrap line-clamp-3">{t.body}</p>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {showCreate ? (
+          <form onSubmit={handleCreate} className="space-y-3 border-t border-slate-100 pt-4">
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">Template name</label>
+              <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Friendly welcome"
+                className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">Message</label>
+              <textarea
+                rows={5}
+                value={body}
+                onChange={(e) => setBody(e.target.value)}
+                placeholder={DEFAULT_INVITE_TEMPLATE}
+                className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black resize-none font-mono"
+              />
+              <p className="text-[11px] text-slate-400 mt-1.5">
+                Placeholders: <code className="bg-slate-100 px-1 rounded">{"{tenant_name}"}</code>{" "}
+                <code className="bg-slate-100 px-1 rounded">{"{org_name}"}</code>{" "}
+                <code className="bg-slate-100 px-1 rounded">{"{email}"}</code>{" "}
+                <code className="bg-slate-100 px-1 rounded">{"{portal_link}"}</code> — if you omit{" "}
+                <code className="bg-slate-100 px-1 rounded">{"{portal_link}"}</code>, the real link is appended
+                automatically at the end.
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <button type="submit" disabled={saving}
+                className="px-4 py-2 text-sm bg-black text-white rounded-lg hover:bg-slate-800 font-medium disabled:opacity-50 transition-colors">
+                {saving ? "Saving…" : "Save template"}
+              </button>
+              <button type="button" disabled={saving}
+                onClick={() => { setShowCreate(false); setName(""); setBody(""); setError(""); }}
+                className="px-4 py-2 text-sm text-slate-500 hover:text-slate-700 disabled:opacity-50">
+                Cancel
+              </button>
+            </div>
+          </form>
+        ) : (
+          <button type="button" onClick={() => setShowCreate(true)}
+            className="px-4 py-2 text-sm bg-black text-white rounded-lg hover:bg-slate-800 font-medium transition-colors">
+            + Add invite template
           </button>
-          {!!user?.invite_message_template && (
-            <button type="button" onClick={handleReset} disabled={saving}
-              className="px-4 py-2 text-sm text-slate-500 hover:text-slate-700 disabled:opacity-50">
-              Reset to AI-generated
-            </button>
-          )}
-        </div>
-      </form>
+        )}
+      </div>
     </div>
   );
 }

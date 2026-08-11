@@ -565,6 +565,13 @@ export interface TenantRegistrationLinkOut {
   skipped_channels: string[];
 }
 
+export interface InviteTemplateOut {
+  id: string;
+  name: string;
+  body: string;
+  created_at: string;
+}
+
 export const tenantsApi = {
   list: () => api.get<LeaseOut[]>("/tenants"),
   create: (body: object) => api.post<LeaseOut>("/tenants", body),
@@ -599,10 +606,14 @@ export const tenantsApi = {
   createPerson: (body: object) => api.post<TenantOut>("/tenants/person", body),
   updatePerson: (id: string, body: object) => api.put<TenantOut>(`/tenants/person/${id}`, body),
   deactivatePerson: (id: string) => api.delete<void>(`/tenants/person/${id}`),
-  draftRegistrationInvite: (id: string) =>
-    api.post<TenantInviteDraftOut>(`/tenants/person/${id}/registration-invite-draft`, {}),
-  sendRegistrationLink: (id: string, channels: ("email" | "sms")[], message?: string, registerLink?: string) =>
-    api.post<TenantRegistrationLinkOut>(`/tenants/person/${id}/send-registration-link`, { channels, message, register_link: registerLink }),
+  draftRegistrationInvite: (id: string, templateId?: string) =>
+    api.post<TenantInviteDraftOut>(`/tenants/person/${id}/registration-invite-draft`, { template_id: templateId }),
+  sendRegistrationLink: (id: string, channels: ("email" | "sms")[], message?: string, registerLink?: string, templateId?: string) =>
+    api.post<TenantRegistrationLinkOut>(`/tenants/person/${id}/send-registration-link`, { channels, message, register_link: registerLink, template_id: templateId }),
+  listInviteTemplates: () => api.get<InviteTemplateOut[]>("/tenants/invite-templates"),
+  createInviteTemplate: (name: string, body: string) =>
+    api.post<InviteTemplateOut>("/tenants/invite-templates", { name, body }),
+  deleteInviteTemplate: (id: string) => api.delete<void>(`/tenants/invite-templates/${id}`),
   listDocuments: (tenantUserId: string) =>
     api.get<TenantDocumentOut[]>(`/tenants/${tenantUserId}/documents`),
   deleteDocument: (tenantUserId: string, docId: string) =>
@@ -777,7 +788,6 @@ export interface UserOut {
   screening_criminal_record_enabled: boolean;
   screening_rental_history_enabled: boolean;
   reference_reply_email: string | null;
-  invite_message_template: string | null;
   impersonated: boolean;
 }
 
@@ -785,7 +795,7 @@ export const profileApi = {
   me: () => api.get<UserOut>("/auth/me"),
   update: (body: { full_name?: string; phone?: string }) =>
     api.patch<UserOut>("/auth/me", body),
-  updateOrg: (body: { name?: string; slug?: string; screening_criminal_record_enabled?: boolean; screening_rental_history_enabled?: boolean; reference_reply_email?: string; invite_message_template?: string }) =>
+  updateOrg: (body: { name?: string; slug?: string; screening_criminal_record_enabled?: boolean; screening_rental_history_enabled?: boolean; reference_reply_email?: string }) =>
     api.patch<UserOut>("/auth/org", body),
 };
 
