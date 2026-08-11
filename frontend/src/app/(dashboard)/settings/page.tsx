@@ -935,16 +935,15 @@ function DocuSignTab() {
   );
 }
 
-// ─── Template tab ────────────────────────────────────────────────────────────
+// ─── Invite tenant template tab ─────────────────────────────────────────────
 
 const DEFAULT_INVITE_TEMPLATE =
   "Welcome, {tenant_name}! {org_name} has set up your tenant portal account. " +
   "Log in using your email address ({email}) as your username.\n\n" +
   "Portal link: {portal_link}";
 
-function TemplateTab() {
+function InviteTemplateTab() {
   const { user, refresh } = useAuth();
-  const [showLeaseTemplates, setShowLeaseTemplates] = useState(false);
   const [template, setTemplate] = useState(user?.invite_message_template ?? "");
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -1026,7 +1025,17 @@ function TemplateTab() {
           )}
         </div>
       </form>
+    </div>
+  );
+}
 
+// ─── Lease agreement template tab ───────────────────────────────────────────
+
+function LeaseTemplateTab() {
+  const [showLeaseTemplates, setShowLeaseTemplates] = useState(false);
+
+  return (
+    <div className="max-w-lg space-y-6">
       <div className="bg-white rounded-xl border border-slate-200 p-6 space-y-4">
         <div>
           <h3 className="text-sm font-semibold text-slate-900">Lease agreement templates</h3>
@@ -1196,11 +1205,11 @@ function BillingTab({ showWelcome }: { showWelcome: boolean }) {
 
 export default function SettingsPage() {
   const searchParams = useSearchParams();
-  const [tab, setTab] = useState<"profile" | "roles" | "marketing" | "screening" | "docusign" | "template" | "billing">("profile");
+  const [tab, setTab] = useState<"profile" | "roles" | "marketing" | "screening" | "docusign" | "template" | "lease-template" | "billing">("profile");
 
   useEffect(() => {
     const t = searchParams.get("tab");
-    if (t === "roles" || t === "marketing" || t === "profile" || t === "screening" || t === "docusign" || t === "template" || t === "billing") setTab(t);
+    if (t === "roles" || t === "marketing" || t === "profile" || t === "screening" || t === "docusign" || t === "template" || t === "lease-template" || t === "billing") setTab(t);
   }, [searchParams]);
 
   return (
@@ -1213,7 +1222,7 @@ export default function SettingsPage() {
 
       {/* Tabs */}
       <div className="flex gap-1 border-b border-slate-200">
-        {(["profile", "roles", "marketing", "screening", "docusign", "template", "billing"] as const).map((t) => (
+        {(["profile", "roles", "marketing", "screening", "docusign", "template", "lease-template", "billing"] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -1221,7 +1230,7 @@ export default function SettingsPage() {
               tab === t ? "border-black text-slate-900" : "border-transparent text-slate-500 hover:text-slate-700"
             }`}
           >
-            {t === "profile" ? "My profile" : t === "roles" ? "Role guide" : t === "marketing" ? "Marketing" : t === "screening" ? "Screening" : t === "docusign" ? "DocuSign" : t === "template" ? "Template" : "Billing"}
+            {t === "profile" ? "My profile" : t === "roles" ? "Role guide" : t === "marketing" ? "Marketing" : t === "screening" ? "Screening" : t === "docusign" ? "DocuSign" : t === "template" ? "Invite tenant template" : t === "lease-template" ? "Lease agreement template" : "Billing"}
           </button>
         ))}
       </div>
@@ -1238,8 +1247,11 @@ export default function SettingsPage() {
       {/* DocuSign tab */}
       {tab === "docusign" && <DocuSignTab />}
 
-      {/* Invite template tab */}
-      {tab === "template" && <TemplateTab />}
+      {/* Invite tenant template tab */}
+      {tab === "template" && <InviteTemplateTab />}
+
+      {/* Lease agreement template tab */}
+      {tab === "lease-template" && <LeaseTemplateTab />}
 
       {/* Billing tab */}
       {tab === "billing" && <BillingTab showWelcome={searchParams.get("welcome") === "1"} />}
