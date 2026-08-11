@@ -296,6 +296,7 @@ async def me(
         screening_criminal_record_enabled=org.screening_criminal_record_enabled,
         screening_rental_history_enabled=org.screening_rental_history_enabled,
         reference_reply_email=org.reference_reply_email,
+        invite_message_template=org.invite_message_template,
         impersonated=impersonated,
     )
 
@@ -365,6 +366,8 @@ async def update_organization(
         org.screening_rental_history_enabled = body.screening_rental_history_enabled
     if body.reference_reply_email is not None:
         org.reference_reply_email = body.reference_reply_email.strip() or None
+    if body.invite_message_template is not None:
+        org.invite_message_template = body.invite_message_template.strip() or None
 
     await db.commit()
     return UserOut(
@@ -379,4 +382,5 @@ async def update_organization(
         screening_criminal_record_enabled=org.screening_criminal_record_enabled,
         screening_rental_history_enabled=org.screening_rental_history_enabled,
         reference_reply_email=org.reference_reply_email,
+        invite_message_template=org.invite_message_template,
     )

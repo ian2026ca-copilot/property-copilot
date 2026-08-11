@@ -777,6 +777,7 @@ export interface UserOut {
   screening_criminal_record_enabled: boolean;
   screening_rental_history_enabled: boolean;
   reference_reply_email: string | null;
+  invite_message_template: string | null;
   impersonated: boolean;
 }
 
@@ -784,7 +785,7 @@ export const profileApi = {
   me: () => api.get<UserOut>("/auth/me"),
   update: (body: { full_name?: string; phone?: string }) =>
     api.patch<UserOut>("/auth/me", body),
-  updateOrg: (body: { name?: string; slug?: string; screening_criminal_record_enabled?: boolean; screening_rental_history_enabled?: boolean; reference_reply_email?: string }) =>
+  updateOrg: (body: { name?: string; slug?: string; screening_criminal_record_enabled?: boolean; screening_rental_history_enabled?: boolean; reference_reply_email?: string; invite_message_template?: string }) =>
     api.patch<UserOut>("/auth/org", body),
 };
 

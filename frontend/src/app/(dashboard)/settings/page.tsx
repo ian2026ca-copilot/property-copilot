@@ -934,6 +934,100 @@ function DocuSignTab() {
   );
 }
 
+// ─── Invite template tab ────────────────────────────────────────────────────
+
+const DEFAULT_INVITE_TEMPLATE =
+  "Welcome, {tenant_name}! {org_name} has set up your tenant portal account. " +
+  "Log in using your email address ({email}) as your username.\n\n" +
+  "Portal link: {portal_link}";
+
+function InviteTemplateTab() {
+  const { user, refresh } = useAuth();
+  const [template, setTemplate] = useState(user?.invite_message_template ?? "");
+  const [saving, setSaving] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    setTemplate(user?.invite_message_template ?? "");
+  }, [user?.invite_message_template]);
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true); setError(""); setSuccess(false);
+    try {
+      await profileApi.updateOrg({ invite_message_template: template });
+      await refresh();
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 3000);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Save failed");
+    } finally { setSaving(false); }
+  }
+
+  async function handleReset() {
+    setTemplate("");
+    setSaving(true); setError(""); setSuccess(false);
+    try {
+      await profileApi.updateOrg({ invite_message_template: "" });
+      await refresh();
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 3000);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Reset failed");
+    } finally { setSaving(false); }
+  }
+
+  return (
+    <div className="max-w-lg space-y-6">
+      <form onSubmit={handleSave} className="bg-white rounded-xl border border-slate-200 p-6 space-y-4">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-900">Tenant invite template</h3>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Write your own message for "Send tenant invite" instead of relying on AI to draft one each time.
+            Leave this blank to keep using AI-generated invites.
+          </p>
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-slate-500 mb-1">Message template</label>
+          <textarea
+            rows={6}
+            value={template}
+            onChange={(e) => setTemplate(e.target.value)}
+            placeholder={DEFAULT_INVITE_TEMPLATE}
+            className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black resize-none font-mono"
+          />
+          <p className="text-[11px] text-slate-400 mt-1.5">
+            Placeholders: <code className="bg-slate-100 px-1 rounded">{"{tenant_name}"}</code>{" "}
+            <code className="bg-slate-100 px-1 rounded">{"{org_name}"}</code>{" "}
+            <code className="bg-slate-100 px-1 rounded">{"{email}"}</code>{" "}
+            <code className="bg-slate-100 px-1 rounded">{"{portal_link}"}</code> — if you omit{" "}
+            <code className="bg-slate-100 px-1 rounded">{"{portal_link}"}</code>, the real link is appended
+            automatically at the end.
+          </p>
+        </div>
+
+        {error && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
+        {success && <p className="text-xs text-emerald-600 bg-emerald-50 rounded-lg px-3 py-2">Template saved</p>}
+
+        <div className="flex gap-2">
+          <button type="submit" disabled={saving}
+            className="px-4 py-2 text-sm bg-black text-white rounded-lg hover:bg-slate-800 font-medium disabled:opacity-50 transition-colors">
+            {saving ? "Saving…" : "Save template"}
+          </button>
+          {!!user?.invite_message_template && (
+            <button type="button" onClick={handleReset} disabled={saving}
+              className="px-4 py-2 text-sm text-slate-500 hover:text-slate-700 disabled:opacity-50">
+              Reset to AI-generated
+            </button>
+          )}
+        </div>
+      </form>
+    </div>
+  );
+}
+
 // ─── Billing tab ──────────────────────────────────────────────────────────────
 
 const BILLING_STATUS_LABELS: Record<string, string> = {
@@ -1084,11 +1178,11 @@ function BillingTab({ showWelcome }: { showWelcome: boolean }) {
 
 export default function SettingsPage() {
   const searchParams = useSearchParams();
-  const [tab, setTab] = useState<"profile" | "roles" | "marketing" | "screening" | "docusign" | "billing">("profile");
+  const [tab, setTab] = useState<"profile" | "roles" | "marketing" | "screening" | "docusign" | "template" | "billing">("profile");
 
   useEffect(() => {
     const t = searchParams.get("tab");
-    if (t === "roles" || t === "marketing" || t === "profile" || t === "screening" || t === "docusign" || t === "billing") setTab(t);
+    if (t === "roles" || t === "marketing" || t === "profile" || t === "screening" || t === "docusign" || t === "template" || t === "billing") setTab(t);
   }, [searchParams]);
 
   return (
@@ -1101,7 +1195,7 @@ export default function SettingsPage() {
 
       {/* Tabs */}
       <div className="flex gap-1 border-b border-slate-200">
-        {(["profile", "roles", "marketing", "screening", "docusign", "billing"] as const).map((t) => (
+        {(["profile", "roles", "marketing", "screening", "docusign", "template", "billing"] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -1109,7 +1203,7 @@ export default function SettingsPage() {
               tab === t ? "border-black text-slate-900" : "border-transparent text-slate-500 hover:text-slate-700"
             }`}
           >
-            {t === "profile" ? "My profile" : t === "roles" ? "Role guide" : t === "marketing" ? "Marketing" : t === "screening" ? "Screening" : t === "docusign" ? "DocuSign" : "Billing"}
+            {t === "profile" ? "My profile" : t === "roles" ? "Role guide" : t === "marketing" ? "Marketing" : t === "screening" ? "Screening" : t === "docusign" ? "DocuSign" : t === "template" ? "Invite template" : "Billing"}
           </button>
         ))}
       </div>
@@ -1125,6 +1219,9 @@ export default function SettingsPage() {
 
       {/* DocuSign tab */}
       {tab === "docusign" && <DocuSignTab />}
+
+      {/* Invite template tab */}
+      {tab === "template" && <InviteTemplateTab />}
 
       {/* Billing tab */}
       {tab === "billing" && <BillingTab showWelcome={searchParams.get("welcome") === "1"} />}

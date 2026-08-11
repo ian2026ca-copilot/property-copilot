@@ -535,13 +535,26 @@ async def get_person(
     return _tenant_to_out(user, user.tenant_documents)
 
 
-def _draft_invite_message(tenant_name: str, org_name: str, email: str, register_link: str) -> str:
-    """AI-drafted invite blurb personalized per tenant/org, with the tenant's
-    login username (their email) and their real portal link appended. Falls
-    back to a static default if the AI call fails for any reason (missing
-    key, quota, network) so the invite still sends either way. The link is
-    always appended deterministically rather than left to the model, so it's
-    never malformed or hallucinated."""
+def _draft_invite_message(tenant_name: str, org_name: str, email: str, register_link: str, template: str | None = None) -> str:
+    """Builds the invite message. If the owner has saved a custom template
+    (Settings → Invite template), it's used as-is with {tenant_name}/{org_name}/
+    {email}/{portal_link} placeholders filled in — no AI call. Otherwise falls
+    back to an AI-drafted 2-3 sentence blurb, personalized per tenant/org, with
+    a static default if the AI call fails for any reason (missing key, quota,
+    network) so the invite still sends either way. The link is always filled
+    in deterministically rather than left to the model, so it's never
+    malformed or hallucinated."""
+    if template and template.strip():
+        filled = (
+            template.strip()
+            .replace("{tenant_name}", tenant_name)
+            .replace("{org_name}", org_name)
+            .replace("{email}", email)
+        )
+        if "{portal_link}" in filled:
+            return filled.replace("{portal_link}", register_link)
+        return f"{filled}\n\nPortal link: {register_link}"
+
     prompt = (
         "Write a short, warm 2-3 sentence message from a property management "
         f"company called \"{org_name}\" inviting a new tenant named {tenant_name} "
@@ -558,7 +571,7 @@ def _draft_invite_message(tenant_name: str, org_name: str, email: str, register_
     return f"{body}\n\nPortal link: {register_link}"
 
 
-async def _get_tenant_and_org(tenant_user_id: str, member: OrganizationMember, db: AsyncSession) -> tuple[User, str]:
+async def _get_tenant_and_org(tenant_user_id: str, member: OrganizationMember, db: AsyncSession) -> tuple[User, Organization | None]:
     mem_res = await db.execute(
         select(OrganizationMember).where(
             OrganizationMember.organization_id == member.organization_id,
@@ -576,7 +589,7 @@ async def _get_tenant_and_org(tenant_user_id: str, member: OrganizationMember, d
 
     org_res = await db.execute(select(Organization).where(Organization.id == member.organization_id))
     org = org_res.scalar_one_or_none()
-    return tenant_user, (org.name if org else "Property Copilot")
+    return tenant_user, org
 
 
 async def _create_registration_link(tenant_user_id: str, db: AsyncSession) -> str:
@@ -603,9 +616,13 @@ async def draft_registration_invite(
     registration token is created here (not at send time) so the link the
     owner reviews is the exact link that gets sent."""
     _, member = current
-    tenant_user, org_name = await _get_tenant_and_org(tenant_user_id, member, db)
+    tenant_user, org = await _get_tenant_and_org(tenant_user_id, member, db)
+    org_name = org.name if org else "Property Copilot"
     register_link = await _create_registration_link(tenant_user.id, db)
-    message = _draft_invite_message(tenant_user.full_name, org_name, tenant_user.email, register_link)
+    message = _draft_invite_message(
+        tenant_user.full_name, org_name, tenant_user.email, register_link,
+        template=org.invite_message_template if org else None,
+    )
     return TenantInviteDraftOut(message=message, register_link=register_link)
 
 
@@ -627,13 +644,17 @@ async def send_registration_link(
     generates a fresh token/link and drafts a message via AI (fallback for
     calling this endpoint directly without a prior draft)."""
     _, member = current
-    tenant_user, org_name = await _get_tenant_and_org(tenant_user_id, member, db)
+    tenant_user, org = await _get_tenant_and_org(tenant_user_id, member, db)
+    org_name = org.name if org else "Property Copilot"
 
     message = (body.message or "").strip()
     register_link = body.register_link
     if not message or not register_link:
         register_link = await _create_registration_link(tenant_user.id, db)
-        message = _draft_invite_message(tenant_user.full_name, org_name, tenant_user.email, register_link)
+        message = _draft_invite_message(
+            tenant_user.full_name, org_name, tenant_user.email, register_link,
+            template=org.invite_message_template if org else None,
+        )
 
     channels = set(body.channels)
     email_sent = False
