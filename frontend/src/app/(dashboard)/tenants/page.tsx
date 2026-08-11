@@ -816,6 +816,7 @@ function EditPersonModal({ person, onClose, onSave }: EditPersonModalProps) {
   const [loadingApp, setLoadingApp] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [showResend, setShowResend] = useState(false);
 
   // Fetch fresh documents in case they were uploaded after the person was added to state
   useEffect(() => {
@@ -931,7 +932,13 @@ function EditPersonModal({ person, onClose, onSave }: EditPersonModalProps) {
       <div className="bg-white rounded-2xl w-full max-w-2xl shadow-xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
           <h2 className="text-base font-semibold text-slate-900">Edit tenant</h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
+          <div className="flex items-center gap-3">
+            <button type="button" onClick={() => setShowResend(true)}
+              className="text-xs font-medium text-violet-700 hover:underline">
+              Resend invite
+            </button>
+            <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
+          </div>
         </div>
         <form onSubmit={submit} className="px-6 py-5 space-y-4">
           {error && <p className="text-red-600 text-sm bg-red-50 px-3 py-2 rounded-lg">{error}</p>}
@@ -994,6 +1001,9 @@ function EditPersonModal({ person, onClose, onSave }: EditPersonModalProps) {
           </div>
         </form>
       </div>
+      {showResend && (
+        <SendRegistrationLinkModal person={person} onClose={() => setShowResend(false)} />
+      )}
     </div>
   );
 }
@@ -1376,7 +1386,7 @@ function LeaseHistoryRow({
 
 // ─── Send Registration Link Modal ─────────────────────────────────────────────
 
-function SendRegistrationLinkModal({ person, onClose }: { person: PersonRow; onClose: () => void }) {
+function SendRegistrationLinkModal({ person, onClose }: { person: TenantOut; onClose: () => void }) {
   const [channels, setChannels] = useState({ email: !!person.email, sms: !!person.phone });
   const [message, setMessage] = useState<string | null>(null);
   const [registerLink, setRegisterLink] = useState<string | null>(null);
