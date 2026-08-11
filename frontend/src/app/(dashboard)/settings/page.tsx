@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { profileApi, campaignsApi, leasesApi, tenantsApi, billingApi, type MarketingSiteOut, type DocuSignConfigOut, type ReferenceEmailConfigOut, type BillingStatusOut } from "@/lib/api";
 import { MOCK_MODE } from "@/lib/useApiData";
+import { LeaseTemplatesModal } from "@/components/LeaseTemplatesModal";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -934,15 +935,16 @@ function DocuSignTab() {
   );
 }
 
-// ─── Invite template tab ────────────────────────────────────────────────────
+// ─── Template tab ────────────────────────────────────────────────────────────
 
 const DEFAULT_INVITE_TEMPLATE =
   "Welcome, {tenant_name}! {org_name} has set up your tenant portal account. " +
   "Log in using your email address ({email}) as your username.\n\n" +
   "Portal link: {portal_link}";
 
-function InviteTemplateTab() {
+function TemplateTab() {
   const { user, refresh } = useAuth();
+  const [showLeaseTemplates, setShowLeaseTemplates] = useState(false);
   const [template, setTemplate] = useState(user?.invite_message_template ?? "");
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -1024,6 +1026,22 @@ function InviteTemplateTab() {
           )}
         </div>
       </form>
+
+      <div className="bg-white rounded-xl border border-slate-200 p-6 space-y-4">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-900">Lease agreement templates</h3>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Upload your own lease agreement documents, or have AI generate one for a province and property type —
+            these show up as options whenever you create, edit, or renew a lease.
+          </p>
+        </div>
+        <button type="button" onClick={() => setShowLeaseTemplates(true)}
+          className="px-4 py-2 text-sm bg-black text-white rounded-lg hover:bg-slate-800 font-medium transition-colors">
+          + Add lease template
+        </button>
+      </div>
+
+      {showLeaseTemplates && <LeaseTemplatesModal onClose={() => setShowLeaseTemplates(false)} />}
     </div>
   );
 }
@@ -1203,7 +1221,7 @@ export default function SettingsPage() {
               tab === t ? "border-black text-slate-900" : "border-transparent text-slate-500 hover:text-slate-700"
             }`}
           >
-            {t === "profile" ? "My profile" : t === "roles" ? "Role guide" : t === "marketing" ? "Marketing" : t === "screening" ? "Screening" : t === "docusign" ? "DocuSign" : t === "template" ? "Invite template" : "Billing"}
+            {t === "profile" ? "My profile" : t === "roles" ? "Role guide" : t === "marketing" ? "Marketing" : t === "screening" ? "Screening" : t === "docusign" ? "DocuSign" : t === "template" ? "Template" : "Billing"}
           </button>
         ))}
       </div>
@@ -1221,7 +1239,7 @@ export default function SettingsPage() {
       {tab === "docusign" && <DocuSignTab />}
 
       {/* Invite template tab */}
-      {tab === "template" && <InviteTemplateTab />}
+      {tab === "template" && <TemplateTab />}
 
       {/* Billing tab */}
       {tab === "billing" && <BillingTab showWelcome={searchParams.get("welcome") === "1"} />}
