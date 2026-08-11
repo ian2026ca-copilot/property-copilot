@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
-import { profileApi, campaignsApi, leasesApi, tenantsApi, billingApi, type MarketingSiteOut, type DocuSignConfigOut, type ReferenceEmailConfigOut, type BillingStatusOut } from "@/lib/api";
+import { profileApi, campaignsApi, leasesApi, tenantsApi, billingApi, type MarketingSiteOut, type DocuSignConfigOut, type ReferenceEmailConfigOut, type BillingStatusOut, type LeaseTemplateOut } from "@/lib/api";
 import { MOCK_MODE } from "@/lib/useApiData";
 import { LeaseTemplatesModal } from "@/components/LeaseTemplatesModal";
 
@@ -1033,6 +1033,28 @@ function InviteTemplateTab() {
 
 function LeaseTemplateTab() {
   const [showLeaseTemplates, setShowLeaseTemplates] = useState(false);
+  const [templates, setTemplates] = useState<LeaseTemplateOut[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [error, setError] = useState("");
+
+  function loadTemplates() {
+    setLoading(true);
+    leasesApi.listTemplates().then(setTemplates).catch(() => {}).finally(() => setLoading(false));
+  }
+
+  useEffect(() => { loadTemplates(); }, []);
+
+  async function handleDelete(id: string, name: string) {
+    if (!confirm(`Delete template "${name}"?`)) return;
+    setDeleting(id); setError("");
+    try {
+      await leasesApi.deleteTemplate(id);
+      setTemplates(prev => prev.filter(t => t.id !== id));
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Delete failed");
+    } finally { setDeleting(null); }
+  }
 
   return (
     <div className="max-w-lg space-y-6">
@@ -1044,13 +1066,49 @@ function LeaseTemplateTab() {
             these show up as options whenever you create, edit, or renew a lease.
           </p>
         </div>
+
+        {error && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
+
+        {loading ? (
+          <p className="text-xs text-slate-400 py-2">Loading…</p>
+        ) : templates.length > 0 && (
+          <ul className="space-y-2">
+            {templates.map(t => (
+              <li key={t.id} className="flex items-start gap-3 p-3 border border-slate-200 rounded-xl hover:border-slate-300 transition-colors">
+                <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center shrink-0 text-slate-500">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                  </svg>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <a href={t.url} target="_blank" rel="noopener noreferrer"
+                    className="text-sm font-medium text-slate-900 hover:text-blue-600 hover:underline block truncate">
+                    {t.name}
+                  </a>
+                  {t.description && <p className="text-xs text-slate-500 mt-0.5 truncate">{t.description}</p>}
+                </div>
+                <button onClick={() => handleDelete(t.id, t.name)} disabled={deleting === t.id}
+                  className="p-1.5 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-500 transition-colors shrink-0 disabled:opacity-50">
+                  {deleting === t.id ? <span className="text-xs">…</span> : (
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                  )}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+
         <button type="button" onClick={() => setShowLeaseTemplates(true)}
           className="px-4 py-2 text-sm bg-black text-white rounded-lg hover:bg-slate-800 font-medium transition-colors">
           + Add lease template
         </button>
       </div>
 
-      {showLeaseTemplates && <LeaseTemplatesModal onClose={() => setShowLeaseTemplates(false)} />}
+      {showLeaseTemplates && (
+        <LeaseTemplatesModal onClose={() => { setShowLeaseTemplates(false); loadTemplates(); }} />
+      )}
     </div>
   );
 }
