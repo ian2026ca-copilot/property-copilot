@@ -937,10 +937,24 @@ function DocuSignTab() {
 
 // ─── Invite tenant template tab ─────────────────────────────────────────────
 
-const DEFAULT_INVITE_TEMPLATE =
-  "Welcome, {tenant_name}! {org_name} has set up your tenant portal account. " +
-  "Log in using your email address ({email}) as your username.\n\n" +
-  "Portal link: {portal_link}";
+const DEFAULT_INVITE_TEMPLATE = `Welcome {tenant_name}
+
+We are excited to have you join our community.
+
+To get started, please set up your tenant portal account by creating a password. You'll use {email} as your username when logging in.
+
+Set Up Your Account:
+Please use the link below to create your password and activate your account:
+
+{portal_link}
+
+Once your account is activated, you'll be able to access your tenant portal and manage your home conveniently online.
+
+Welcome aboard!
+
+Best regards,
+
+{org_name}`;
 
 function InviteTemplateTab() {
   const [templates, setTemplates] = useState<InviteTemplateOut[]>([]);
@@ -1057,7 +1071,7 @@ function InviteTemplateTab() {
             </div>
           </form>
         ) : (
-          <button type="button" onClick={() => setShowCreate(true)}
+          <button type="button" onClick={() => { setShowCreate(true); setBody(DEFAULT_INVITE_TEMPLATE); }}
             className="px-4 py-2 text-sm bg-black text-white rounded-lg hover:bg-slate-800 font-medium transition-colors">
             + Add invite template
           </button>
