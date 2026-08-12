@@ -1,7 +1,7 @@
 import json
 import re
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -12,7 +12,7 @@ from app.schemas.copilot import CopilotChatIn, CopilotChatOut, CopilotExecuteIn,
 from app.schemas.property import PropertyCreate, UnitCreate
 from app.schemas.lease import TenantCreate, LeaseCreate
 from app.api.v1.endpoints.properties import _create_property_and_unit
-from app.api.v1.endpoints.tenants import _create_tenant_person
+from app.api.v1.endpoints.tenants import _create_tenant_person, _send_registration_link
 from app.api.v1.endpoints.leases import _create_lease_record
 
 router = APIRouter(prefix="/copilot", tags=["copilot"])
@@ -42,6 +42,13 @@ The three possible actions, and the fields required for each:
    Required: start_date (YYYY-MM-DD), end_date (YYYY-MM-DD), monthly_rent.
    Optional: security_deposit (default 0), lease_type (FIXED or MONTH_TO_MONTH, default FIXED).
 
+4. send_tenant_invite — emails and/or texts a tenant (already created earlier in THIS
+   conversation) a link to set up their tenant portal account. Only propose this once a
+   tenant already exists in this conversation. Ask the user which channel(s) to send it on
+   (email, SMS, or both) — you never invent this, always ask, unless the tenant only has
+   one type of contact info in context in which case use that one without asking.
+   Required: channels (a list containing "email" and/or "sms").
+
 Once — and only once — you have every required field for ONE of these actions, respond with
 ONLY a fenced JSON block in exactly this shape, nothing else:
 
@@ -51,8 +58,8 @@ ONLY a fenced JSON block in exactly this shape, nothing else:
 
 Until then, respond with a short, plain conversational message (no JSON, no code fences)
 asking for the next missing piece of information, or answering the user's question. Suggest
-a sensible order if the user seems unsure: property first, then tenant, then lease — but
-follow the user's lead if they want to do things in a different order."""
+a sensible order if the user seems unsure: property first, then tenant, then lease, then the
+invite — but follow the user's lead if they want to do things in a different order."""
 
 
 def _build_prompt(messages: list[CopilotMessage], created_context: dict) -> str:
@@ -68,6 +75,8 @@ def _build_prompt(messages: list[CopilotMessage], created_context: dict) -> str:
         )
     if created_context.get("lease_id"):
         context_lines.append(f"- Lease already created: {created_context.get('lease_summary', created_context['lease_id'])}")
+    if created_context.get("invite_sent"):
+        context_lines.append(f"- Tenant invite already sent via {created_context['invite_sent']}")
     context_block = "\n".join(context_lines) or "- Nothing created yet this conversation."
 
     transcript = "\n".join(f"{'User' if m.role == 'user' else 'Assistant'}: {m.text}" for m in messages)
@@ -83,7 +92,9 @@ def _extract_json_action(text: str) -> dict | None:
         parsed = json.loads(match.group(1))
     except json.JSONDecodeError:
         return None
-    if not isinstance(parsed, dict) or parsed.get("action") not in ("create_property", "create_tenant", "create_lease"):
+    if not isinstance(parsed, dict) or parsed.get("action") not in (
+        "create_property", "create_tenant", "create_lease", "send_tenant_invite",
+    ):
         return None
     if "payload" not in parsed or not isinstance(parsed["payload"], dict):
         return None
@@ -113,6 +124,7 @@ async def copilot_chat(
 @router.post("/execute", response_model=CopilotExecuteOut)
 async def copilot_execute(
     body: CopilotExecuteIn,
+    background_tasks: BackgroundTasks,
     current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
@@ -177,6 +189,23 @@ async def copilot_execute(
         context["lease_id"] = str(lease.id)
         context["lease_summary"] = f"${lease.monthly_rent:,.0f}/mo, {lease.start_date} to {lease.end_date}"
         summary = f"Created lease: {context['tenant_summary']} in {context['property_summary']}, ${lease.monthly_rent:,.0f}/mo starting {lease.start_date}"
+        return CopilotExecuteOut(summary=summary, created_context=context)
+
+    if body.action == "send_tenant_invite":
+        if not context.get("tenant_user_id"):
+            raise HTTPException(status_code=400, detail="A tenant must be created first in this conversation")
+        channels = payload.get("channels")
+        if not isinstance(channels, list) or not channels:
+            raise HTTPException(status_code=400, detail="channels is required (email and/or sms)")
+
+        out = await _send_registration_link(
+            member, context["tenant_user_id"], channels, None, None, None, background_tasks, db,
+        )
+        sent_via = [c for c, ok in (("email", out.email_sent), ("SMS", out.sms_sent)) if ok]
+        context["invite_sent"] = " and ".join(sent_via)
+        summary = f"Sent tenant portal invite to {context.get('tenant_summary', 'the tenant')} via {' and '.join(sent_via)}"
+        if out.skipped_channels:
+            summary += f" (skipped: {', '.join(out.skipped_channels)})"
         return CopilotExecuteOut(summary=summary, created_context=context)
 
     raise HTTPException(status_code=400, detail=f"Unknown action: {body.action}")

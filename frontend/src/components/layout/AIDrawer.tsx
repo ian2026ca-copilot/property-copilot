@@ -5,7 +5,7 @@ import { copilotApi, CopilotMessage, CopilotPendingAction } from "@/lib/api";
 
 export default function AIDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [messages, setMessages] = useState<CopilotMessage[]>([
-    { role: "assistant", text: "Hi! I'm your Property Copilot. I can help you create a property, a tenant, or a lease — just tell me what you'd like to start with." },
+    { role: "assistant", text: "Hi! I'm your Property Copilot. I can help you create a property, a tenant, or a lease, and send a tenant their portal invite by email or SMS — just tell me what you'd like to start with." },
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);

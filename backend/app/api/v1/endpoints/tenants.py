@@ -643,6 +643,59 @@ async def draft_registration_invite(
     return TenantInviteDraftOut(message=message, register_link=register_link)
 
 
+async def _send_registration_link(
+    member: OrganizationMember,
+    tenant_user_id: str,
+    channels: list[str],
+    message: str | None,
+    register_link: str | None,
+    template_id: str | None,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession,
+) -> TenantRegistrationLinkOut:
+    """Shared by the REST send-registration-link endpoint and the AI copilot's
+    send_tenant_invite action. Uses the owner-reviewed message/link if passed
+    in (from the draft step) so what was reviewed is exactly what gets sent;
+    otherwise generates a fresh token/link and drafts a message via a saved
+    template or AI."""
+    tenant_user, org = await _get_tenant_and_org(tenant_user_id, member, db)
+    org_name = org.name if org else "Property Copilot"
+
+    message = (message or "").strip()
+    if not message or not register_link:
+        register_link = await _create_registration_link(tenant_user.id, db)
+        template = await _resolve_invite_template(template_id, member.organization_id, db)
+        message = _draft_invite_message(
+            tenant_user.full_name, org_name, tenant_user.email, register_link, template=template,
+        )
+
+    channel_set = set(channels)
+    email_sent = False
+    sms_sent = False
+    skipped: list[str] = []
+
+    if "email" in channel_set:
+        if tenant_user.email:
+            background_tasks.add_task(
+                send_registration_link_email, tenant_user.email, register_link, tenant_user.full_name, org_name, message
+            )
+            email_sent = True
+        else:
+            skipped.append("email (no email on file)")
+
+    if "sms" in channel_set:
+        if tenant_user.phone:
+            background_tasks.add_task(send_sms, tenant_user.phone, message)
+            sms_sent = True
+        else:
+            skipped.append("SMS (no phone on file)")
+
+    if not email_sent and not sms_sent:
+        raise HTTPException(status_code=400, detail="No valid channel to send to — tenant has no email/phone on file")
+
+    return TenantRegistrationLinkOut(email_sent=email_sent, sms_sent=sms_sent, skipped_channels=skipped)
+
+
 @router.post("/person/{tenant_user_id}/send-registration-link", response_model=TenantRegistrationLinkOut)
 async def send_registration_link(
     tenant_user_id: str,
@@ -656,48 +709,11 @@ async def send_registration_link(
     tenant actually gets into their portal — reuses the exact same
     PasswordResetToken + /reset-password flow as /auth/forgot-password, just
     with a week-long expiry suited to an onboarding invite rather than an
-    urgent reset. Uses the owner-reviewed message and link if passed in (from
-    the draft step) so what was reviewed is exactly what gets sent; otherwise
-    generates a fresh token/link and drafts a message via AI (fallback for
-    calling this endpoint directly without a prior draft)."""
+    urgent reset."""
     _, member = current
-    tenant_user, org = await _get_tenant_and_org(tenant_user_id, member, db)
-    org_name = org.name if org else "Property Copilot"
-
-    message = (body.message or "").strip()
-    register_link = body.register_link
-    if not message or not register_link:
-        register_link = await _create_registration_link(tenant_user.id, db)
-        template = await _resolve_invite_template(body.template_id, member.organization_id, db)
-        message = _draft_invite_message(
-            tenant_user.full_name, org_name, tenant_user.email, register_link, template=template,
-        )
-
-    channels = set(body.channels)
-    email_sent = False
-    sms_sent = False
-    skipped: list[str] = []
-
-    if "email" in channels:
-        if tenant_user.email:
-            background_tasks.add_task(
-                send_registration_link_email, tenant_user.email, register_link, tenant_user.full_name, org_name, message
-            )
-            email_sent = True
-        else:
-            skipped.append("email (no email on file)")
-
-    if "sms" in channels:
-        if tenant_user.phone:
-            background_tasks.add_task(send_sms, tenant_user.phone, message)
-            sms_sent = True
-        else:
-            skipped.append("SMS (no phone on file)")
-
-    if not email_sent and not sms_sent:
-        raise HTTPException(status_code=400, detail="No valid channel to send to — tenant has no email/phone on file")
-
-    return TenantRegistrationLinkOut(email_sent=email_sent, sms_sent=sms_sent, skipped_channels=skipped)
+    return await _send_registration_link(
+        member, tenant_user_id, body.channels, body.message, body.register_link, body.template_id, background_tasks, db,
+    )
 
 
 # ── Invite templates ────────────────────────────────────────────────────────
