@@ -10,10 +10,11 @@ from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
 from app.core.ai_client import generate_ai_text
+from app.core.file_validation import validate_upload, DOCS_AND_IMAGES
 from app.api.deps import get_current_user, require_min_role
 from app.models.user import User, OrganizationMember, UserRole
 from app.models.maintenance import (
-    MaintenanceRequest, MaintenanceAttachment, MaintenanceNote, MaintenanceStatus, MaintenancePaymentStatus, Vendor, VendorAvailability
+    MaintenanceRequest, MaintenanceAttachment, MaintenanceNote, MaintenanceStatus, MaintenancePaymentStatus, Vendor, VendorAvailability, VendorOrganization
 )
 from app.models.property import Unit, Property
 from app.schemas.maintenance import (
@@ -388,12 +389,20 @@ async def schedule_request(
     _, member = current
     req = await _get_req(request_id, member.organization_id, db)
 
-    # Verify vendor is linked to this org
+    # Verify vendor exists and is linked to this org
     vendor_res = await db.execute(
         select(Vendor).where(Vendor.user_id == body.vendor_id)
     )
     vendor = vendor_res.scalar_one_or_none()
     if not vendor:
+        raise HTTPException(status_code=404, detail="Vendor not found")
+    org_link = await db.execute(
+        select(VendorOrganization).where(
+            VendorOrganization.vendor_id == vendor.id,
+            VendorOrganization.organization_id == member.organization_id,
+        )
+    )
+    if not org_link.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="Vendor not found")
 
     req.vendor_id = body.vendor_id
@@ -431,13 +440,8 @@ async def upload_attachment(
     _, member = current
     req = await _get_req(request_id, member.organization_id, db)
 
-    if file.content_type not in ALLOWED_TYPES:
-        raise HTTPException(status_code=400, detail="Only JPEG, PNG, WebP, PDF accepted")
     data = await file.read()
-    if len(data) > MAX_SIZE_MB * 1024 * 1024:
-        raise HTTPException(status_code=400, detail=f"File exceeds {MAX_SIZE_MB} MB")
-
-    ext = pathlib.Path(file.filename or "file").suffix or ".jpg"
+    ext = validate_upload(data, file.filename or "", DOCS_AND_IMAGES, max_mb=MAX_SIZE_MB)
     filename = f"{uuid.uuid4()}{ext}"
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     (UPLOAD_DIR / filename).write_bytes(data)

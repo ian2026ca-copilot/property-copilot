@@ -88,6 +88,46 @@ function ApplicantDrawer({
   const [letterError, setLetterError] = useState<Record<string, string>>({});
   const [sendChannels, setSendChannels] = useState<Record<string, { email: boolean; sms: boolean }>>({});
   const [sendingLetter, setSendingLetter] = useState<Record<string, boolean>>({});
+  const [missingDraft, setMissingDraft] = useState<EmployerReferenceLetterOut | null>(null);
+  const [generatingMissing, setGeneratingMissing] = useState(false);
+  const [missingChannels, setMissingChannels] = useState({ email: true, sms: false });
+  const [sendingMissing, setSendingMissing] = useState(false);
+  const [missingError, setMissingError] = useState("");
+
+  async function handleGenerateMissingMsg(missing: string[]) {
+    setGeneratingMissing(true);
+    setMissingError("");
+    try {
+      const draft = await tenantsApi.generateMissingInfoMessage(tenant.id, missing);
+      setMissingDraft(draft);
+      setMissingChannels({ email: !!tenant.email, sms: false });
+    } catch (e: any) {
+      setMissingError(e.message ?? "Failed to generate message");
+    } finally {
+      setGeneratingMissing(false);
+    }
+  }
+
+  async function handleSendMissingMsg() {
+    if (!missingDraft) return;
+    setSendingMissing(true);
+    setMissingError("");
+    try {
+      if (missingChannels.email) {
+        const note = await tenantsApi.notifyMissingInfo(tenant.id, "EMAIL", missingDraft.subject, missingDraft.body);
+        setNotes(prev => [note, ...prev]);
+      }
+      if (missingChannels.sms) {
+        const note = await tenantsApi.notifyMissingInfo(tenant.id, "SMS", missingDraft.subject, missingDraft.body);
+        setNotes(prev => [note, ...prev]);
+      }
+      setMissingDraft(null);
+    } catch (e: any) {
+      setMissingError(e.message ?? "Failed to send");
+    } finally {
+      setSendingMissing(false);
+    }
+  }
 
   function refreshNotes() {
     return tenantsApi.listNotes(tenant.id).then(setNotes).catch(() => {});
@@ -309,6 +349,12 @@ function ApplicantDrawer({
           )}
 
           {/* Employer references */}
+          {employmentWithRef.length === 0 && (
+            <div className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2.5 text-xs text-amber-800 space-y-0.5">
+              <p className="font-medium">No employer reference on file</p>
+              <p className="text-amber-700">Ask the applicant to fill out their employment history and include an employer reference name and contact on the rental application form.</p>
+            </div>
+          )}
           {employmentWithRef.length > 0 && (
             <div>
               <p className="text-[11px] uppercase tracking-wider text-slate-400 font-medium mb-2">Employer reference{employmentWithRef.length > 1 ? "s" : ""}</p>
@@ -380,6 +426,13 @@ function ApplicantDrawer({
           )}
 
           {/* Landlord references */}
+          {addressesWithRef.length === 0 && (
+            <div className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2.5 text-xs text-amber-800 space-y-0.5">
+              <p className="font-medium">No landlord reference on file</p>
+              <p className="text-amber-700">Ask the applicant to fill out their address history and include a landlord name and contact on the rental application form.</p>
+            </div>
+          )}
+
           {addressesWithRef.length > 0 && (
             <div>
               <p className="text-[11px] uppercase tracking-wider text-slate-400 font-medium mb-2">Landlord reference{addressesWithRef.length > 1 ? "s" : ""}</p>
@@ -461,6 +514,60 @@ function ApplicantDrawer({
             </div>
             {statusError && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2 mb-2">{statusError}</p>}
             <div className="space-y-2">
+              {(() => {
+                const missing = [
+                  ...(employmentWithRef.length === 0 ? ["employer_reference"] : []),
+                  ...(addressesWithRef.length === 0 ? ["landlord_reference"] : []),
+                  ...(docCount === 0 ? ["id_documents"] : []),
+                ];
+                if (missing.length === 0) return null;
+                return (
+                  <>
+                    <button type="button" disabled={generatingMissing || !!missingDraft}
+                      onClick={() => handleGenerateMissingMsg(missing)}
+                      className="w-full py-2 text-sm border border-amber-300 text-amber-800 rounded-lg hover:bg-amber-50 transition-colors disabled:opacity-50 font-medium">
+                      {generatingMissing ? "Drafting…" : "✨ Notify tenant (AI draft)"}
+                    </button>
+                    {missingDraft && (
+                      <div className="border border-amber-200 bg-amber-50/60 rounded-xl p-3 space-y-2 text-xs">
+                        <p className="text-[10px] uppercase tracking-wider text-amber-600 font-medium">AI-drafted message — review before sending</p>
+                        {missingError && <p className="text-red-600">{missingError}</p>}
+                        <input value={missingDraft.subject}
+                          onChange={e => setMissingDraft(d => d ? { ...d, subject: e.target.value } : d)}
+                          className="w-full font-medium border border-slate-200 rounded-md px-2 py-1 outline-none focus:border-amber-400 bg-white" />
+                        <textarea value={missingDraft.body} rows={6}
+                          onChange={e => setMissingDraft(d => d ? { ...d, body: e.target.value } : d)}
+                          className="w-full border border-slate-200 rounded-md px-2 py-1.5 outline-none focus:border-amber-400 resize-none bg-white" />
+                        <div className="flex items-center gap-3 text-slate-600">
+                          <label className={`flex items-center gap-1 ${!tenant.email ? "opacity-40" : ""}`}>
+                            <input type="checkbox" disabled={!tenant.email}
+                              checked={missingChannels.email}
+                              onChange={e => setMissingChannels(c => ({ ...c, email: e.target.checked }))} />
+                            Email
+                          </label>
+                          <label className={`flex items-center gap-1 ${!tenant.phone ? "opacity-40" : ""}`}>
+                            <input type="checkbox" disabled={!tenant.phone}
+                              checked={missingChannels.sms}
+                              onChange={e => setMissingChannels(c => ({ ...c, sms: e.target.checked }))} />
+                            SMS
+                          </label>
+                        </div>
+                        <div className="flex gap-2">
+                          <button type="button" disabled={sendingMissing || (!missingChannels.email && !missingChannels.sms)}
+                            onClick={handleSendMissingMsg}
+                            className="px-2.5 py-1 text-[11px] font-medium bg-amber-600 text-white rounded-md hover:bg-amber-700 disabled:opacity-50">
+                            {sendingMissing ? "Sending…" : "Send to tenant"}
+                          </button>
+                          <button type="button" onClick={() => setMissingDraft(null)}
+                            className="px-2.5 py-1 text-[11px] font-medium text-slate-500 hover:text-slate-700">
+                            Discard
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
               {status !== "APPROVED" && (
                 <button onClick={() => handleDecide("APPROVED")} disabled={savingStatus !== null}
                   className="w-full py-2 text-sm bg-black text-white rounded-lg hover:bg-slate-800 font-medium transition-colors disabled:opacity-50">

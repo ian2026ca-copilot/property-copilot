@@ -8,6 +8,7 @@ from sqlalchemy import select
 from pydantic import BaseModel
 
 from app.core.database import get_db
+from app.core.file_validation import validate_upload, IMAGES_ONLY
 from app.api.deps import get_current_user, require_min_role
 from app.models.user import User, OrganizationMember, UserRole
 from app.models.property import Property, Unit
@@ -40,12 +41,8 @@ def _image_url(filename: str) -> str:
 
 
 async def _save_file(upload: UploadFile) -> str:
-    if upload.content_type not in ALLOWED_TYPES:
-        raise HTTPException(status_code=400, detail="Only JPEG, PNG, WebP, and GIF are accepted")
     data = await upload.read()
-    if len(data) > MAX_SIZE_MB * 1024 * 1024:
-        raise HTTPException(status_code=400, detail=f"File exceeds {MAX_SIZE_MB} MB limit")
-    ext = EXTENSIONS[upload.content_type]
+    ext = validate_upload(data, upload.filename or "image", IMAGES_ONLY, max_mb=MAX_SIZE_MB)
     filename = f"{uuid.uuid4()}{ext}"
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     (UPLOAD_DIR / filename).write_bytes(data)

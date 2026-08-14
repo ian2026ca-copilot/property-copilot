@@ -1,21 +1,13 @@
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1";
 export const UPLOADS_BASE = BASE_URL.replace("/api/v1", "");
 
-function getToken(): string | null {
-  if (typeof document === "undefined") return null;
-  const match = document.cookie.match(/(?:^|; )token=([^;]*)/);
-  return match ? decodeURIComponent(match[1]) : null;
-}
-
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const token = getToken();
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...(init.headers as Record<string, string>),
   };
-  if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  const res = await fetch(`${BASE_URL}${path}`, { ...init, headers });
+  const res = await fetch(`${BASE_URL}${path}`, { ...init, headers, credentials: "include" });
   if (!res.ok) {
     if (res.status === 401 && typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
       window.location.href = "/login";
@@ -29,12 +21,9 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 async function upload<T>(path: string, file: File): Promise<T> {
-  const token = getToken();
-  const headers: Record<string, string> = {};
-  if (token) headers["Authorization"] = `Bearer ${token}`;
   const body = new FormData();
   body.append("file", file);
-  const res = await fetch(`${BASE_URL}${path}`, { method: "POST", headers, body });
+  const res = await fetch(`${BASE_URL}${path}`, { method: "POST", body, credentials: "include" });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
     throw new Error(err.detail ?? "Upload failed");
@@ -595,6 +584,10 @@ export const tenantsApi = {
     api.post<TenantScreeningNoteOut>(`/tenants/person/${id}/address/${addressId}/contact-reference`, { channel, ...letter }),
   generateLandlordReferenceLetter: (id: string, addressId: string) =>
     api.post<EmployerReferenceLetterOut>(`/tenants/person/${id}/address/${addressId}/reference-letter`, {}),
+  generateMissingInfoMessage: (id: string, missing: string[]) =>
+    api.post<EmployerReferenceLetterOut>(`/tenants/person/${id}/generate-missing-info-message`, { missing }),
+  notifyMissingInfo: (id: string, channel: "EMAIL" | "SMS", subject: string, body: string) =>
+    api.post<TenantScreeningNoteOut>(`/tenants/person/${id}/notify-missing-info`, { channel, subject, body }),
   getReferenceEmailConfig: () => api.get<ReferenceEmailConfigOut>("/tenants/reference-email/config"),
   updateReferenceEmailConfig: (body: {
     imap_host?: string;

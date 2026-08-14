@@ -13,15 +13,16 @@ export interface AuthUser {
   impersonated?: boolean;
 }
 
-export function setToken(token: string) {
-  document.cookie = `token=${encodeURIComponent(token)}; path=/; max-age=${60 * 60 * 24 * 7}; SameSite=Strict`;
+/** Token is now an HttpOnly cookie set by the server — JS cannot read or write it. */
+export function setToken(_token: string) {
+  // No-op: backend sets the HttpOnly cookie via Set-Cookie header on login/register.
 }
 
 export function clearToken() {
-  document.cookie = "token=; path=/; max-age=0";
+  // No-op: backend clears the cookie via /auth/logout. Use AuthContext.logout() instead.
 }
 
 export function getToken(): string | null {
-  const match = document.cookie.match(/(?:^|; )token=([^;]*)/);
-  return match ? decodeURIComponent(match[1]) : null;
+  // No-op: token is HttpOnly and not readable by JS. Returns null so legacy guards still pass.
+  return "cookie";  // truthy sentinel so "if (!token)" guards don't redirect before /auth/me runs
 }

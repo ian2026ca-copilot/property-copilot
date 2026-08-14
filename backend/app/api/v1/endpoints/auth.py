@@ -2,7 +2,7 @@ import re
 import os
 import secrets
 from datetime import datetime, timezone, timedelta
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response, status
 from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
@@ -25,7 +25,7 @@ from app.schemas.auth import (
     RegisterRequest, LoginRequest, TokenResponse, UserOut, UserUpdate,
     ForgotPasswordRequest, ResetPasswordRequest, OrganizationPublicOut, OrganizationUpdate, VacantUnitOut,
 )
-from app.api.deps import get_current_user, bearer
+from app.api.deps import get_current_user, bearer, COOKIE_NAME, COOKIE_MAX_AGE
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -60,8 +60,12 @@ async def get_org_by_slug(slug: str, db: AsyncSession = Depends(get_db)):
     )
 
 
+def _is_secure() -> bool:
+    return os.getenv("HTTPS", "").lower() in ("1", "true", "yes")
+
+
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
-async def register(body: RegisterRequest, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
+async def register(body: RegisterRequest, background_tasks: BackgroundTasks, response: Response, db: AsyncSession = Depends(get_db)):
     body.email = body.email.lower().strip()
     existing = await db.execute(select(User).where(User.email == body.email))
     if existing.scalar_one_or_none():
@@ -196,7 +200,11 @@ async def register(body: RegisterRequest, background_tasks: BackgroundTasks, db:
 
     await db.commit()
 
-    token = create_access_token(user.id, extra={"org_id": str(org.id), "role": role})
+    token = create_access_token(user.id, extra={"org_id": str(org.id), "role": role, "tv": user.token_version})
+    response.set_cookie(
+        key=COOKIE_NAME, value=token, httponly=True, samesite="strict",
+        secure=_is_secure(), path="/", max_age=COOKIE_MAX_AGE,
+    )
     frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3001")
     background_tasks.add_task(
         send_welcome_email,
@@ -211,7 +219,7 @@ async def register(body: RegisterRequest, background_tasks: BackgroundTasks, db:
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
+async def login(body: LoginRequest, response: Response, db: AsyncSession = Depends(get_db)):
     email = body.email.lower().strip()
     result = await db.execute(select(User).where(func.lower(User.email) == email))
     user = result.scalar_one_or_none()
@@ -225,8 +233,26 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
     if not member:
         raise HTTPException(status_code=403, detail="No organization found")
 
-    token = create_access_token(user.id, extra={"org_id": str(member.organization_id), "role": member.role})
+    token = create_access_token(user.id, extra={"org_id": str(member.organization_id), "role": member.role, "tv": user.token_version})
+    response.set_cookie(
+        key=COOKIE_NAME, value=token, httponly=True, samesite="strict",
+        secure=_is_secure(), path="/", max_age=COOKIE_MAX_AGE,
+    )
     return TokenResponse(access_token=token)
+
+
+@router.post("/logout", status_code=status.HTTP_200_OK)
+async def logout(
+    response: Response,
+    current=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Invalidates the session by incrementing token_version — all existing tokens become invalid."""
+    user, _ = current
+    user.token_version = (user.token_version or 0) + 1
+    await db.commit()
+    response.delete_cookie(key=COOKIE_NAME, path="/", samesite="strict", secure=_is_secure())
+    return {"message": "Logged out"}
 
 
 @router.post("/forgot-password", status_code=status.HTTP_200_OK)
@@ -238,6 +264,16 @@ async def forgot_password(
     result = await db.execute(select(User).where(func.lower(User.email) == body.email.lower().strip()))
     user = result.scalar_one_or_none()
     if user:
+        # Invalidate all existing unused reset tokens for this user (Fix 3)
+        old_tokens_res = await db.execute(
+            select(PasswordResetToken).where(
+                PasswordResetToken.user_id == user.id,
+                PasswordResetToken.used == False,  # noqa: E712
+            )
+        )
+        for old in old_tokens_res.scalars().all():
+            old.used = True
+
         token = secrets.token_urlsafe(48)
         expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
         db.add(PasswordResetToken(user_id=user.id, token=token, expires_at=expires_at))

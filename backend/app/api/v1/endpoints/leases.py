@@ -13,6 +13,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
 from app.core.ai_client import generate_ai_text
+from app.core.file_validation import validate_upload, DOCS_AND_IMAGES
 from app.api.deps import get_current_user, require_min_role
 from app.models.user import User, OrganizationMember, UserRole, TenantDocument
 from app.models.profiles import TenantProfile
@@ -305,13 +306,8 @@ async def upload_lease_template(
     db: AsyncSession = Depends(get_db),
 ):
     _, member = current
-    if file.content_type not in ALLOWED_TEMPLATE_TYPES:
-        raise HTTPException(status_code=400, detail="Only PDF, Word, JPEG, or PNG files accepted")
     data = await file.read()
-    if len(data) > MAX_SIZE_MB * 1024 * 1024:
-        raise HTTPException(status_code=400, detail=f"File exceeds {MAX_SIZE_MB} MB limit")
-
-    ext = pathlib.Path(file.filename or "template").suffix or ".pdf"
+    ext = validate_upload(data, file.filename or "template", DOCS_AND_IMAGES, max_mb=MAX_SIZE_MB)
     filename = f"lease_templates/template_{uuid.uuid4()}{ext}"
     TEMPLATE_DIR.mkdir(parents=True, exist_ok=True)
     (UPLOAD_DIR / filename).write_bytes(data)
@@ -711,12 +707,8 @@ async def upload_lease_document(
     _, member = current
     lease = await _get_lease(lease_id, member.organization_id, db)
 
-    if file.content_type not in ALLOWED_DOC_TYPES:
-        raise HTTPException(status_code=400, detail="Only PDF, Word (.doc/.docx), JPEG, or PNG files accepted")
-
     data = await file.read()
-    if len(data) > MAX_SIZE_MB * 1024 * 1024:
-        raise HTTPException(status_code=400, detail=f"File exceeds {MAX_SIZE_MB} MB limit")
+    ext = validate_upload(data, file.filename or "file", DOCS_AND_IMAGES, max_mb=MAX_SIZE_MB)
 
     # Delete old document
     if lease.document_path:
@@ -726,7 +718,6 @@ async def upload_lease_document(
         except OSError:
             pass
 
-    ext = pathlib.Path(file.filename or "file").suffix or ".pdf"
     filename = f"leases/lease_{lease.id}_{uuid.uuid4()}{ext}"
     LEASE_DOC_DIR.mkdir(parents=True, exist_ok=True)
     (UPLOAD_DIR / filename).write_bytes(data)

@@ -3,7 +3,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
-import { AuthUser, clearToken, getToken } from "@/lib/auth";
+import { AuthUser } from "@/lib/auth";
 
 interface AuthContextType {
   user: AuthUser | null;
@@ -41,13 +41,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    const token = getToken();
-    if (!token) { setLoading(false); return; }
     try {
       const me = await api.get<AuthUser>("/auth/me");
       setUser(me);
     } catch {
-      clearToken();
       setUser(null);
     } finally {
       setLoading(false);
@@ -56,8 +53,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => { refresh(); }, []);
 
-  const logout = () => {
-    clearToken();
+  const logout = async () => {
+    try { await api.post("/auth/logout", {}); } catch { /* ignore */ }
     setUser(null);
     router.push("/login");
   };

@@ -15,6 +15,7 @@ from app.core.ai_client import generate_ai_text
 from app.core.security import hash_password
 from app.core.email import send_reference_letter_email, send_registration_link_email
 from app.core.sms import send_sms
+from app.core.file_validation import validate_upload, IMAGES_ONLY, DOCS_AND_IMAGES
 from app.api.deps import get_current_user, require_min_role
 from app.models.user import User, OrganizationMember, UserRole, TenantDocument
 from app.models.profiles import TenantProfile
@@ -54,9 +55,7 @@ def _uploads_url(filename: str) -> str:
 
 async def _save_file(upload: UploadFile) -> str:
     data = await upload.read()
-    if len(data) > MAX_SIZE_MB * 1024 * 1024:
-        raise HTTPException(status_code=400, detail=f"File exceeds {MAX_SIZE_MB} MB limit")
-    ext = pathlib.Path(upload.filename or "file").suffix or ".bin"
+    ext = validate_upload(data, upload.filename or "", DOCS_AND_IMAGES, max_mb=MAX_SIZE_MB)
     filename = f"{uuid.uuid4()}{ext}"
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     (UPLOAD_DIR / filename).write_bytes(data)
@@ -1475,8 +1474,10 @@ async def update_person(
     portal's editable profile (the same rental-application fields as the
     owner's Add Tenant form)."""
     caller, member = current
-    if member.role != UserRole.OWNER and tenant_user_id != str(caller.id):
-        raise HTTPException(status_code=403, detail="Not authorized")
+    if tenant_user_id != str(caller.id):
+        if member.role != UserRole.OWNER:
+            raise HTTPException(status_code=403, detail="Not authorized")
+        await _assert_tenant_in_org(tenant_user_id, member.organization_id, db)
     result = await db.execute(select(User).where(User.id == tenant_user_id, User.is_active == True))
     tenant = result.scalar_one_or_none()
     if not tenant:
@@ -1553,6 +1554,7 @@ async def deactivate_person(
 ):
     """Soft-deactivate a tenant person."""
     _, member = current
+    await _assert_tenant_in_org(tenant_user_id, member.organization_id, db)
     result = await db.execute(select(User).where(User.id == tenant_user_id))
     tenant = result.scalar_one_or_none()
     if not tenant:
@@ -1567,11 +1569,24 @@ AVATAR_ALLOWED = {"image/jpeg", "image/png", "image/webp"}
 AVATAR_EXTENSIONS = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
 
 
+async def _assert_tenant_in_org(tenant_user_id: str, org_id, db: AsyncSession) -> None:
+    """Raise 404 if the tenant is not a member of the caller's org."""
+    check = await db.execute(
+        select(OrganizationMember).where(
+            OrganizationMember.user_id == tenant_user_id,
+            OrganizationMember.organization_id == org_id,
+        )
+    )
+    if not check.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+
 async def _resolve_tenant(tenant_user_id: str, current: tuple[User, OrganizationMember], db: AsyncSession) -> User:
     user, member = current
-    # Allow self-upload (tenant updating own avatar) or owner
-    if str(user.id) != tenant_user_id and member.role != UserRole.OWNER:
-        raise HTTPException(status_code=403, detail="Not authorized")
+    if str(user.id) != tenant_user_id:
+        if member.role != UserRole.OWNER:
+            raise HTTPException(status_code=403, detail="Not authorized")
+        await _assert_tenant_in_org(tenant_user_id, member.organization_id, db)
     result = await db.execute(select(User).where(User.id == tenant_user_id, User.is_active == True))
     tenant = result.scalar_one_or_none()
     if not tenant:
@@ -1587,11 +1602,8 @@ async def upload_avatar(
     db: AsyncSession = Depends(get_db),
 ):
     tenant = await _resolve_tenant(tenant_user_id, current, db)
-    if file.content_type not in AVATAR_ALLOWED:
-        raise HTTPException(status_code=400, detail="Only JPEG, PNG, WebP images accepted")
     data = await file.read()
-    if len(data) > MAX_SIZE_MB * 1024 * 1024:
-        raise HTTPException(status_code=400, detail=f"File exceeds {MAX_SIZE_MB} MB")
+    ext = validate_upload(data, file.filename or "", IMAGES_ONLY, max_mb=MAX_SIZE_MB)
     # Delete old avatar file
     if tenant.avatar_filename:
         old = UPLOAD_DIR / tenant.avatar_filename
@@ -1599,7 +1611,6 @@ async def upload_avatar(
             old.unlink(missing_ok=True)
         except OSError:
             pass
-    ext = AVATAR_EXTENSIONS.get(file.content_type, ".jpg")
     filename = f"avatar_{uuid.uuid4()}{ext}"
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     (UPLOAD_DIR / filename).write_bytes(data)
@@ -1665,6 +1676,7 @@ async def upload_tenant_document(
     db: AsyncSession = Depends(get_db),
 ):
     _, member = current
+    await _assert_tenant_in_org(tenant_user_id, member.organization_id, db)
     result = await db.execute(
         select(User).where(User.id == tenant_user_id, User.is_active == True)
     )
@@ -1765,3 +1777,123 @@ async def list_available_units(
         )
         for u in units
     ]
+
+
+# ── Notify tenant: missing reference info ──────────────────────────────────────
+
+@router.post("/person/{tenant_user_id}/generate-missing-info-message", response_model=EmployerReferenceLetterOut)
+async def generate_missing_info_message(
+    tenant_user_id: str,
+    body: dict,
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Use AI to draft a message to the tenant asking them to fill in missing reference info."""
+    owner_user, member = current
+    await _assert_tenant_in_org(tenant_user_id, member.organization_id, db)
+
+    tenant_res = await db.execute(select(User).where(User.id == tenant_user_id))
+    tenant_user = tenant_res.scalar_one_or_none()
+    if not tenant_user:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    org_res = await db.execute(select(Organization).where(Organization.id == member.organization_id))
+    org = org_res.scalar_one_or_none()
+    org_name = org.name if org else "Property Management"
+    owner_name = owner_user.display_name or org_name
+
+    missing = body.get("missing", [])  # e.g. ["employer_reference", "landlord_reference"]
+    tenant_name = tenant_user.display_name or tenant_user.email
+
+    missing_lines = []
+    if "employer_reference" in missing:
+        missing_lines.append("- Employment history with an employer reference name and contact (phone or email)")
+    if "landlord_reference" in missing:
+        missing_lines.append("- Address history with a landlord/previous landlord name and contact (phone or email)")
+    if "id_documents" in missing:
+        missing_lines.append("- A government-issued ID document (e.g. passport, driver's license)")
+
+    missing_text = "\n".join(missing_lines) if missing_lines else "- Missing reference information"
+
+    tenant_portal_base = os.environ.get("FRONTEND_URL", "http://localhost:3000").replace(":3001", ":8002").replace(":3000", ":8002")
+    portal_login_url = f"{tenant_portal_base}/login"
+
+    prompt = (
+        f"Write a short, friendly email from {owner_name} at {org_name} to a rental applicant "
+        f"named {tenant_name}, asking them to complete their rental application by providing the following missing information:\n\n"
+        f"{missing_text}\n\n"
+        "Keep it polite and professional. Explain why this information is needed (to complete their screening). "
+        f"Tell them they can log in to the tenant portal at {portal_login_url} to update their application. "
+        f"Sign the email with the sender's name '{owner_name}' and company '{org_name}'. "
+        "Include a subject line on the first line as 'Subject: ...' then a blank line then the email body. "
+        "Do not use any placeholders like [Your Name] or [Company]. Return plain text only."
+    )
+
+    try:
+        ai_text = generate_ai_text(prompt)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"AI error: {str(e)[:200]}")
+
+    lines = ai_text.strip().splitlines()
+    subject = "Action required: complete your rental application"
+    body_lines = lines
+    if lines and lines[0].lower().startswith("subject:"):
+        subject = lines[0][8:].strip()
+        body_lines = lines[2:] if len(lines) > 2 else []
+
+    return EmployerReferenceLetterOut(subject=subject, body="\n".join(body_lines).strip())
+
+
+@router.post("/person/{tenant_user_id}/notify-missing-info", response_model=TenantScreeningNoteOut)
+async def notify_tenant_missing_info(
+    tenant_user_id: str,
+    body: dict,
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Send email/SMS to tenant about missing reference info and log it as a screening note."""
+    user, member = current
+    await _assert_tenant_in_org(tenant_user_id, member.organization_id, db)
+
+    tenant_res = await db.execute(select(User).where(User.id == tenant_user_id))
+    tenant_user = tenant_res.scalar_one_or_none()
+    if not tenant_user:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    channel = (body.get("channel") or "EMAIL").upper()
+    subject = body.get("subject", "Action required: complete your rental application")
+    message_body = body.get("body", "")
+    if not message_body:
+        raise HTTPException(status_code=400, detail="Message body is required")
+
+    recipient = ""
+    if channel == "EMAIL":
+        if not tenant_user.email:
+            raise HTTPException(status_code=400, detail="Tenant has no email address")
+        send_reference_letter_email(tenant_user.email, subject, message_body)
+        recipient = tenant_user.email
+        sent_content = f"Subject: {subject}\n\n{message_body}"
+    elif channel == "SMS":
+        if not tenant_user.phone:
+            raise HTTPException(status_code=400, detail="Tenant has no phone number on file")
+        send_sms(tenant_user.phone, message_body)
+        recipient = tenant_user.phone
+        sent_content = message_body
+    else:
+        raise HTTPException(status_code=400, detail="channel must be EMAIL or SMS")
+
+    note = TenantScreeningNote(
+        user_id=tenant_user_id,
+        organization_id=member.organization_id,
+        author_user_id=user.id,
+        author_name=user.display_name,
+        note=f"Sent {channel.lower()} to tenant ({recipient}) requesting missing application info:\n{sent_content}",
+        kind="NOTE",
+    )
+    db.add(note)
+    await db.commit()
+    await db.refresh(note)
+    return TenantScreeningNoteOut(
+        id=str(note.id), author_name=note.author_name, note=note.note, kind=note.kind,
+        created_at=note.created_at.isoformat(),
+    )

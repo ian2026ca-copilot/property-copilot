@@ -45,13 +45,22 @@ def _vendor_to_out(vendor: Vendor) -> VendorOut:
     )
 
 
-async def _get_vendor(vendor_id: str, db: AsyncSession) -> Vendor:
+async def _get_vendor(vendor_id: str, db: AsyncSession, org_id=None) -> Vendor:
     res = await db.execute(
         select(Vendor).where(Vendor.id == vendor_id).options(selectinload(Vendor.user))
     )
     v = res.scalar_one_or_none()
     if not v:
         raise HTTPException(status_code=404, detail="Vendor not found")
+    if org_id is not None:
+        link = await db.execute(
+            select(VendorOrganization).where(
+                VendorOrganization.vendor_id == v.id,
+                VendorOrganization.organization_id == org_id,
+            )
+        )
+        if not link.scalar_one_or_none():
+            raise HTTPException(status_code=404, detail="Vendor not found")
     return v
 
 
@@ -171,7 +180,8 @@ async def update_vendor(
     current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
-    vendor = await _get_vendor(vendor_id, db)
+    _, member = current
+    vendor = await _get_vendor(vendor_id, db, org_id=member.organization_id)
     for field, value in body.model_dump(exclude_none=True).items():
         if field == "phone":
             vendor.user.phone = value
@@ -190,7 +200,7 @@ async def remove_vendor(
     db: AsyncSession = Depends(get_db),
 ):
     _, member = current
-    vendor = await _get_vendor(vendor_id, db)
+    vendor = await _get_vendor(vendor_id, db, org_id=member.organization_id)
     res = await db.execute(
         select(VendorOrganization).where(
             VendorOrganization.vendor_id == vendor.id,
@@ -211,7 +221,9 @@ async def list_availability(
     current: tuple[User, OrganizationMember] = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    vendor = await _get_vendor(vendor_id, db)
+    _, member = current
+    org_id = member.organization_id if member.role == UserRole.OWNER else None
+    vendor = await _get_vendor(vendor_id, db, org_id=org_id)
     res = await db.execute(
         select(VendorAvailability)
         .where(VendorAvailability.vendor_id == vendor.id)
@@ -231,7 +243,8 @@ async def ai_generate_availability(
     import json
 
     user, member = current
-    vendor = await _get_vendor(vendor_id, db)
+    org_id = member.organization_id if member.role == UserRole.OWNER else None
+    vendor = await _get_vendor(vendor_id, db, org_id=org_id)
     if member.role == UserRole.VENDOR and str(vendor.user_id) != str(user.id):
         raise HTTPException(status_code=403, detail="Not authorized")
 
@@ -297,7 +310,8 @@ async def add_availability(
     db: AsyncSession = Depends(get_db),
 ):
     user, member = current
-    vendor = await _get_vendor(vendor_id, db)
+    org_id = member.organization_id if member.role == UserRole.OWNER else None
+    vendor = await _get_vendor(vendor_id, db, org_id=org_id)
 
     # Vendor can only edit own availability; managers can edit any
     if member.role == UserRole.VENDOR and str(vendor.user_id) != str(user.id):
@@ -324,7 +338,8 @@ async def update_availability(
     db: AsyncSession = Depends(get_db),
 ):
     user, member = current
-    vendor = await _get_vendor(vendor_id, db)
+    org_id = member.organization_id if member.role == UserRole.OWNER else None
+    vendor = await _get_vendor(vendor_id, db, org_id=org_id)
 
     if member.role == UserRole.VENDOR and str(vendor.user_id) != str(user.id):
         raise HTTPException(status_code=403, detail="Not authorized")
@@ -355,7 +370,8 @@ async def delete_availability(
     db: AsyncSession = Depends(get_db),
 ):
     user, member = current
-    vendor = await _get_vendor(vendor_id, db)
+    org_id = member.organization_id if member.role == UserRole.OWNER else None
+    vendor = await _get_vendor(vendor_id, db, org_id=org_id)
 
     if member.role == UserRole.VENDOR and str(vendor.user_id) != str(user.id):
         raise HTTPException(status_code=403, detail="Not authorized")
