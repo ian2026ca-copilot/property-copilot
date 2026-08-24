@@ -82,6 +82,26 @@ function ApplicantDrawer({
   const [addingNote, setAddingNote] = useState(false);
   const [noteError, setNoteError] = useState("");
   const [expandedNotes, setExpandedNotes] = useState<Set<string>>(new Set());
+  const [openSections, setOpenSections] = useState<Set<string>>(new Set());
+  function toggleSection(id: string) {
+    setOpenSections(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+  function SectionHeader({ id, label, badge }: { id: string; label: string; badge?: React.ReactNode }) {
+    const open = openSections.has(id);
+    return (
+      <button type="button" onClick={() => toggleSection(id)}
+        className="w-full flex items-center justify-between py-1 group">
+        <span className="text-[11px] uppercase tracking-wider text-slate-400 font-medium group-hover:text-slate-600 transition-colors flex items-center gap-2">
+          {label}{badge}
+        </span>
+        <span className="text-slate-300 group-hover:text-slate-500 text-xs transition-colors">{open ? "▲" : "▼"}</span>
+      </button>
+    );
+  }
   const [contactError, setContactError] = useState<Record<string, string>>({});
   const [letterDrafts, setLetterDrafts] = useState<Record<string, EmployerReferenceLetterOut>>({});
   const [generatingLetter, setGeneratingLetter] = useState<Record<string, boolean>>({});
@@ -146,11 +166,20 @@ function ApplicantDrawer({
     return () => { cancelled = true; };
   }, [tenant.id]);
 
-  async function handleDecide(status: AppStatus) {
+  async function handleDecide(status: AppStatus, missingItems?: { noEmployer: boolean; noLandlord: boolean; noDocs: boolean }) {
     setSavingStatus(status); setStatusError("");
     try {
       await tenantsApi.updateScreening(tenant.id, { application_status: status });
       onStatusChange(tenant.id, status);
+      if (status === "MORE_INFO_REQUESTED" && missingItems) {
+        setOpenSections(prev => {
+          const next = new Set(prev);
+          if (missingItems.noEmployer) next.add("employer");
+          if (missingItems.noLandlord) next.add("landlord");
+          if (missingItems.noDocs) next.add("documents");
+          return next;
+        });
+      }
       await refreshNotes();
     } catch (e: unknown) {
       setStatusError(e instanceof Error ? e.message : "Failed to save decision");
@@ -265,26 +294,35 @@ function ApplicantDrawer({
           </div>
 
           {/* AI verdict */}
-          <div className="rounded-xl border border-slate-200 p-3.5">
-            <div className="flex items-center justify-between mb-1.5">
-              <p className="text-[10px] uppercase tracking-wider font-medium text-slate-500">AI summary</p>
-              <button type="button" onClick={handleRunScreening} disabled={aiLoading}
-                className="text-[11px] font-medium text-violet-700 hover:text-violet-900 disabled:opacity-50">
-                {aiLoading ? "Running…" : ai ? "Run again" : "✨ Run screening"}
-              </button>
-            </div>
-            {aiError && <p className="text-xs text-red-600">{aiError}</p>}
-            {ai ? (
-              <div className="flex items-start gap-3">
-                <ScoreRing score={ai.score} />
-                <p className="text-xs leading-relaxed text-slate-700 flex-1">{ai.verdict}</p>
+          <div className="border-b border-slate-100 pb-1">
+            <SectionHeader id="ai" label="AI summary" />
+            {openSections.has("ai") && (
+              <div className="rounded-xl border border-slate-200 p-3.5 mt-2">
+                <div className="flex items-center justify-between mb-1.5">
+                  <p className="text-[10px] uppercase tracking-wider font-medium text-slate-500">AI summary</p>
+                  <button type="button" onClick={handleRunScreening} disabled={aiLoading}
+                    className="text-[11px] font-medium text-violet-700 hover:text-violet-900 disabled:opacity-50">
+                    {aiLoading ? "Running…" : ai ? "Run again" : "✨ Run screening"}
+                  </button>
+                </div>
+                {aiError && <p className="text-xs text-red-600">{aiError}</p>}
+                {ai ? (
+                  <div className="flex items-start gap-3">
+                    <ScoreRing score={ai.score} />
+                    <p className="text-xs leading-relaxed text-slate-700 flex-1">{ai.verdict}</p>
+                  </div>
+                ) : (
+                  !aiError && <p className="text-xs text-slate-400">Not run yet — click "Run screening" for an AI-written summary based on this applicant's income, employment, and documents.</p>
+                )}
               </div>
-            ) : (
-              !aiError && <p className="text-xs text-slate-400">Not run yet — click "Run screening" for an AI-written summary based on this applicant's income, employment, and documents.</p>
             )}
           </div>
 
           {/* Financials */}
+          <div className="border-b border-slate-100 pb-1">
+            <SectionHeader id="financials" label="Financials" />
+          </div>
+          {openSections.has("financials") && (
           <div className="bg-slate-50 rounded-xl p-4 grid grid-cols-2 gap-3 text-sm">
             <div>
               <p className="text-[11px] text-slate-400 uppercase tracking-wider">Monthly income</p>
@@ -321,13 +359,16 @@ function ApplicantDrawer({
               </div>
             )}
           </div>
+          )}
 
           {loadingDetail && <p className="text-xs text-slate-400 text-center">Loading application detail…</p>}
 
           {/* Documents */}
-          {docCount > 0 && (
+          <div className="border-b border-slate-100 pb-1">
+            <SectionHeader id="documents" label="Documents" badge={docCount > 0 ? <span className="bg-slate-100 text-slate-500 rounded-full px-1.5 py-0.5 text-[10px]">{docCount}</span> : undefined} />
+          </div>
+          {openSections.has("documents") && docCount > 0 && (
             <div>
-              <p className="text-[11px] uppercase tracking-wider text-slate-400 font-medium mb-2">Documents</p>
               <div className="space-y-1.5">
                 {tenant.documents.map((d) => {
                   const isImage = IMAGE_EXT_RE.test(d.filename);
@@ -347,17 +388,22 @@ function ApplicantDrawer({
               </div>
             </div>
           )}
+          {openSections.has("documents") && docCount === 0 && (
+            <p className="text-xs text-slate-400">No documents uploaded.</p>
+          )}
 
           {/* Employer references */}
-          {employmentWithRef.length === 0 && (
+          <div className="border-b border-slate-100 pb-1">
+            <SectionHeader id="employer" label="Employer references" badge={employmentWithRef.length === 0 ? <span className="text-amber-500 text-[10px]">⚠ none</span> : <span className="bg-slate-100 text-slate-500 rounded-full px-1.5 py-0.5 text-[10px]">{employmentWithRef.length}</span>} />
+          </div>
+          {openSections.has("employer") && employmentWithRef.length === 0 && (
             <div className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2.5 text-xs text-amber-800 space-y-0.5">
               <p className="font-medium">No employer reference on file</p>
               <p className="text-amber-700">Ask the applicant to fill out their employment history and include an employer reference name and contact on the rental application form.</p>
             </div>
           )}
-          {employmentWithRef.length > 0 && (
+          {openSections.has("employer") && employmentWithRef.length > 0 && (
             <div>
-              <p className="text-[11px] uppercase tracking-wider text-slate-400 font-medium mb-2">Employer reference{employmentWithRef.length > 1 ? "s" : ""}</p>
               <div className="space-y-2">
                 {employmentWithRef.map((emp, i) => (
                   <div key={emp.id ?? i} className="border border-slate-100 rounded-lg px-3 py-2 text-xs space-y-1">
@@ -375,7 +421,7 @@ function ApplicantDrawer({
                         <button type="button" disabled={(!emp.employer_reference_email && !emp.employer_reference_phone) || !!generatingLetter[emp.id]}
                           onClick={() => handleGenerateLetter("EMPLOYMENT", emp.id as string, !!emp.employer_reference_email, !!emp.employer_reference_phone)}
                           className="px-2 py-1 text-[11px] font-medium border border-violet-200 text-violet-700 rounded-md hover:bg-violet-50 disabled:opacity-40 disabled:cursor-not-allowed">
-                          {generatingLetter[emp.id] ? "Drafting…" : "✨ AI reference letter"}
+                          {generatingLetter[emp.id] ? "Drafting…" : "✨ AI send reference check email and sms"}
                         </button>
                       </div>
                     )}
@@ -426,16 +472,18 @@ function ApplicantDrawer({
           )}
 
           {/* Landlord references */}
-          {addressesWithRef.length === 0 && (
+          <div className="border-b border-slate-100 pb-1">
+            <SectionHeader id="landlord" label="Landlord references" badge={addressesWithRef.length === 0 ? <span className="text-amber-500 text-[10px]">⚠ none</span> : <span className="bg-slate-100 text-slate-500 rounded-full px-1.5 py-0.5 text-[10px]">{addressesWithRef.length}</span>} />
+          </div>
+          {openSections.has("landlord") && addressesWithRef.length === 0 && (
             <div className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2.5 text-xs text-amber-800 space-y-0.5">
               <p className="font-medium">No landlord reference on file</p>
               <p className="text-amber-700">Ask the applicant to fill out their address history and include a landlord name and contact on the rental application form.</p>
             </div>
           )}
 
-          {addressesWithRef.length > 0 && (
+          {openSections.has("landlord") && addressesWithRef.length > 0 && (
             <div>
-              <p className="text-[11px] uppercase tracking-wider text-slate-400 font-medium mb-2">Landlord reference{addressesWithRef.length > 1 ? "s" : ""}</p>
               <div className="space-y-2">
                 {addressesWithRef.map((a, i) => (
                   <div key={a.id ?? i} className="border border-slate-100 rounded-lg px-3 py-2 text-xs space-y-1">
@@ -454,7 +502,7 @@ function ApplicantDrawer({
                         <button type="button" disabled={(!a.landlord_email && !a.landlord_phone) || !!generatingLetter[a.id]}
                           onClick={() => handleGenerateLetter("ADDRESS", a.id as string, !!a.landlord_email, !!a.landlord_phone)}
                           className="px-2 py-1 text-[11px] font-medium border border-violet-200 text-violet-700 rounded-md hover:bg-violet-50 disabled:opacity-40 disabled:cursor-not-allowed">
-                          {generatingLetter[a.id] ? "Drafting…" : "✨ AI reference letter"}
+                          {generatingLetter[a.id] ? "Drafting…" : "✨ AI send reference check email and sms"}
                         </button>
                       </div>
                     )}
@@ -581,7 +629,11 @@ function ApplicantDrawer({
                 </button>
               )}
               {status !== "MORE_INFO_REQUESTED" && (
-                <button onClick={() => handleDecide("MORE_INFO_REQUESTED")} disabled={savingStatus !== null}
+                <button onClick={() => handleDecide("MORE_INFO_REQUESTED", {
+                  noEmployer: employmentWithRef.length === 0,
+                  noLandlord: addressesWithRef.length === 0,
+                  noDocs: docCount === 0,
+                })} disabled={savingStatus !== null}
                   className="w-full py-2 text-sm border border-slate-200 text-slate-600 rounded-lg hover:bg-slate-50 transition-colors disabled:opacity-50">
                   {savingStatus === "MORE_INFO_REQUESTED" ? "Saving…" : "Request more info"}
                 </button>
@@ -602,9 +654,12 @@ function ApplicantDrawer({
           </div>
 
           {/* Notes */}
+          <div className="border-b border-slate-100 pb-1">
+            <SectionHeader id="notes" label="Notes" badge={notes.length > 0 ? <span className="bg-slate-100 text-slate-500 rounded-full px-1.5 py-0.5 text-[10px]">{notes.length}</span> : undefined} />
+          </div>
+          {openSections.has("notes") && (
           <div>
-            <p className="text-[11px] uppercase tracking-wider text-slate-400 font-medium mb-2">Notes</p>
-            <div className="space-y-2 mb-2">
+            <div className="space-y-2 mb-2 mt-2">
               <textarea value={newNote} onChange={(e) => setNewNote(e.target.value)} rows={2}
                 placeholder="Add a note about this applicant…"
                 className="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-2 outline-none focus:border-black resize-none" />
@@ -644,6 +699,7 @@ function ApplicantDrawer({
               })}
             </div>
           </div>
+          )}
         </div>
       </div>
     </div>

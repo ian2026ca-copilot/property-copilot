@@ -49,6 +49,7 @@ export interface AddressEntry {
   street_address: string; city: string; postal_code: string; country: string; province: string;
   move_in_date: string; move_out_date: string;
   monthly_rent: string; reason_for_moving: string;
+  landlord_first_name: string; landlord_middle_name: string; landlord_last_name: string;
   landlord_name: string; landlord_phone: string; landlord_email: string;
 }
 export const emptyAddress = (isCurrent: boolean): AddressEntry => ({
@@ -56,6 +57,7 @@ export const emptyAddress = (isCurrent: boolean): AddressEntry => ({
   street_address: "", city: "", postal_code: "", country: "", province: "",
   move_in_date: "", move_out_date: "",
   monthly_rent: "", reason_for_moving: "",
+  landlord_first_name: "", landlord_middle_name: "", landlord_last_name: "",
   landlord_name: "", landlord_phone: "", landlord_email: "",
 });
 
@@ -63,11 +65,13 @@ export interface EmploymentEntry {
   is_current: boolean;
   employment_type: string; company: string; position: string; employment_length: string;
   company_website: string; company_linkedin_url: string; additional_notes: string;
+  employer_reference_first_name: string; employer_reference_middle_name: string; employer_reference_last_name: string;
   employer_reference_name: string; employer_reference_phone: string; employer_reference_email: string;
 }
 export const emptyEmployment = (isCurrent: boolean): EmploymentEntry => ({
   is_current: isCurrent, employment_type: "Full time employment", company: "", position: "", employment_length: "",
   company_website: "", company_linkedin_url: "", additional_notes: "",
+  employer_reference_first_name: "", employer_reference_middle_name: "", employer_reference_last_name: "",
   employer_reference_name: "", employer_reference_phone: "", employer_reference_email: "",
 });
 
@@ -231,7 +235,10 @@ export function RentalApplicationSections({ state: s, askCriminalRecord = true, 
             </div>
             <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wide pt-1">Landlord reference (optional)</p>
             <div className="grid grid-cols-3 gap-3">
-              <Field label="Name"><Input value={a.landlord_name} onChange={e => updateAt<AddressEntry>(s.setAddresses, idx, { landlord_name: e.target.value })} /></Field>
+              <Field label="First name"><Input value={a.landlord_first_name} onChange={e => updateAt<AddressEntry>(s.setAddresses, idx, { landlord_first_name: e.target.value })} /></Field>
+              <Field label="Middle name"><Input value={a.landlord_middle_name} onChange={e => updateAt<AddressEntry>(s.setAddresses, idx, { landlord_middle_name: e.target.value })} /></Field>
+              <Field label="Last name"><Input value={a.landlord_last_name} onChange={e => updateAt<AddressEntry>(s.setAddresses, idx, { landlord_last_name: e.target.value })} /></Field>
+              <Field label="Name (full / display)"><Input value={a.landlord_name} onChange={e => updateAt<AddressEntry>(s.setAddresses, idx, { landlord_name: e.target.value })} /></Field>
               <Field label="Phone"><Input type="tel" value={a.landlord_phone} onChange={e => updateAt<AddressEntry>(s.setAddresses, idx, { landlord_phone: e.target.value })} /></Field>
               <Field label="Email"><Input type="email" value={a.landlord_email} onChange={e => updateAt<AddressEntry>(s.setAddresses, idx, { landlord_email: e.target.value })} /></Field>
             </div>
@@ -266,7 +273,10 @@ export function RentalApplicationSections({ state: s, askCriminalRecord = true, 
             </div>
             <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wide pt-1">Employer reference (optional)</p>
             <div className="grid grid-cols-3 gap-3">
-              <Field label="Name"><Input value={emp.employer_reference_name} onChange={e => updateAt<EmploymentEntry>(s.setEmployments, idx, { employer_reference_name: e.target.value })} /></Field>
+              <Field label="First name"><Input value={emp.employer_reference_first_name} onChange={e => updateAt<EmploymentEntry>(s.setEmployments, idx, { employer_reference_first_name: e.target.value })} /></Field>
+              <Field label="Middle name"><Input value={emp.employer_reference_middle_name} onChange={e => updateAt<EmploymentEntry>(s.setEmployments, idx, { employer_reference_middle_name: e.target.value })} /></Field>
+              <Field label="Last name"><Input value={emp.employer_reference_last_name} onChange={e => updateAt<EmploymentEntry>(s.setEmployments, idx, { employer_reference_last_name: e.target.value })} /></Field>
+              <Field label="Name (full / display)"><Input value={emp.employer_reference_name} onChange={e => updateAt<EmploymentEntry>(s.setEmployments, idx, { employer_reference_name: e.target.value })} /></Field>
               <Field label="Phone"><Input type="tel" value={emp.employer_reference_phone} onChange={e => updateAt<EmploymentEntry>(s.setEmployments, idx, { employer_reference_phone: e.target.value })} /></Field>
               <Field label="Email"><Input type="email" value={emp.employer_reference_email} onChange={e => updateAt<EmploymentEntry>(s.setEmployments, idx, { employer_reference_email: e.target.value })} /></Field>
             </div>

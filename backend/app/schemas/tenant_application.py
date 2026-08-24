@@ -16,6 +16,9 @@ class AddressHistoryIn(BaseModel):
     move_out_date: date | None = None
     monthly_rent: float | None = None
     reason_for_moving: str | None = None
+    landlord_first_name: str | None = None
+    landlord_middle_name: str | None = None
+    landlord_last_name: str | None = None
     landlord_name: str | None = None
     landlord_phone: str | None = None
     landlord_email: str | None = None
@@ -31,6 +34,9 @@ class EmploymentIn(BaseModel):
     company_website: str | None = None
     company_linkedin_url: str | None = None
     additional_notes: str | None = None
+    employer_reference_first_name: str | None = None
+    employer_reference_middle_name: str | None = None
+    employer_reference_last_name: str | None = None
     employer_reference_name: str | None = None
     employer_reference_phone: str | None = None
     employer_reference_email: str | None = None

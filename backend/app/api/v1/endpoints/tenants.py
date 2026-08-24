@@ -12,6 +12,7 @@ from sqlalchemy.orm import selectinload, joinedload
 
 from app.core.database import get_db
 from app.core.ai_client import generate_ai_text
+from app.core.ai_rate_limit import check_ai_rate_limit
 from app.core.security import hash_password
 from app.core.email import send_reference_letter_email, send_registration_link_email
 from app.core.sms import send_sms
@@ -433,6 +434,7 @@ async def create_person(
 @router.post("/ai-extract")
 async def ai_extract_tenant(
     file: UploadFile = File(...),
+    _rl: None = Depends(check_ai_rate_limit),
     current: tuple[User, OrganizationMember] = Depends(get_current_user),
 ):
     """Use AI vision to extract tenant info from an uploaded identity document."""
@@ -536,7 +538,11 @@ async def get_person(
     return _tenant_to_out(user, user.tenant_documents)
 
 
-def _draft_invite_message(tenant_name: str, org_name: str, email: str, register_link: str, template: str | None = None) -> str:
+def _draft_invite_message(
+    tenant_name: str, org_name: str, email: str, register_link: str,
+    template: str | None = None,
+    owner_name: str = "", owner_email: str = "", owner_phone: str = "",
+) -> str:
     """Builds the invite message. If the owner has saved a custom template
     (Settings → Invite template), it's used as-is with {tenant_name}/{org_name}/
     {email}/{portal_link} placeholders filled in — no AI call. Otherwise falls
@@ -556,19 +562,23 @@ def _draft_invite_message(tenant_name: str, org_name: str, email: str, register_
             return filled.replace("{portal_link}", register_link)
         return f"{filled}\n\nPortal link: {register_link}"
 
+    sender = owner_name or org_name
+    contact_line = f"If you have any questions, contact {owner_email}" + (f" or call {owner_phone}" if owner_phone else "") + "."
     prompt = (
         "Write a short, warm 2-3 sentence message from a property management "
         f"company called \"{org_name}\" inviting a new tenant named {tenant_name} "
         "to set up their tenant portal account and create a password. Mention that "
         f"they will log in using their email address ({email}) as their username. "
         "Friendly, professional tone. Do not include a URL, link, or placeholder for one — "
-        "one will be appended automatically. Plain text only, no markdown, no subject line."
+        "one will be appended automatically. Plain text only, no markdown, no subject line. "
+        f"Sign off as '{sender}', {org_name}."
+        + (f" Include a line telling the tenant they can reach the property manager at {owner_email}" + (f" or {owner_phone}" if owner_phone else "") + "." if owner_email else "")
     )
     try:
         drafted = generate_ai_text(prompt).strip()
-        body = drafted or f"{org_name} has set up your tenant portal account. Log in with your email ({email}) as your username."
+        body = drafted or f"{org_name} has set up your tenant portal account. Log in with your email ({email}) as your username.\n\n{contact_line}"
     except Exception:
-        body = f"{org_name} has set up your tenant portal account. Log in with your email ({email}) as your username."
+        body = f"{org_name} has set up your tenant portal account. Log in with your email ({email}) as your username.\n\n{contact_line}"
     return f"{body}\n\nPortal link: {register_link}"
 
 
@@ -623,6 +633,7 @@ async def _resolve_invite_template(template_id: str | None, organization_id, db:
 async def draft_registration_invite(
     tenant_user_id: str,
     body: TenantInviteDraftIn = TenantInviteDraftIn(),
+    _rl: None = Depends(check_ai_rate_limit),
     current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
@@ -631,13 +642,14 @@ async def draft_registration_invite(
     registration token is created here (not at send time) so the link the
     owner reviews is the exact link that gets sent. Uses a saved invite
     template if body.template_id names one, otherwise drafts fresh via AI."""
-    _, member = current
+    owner_user, member = current
     tenant_user, org = await _get_tenant_and_org(tenant_user_id, member, db)
     org_name = org.name if org else "Property Copilot"
     register_link = await _create_registration_link(tenant_user.id, db)
     template = await _resolve_invite_template(body.template_id, member.organization_id, db)
     message = _draft_invite_message(
         tenant_user.full_name, org_name, tenant_user.email, register_link, template=template,
+        owner_name=owner_user.display_name, owner_email=owner_user.email, owner_phone=owner_user.phone or "",
     )
     return TenantInviteDraftOut(message=message, register_link=register_link)
 
@@ -651,6 +663,7 @@ async def _send_registration_link(
     template_id: str | None,
     background_tasks: BackgroundTasks,
     db: AsyncSession,
+    owner_user: User | None = None,
 ) -> TenantRegistrationLinkOut:
     """Shared by the REST send-registration-link endpoint and the AI copilot's
     send_tenant_invite action. Uses the owner-reviewed message/link if passed
@@ -666,6 +679,9 @@ async def _send_registration_link(
         template = await _resolve_invite_template(template_id, member.organization_id, db)
         message = _draft_invite_message(
             tenant_user.full_name, org_name, tenant_user.email, register_link, template=template,
+            owner_name=owner_user.display_name if owner_user else "",
+            owner_email=owner_user.email if owner_user else "",
+            owner_phone=(owner_user.phone or "") if owner_user else "",
         )
 
     channel_set = set(channels)
@@ -709,9 +725,9 @@ async def send_registration_link(
     PasswordResetToken + /reset-password flow as /auth/forgot-password, just
     with a week-long expiry suited to an onboarding invite rather than an
     urgent reset."""
-    _, member = current
+    owner_user, member = current
     return await _send_registration_link(
-        member, tenant_user_id, body.channels, body.message, body.register_link, body.template_id, background_tasks, db,
+        member, tenant_user_id, body.channels, body.message, body.register_link, body.template_id, background_tasks, db, owner_user=owner_user,
     )
 
 
@@ -1070,6 +1086,7 @@ async def contact_employer_reference(
 async def generate_reference_letter(
     tenant_user_id: str,
     employment_id: str,
+    _rl: None = Depends(check_ai_rate_limit),
     current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
@@ -1098,6 +1115,11 @@ async def generate_reference_letter(
     if not employment.employer_reference_email:
         raise HTTPException(status_code=400, detail="No email on file for this reference")
 
+    owner_user, _ = current
+    owner_name = owner_user.display_name
+    owner_email = owner_user.email
+    owner_phone = owner_user.phone or ""
+
     tenant_res = await db.execute(select(User).where(User.id == tenant_user_id))
     tenant_user = tenant_res.scalar_one_or_none()
     applicant_name = tenant_user.display_name if tenant_user else "the applicant"
@@ -1109,6 +1131,11 @@ async def generate_reference_letter(
     reference_name = employment.employer_reference_name or "there"
     subject = f"Reference check for {applicant_name}"
 
+    owner_contact_parts = [owner_name, owner_email]
+    if owner_phone:
+        owner_contact_parts.append(owner_phone)
+    owner_contact = " | ".join(filter(None, owner_contact_parts))
+
     context_parts = [
         f"Applicant name: {applicant_name}",
         f"Employer reference name: {reference_name}",
@@ -1116,13 +1143,17 @@ async def generate_reference_letter(
         f"Applicant's position at the company: {employment.position}" if employment.position else "",
         f"Length of employment reported by applicant: {employment.employment_length}" if employment.employment_length else "",
         f"Landlord / property management organization: {org_name}",
+        f"Landlord contact person: {owner_name}",
+        f"Landlord email: {owner_email}",
+        f"Landlord phone: {owner_phone}" if owner_phone else "",
     ]
     prompt = (
         "Write a short, professional email body (3-4 short paragraphs, no subject line) from a Canadian "
         "landlord to an applicant's employer reference, asking them to confirm the applicant's employment "
         "details (role, length of employment, and whether they are in good standing) as part of a rental "
-        "application. Be polite and concise. Do not invent facts beyond what's given. Sign off as "
-        f"\"{org_name}\". Use only the facts below.\n\n" + "\n".join(p for p in context_parts if p)
+        "application. Be polite and concise. Do not invent facts beyond what's given. Sign off with the "
+        f"landlord's full name, organization, email, and phone number as provided. Use only the facts below.\n\n"
+        + "\n".join(p for p in context_parts if p)
     )
     try:
         letter_body = generate_ai_text(prompt).strip()
@@ -1135,7 +1166,8 @@ async def generate_reference_letter(
             f"{applicant_name} has listed you as an employer reference on a rental application with {org_name}. "
             "Could you please confirm their role, length of employment, and whether they are in good standing? "
             "Any details you can share would be greatly appreciated.\n\n"
-            f"Thank you,\n{org_name}"
+            f"Thank you,\n{owner_name}\n{org_name}\n{owner_email}"
+            + (f"\n{owner_phone}" if owner_phone else "")
         )
 
     return EmployerReferenceLetterOut(subject=subject, body=letter_body)
@@ -1249,6 +1281,7 @@ async def contact_landlord_reference(
 async def generate_landlord_reference_letter(
     tenant_user_id: str,
     address_id: str,
+    _rl: None = Depends(check_ai_rate_limit),
     current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
@@ -1277,6 +1310,11 @@ async def generate_landlord_reference_letter(
     if not address.landlord_email:
         raise HTTPException(status_code=400, detail="No email on file for this reference")
 
+    owner_user, _ = current
+    owner_name = owner_user.display_name
+    owner_email = owner_user.email
+    owner_phone = owner_user.phone or ""
+
     tenant_res = await db.execute(select(User).where(User.id == tenant_user_id))
     tenant_user = tenant_res.scalar_one_or_none()
     applicant_name = tenant_user.display_name if tenant_user else "the applicant"
@@ -1295,13 +1333,17 @@ async def generate_landlord_reference_letter(
         f"Tenancy period: {address.move_in_date} to {address.move_out_date or 'present'}" if address.move_in_date else "",
         f"Monthly rent reported by applicant: ${address.monthly_rent:,.0f}" if address.monthly_rent else "",
         f"Property management organization requesting the check: {org_name}",
+        f"Contact person at the property management organization: {owner_name}",
+        f"Contact email: {owner_email}",
+        f"Contact phone: {owner_phone}" if owner_phone else "",
     ]
     prompt = (
         "Write a short, professional email body (3-4 short paragraphs, no subject line) from a Canadian "
         "landlord to an applicant's previous landlord reference, asking them to confirm the applicant's "
         "tenancy details (rent payment history, whether they were in good standing, and whether they'd rent "
         "to them again) as part of a rental application. Be polite and concise. Do not invent facts beyond "
-        f"what's given. Sign off as \"{org_name}\". Use only the facts below.\n\n"
+        "what's given. Sign off with the landlord's full name, organization, email, and phone number as "
+        "provided. Use only the facts below.\n\n"
         + "\n".join(p for p in context_parts if p)
     )
     try:
@@ -1315,7 +1357,8 @@ async def generate_landlord_reference_letter(
             f"{applicant_name} has listed you as a landlord reference on a rental application with {org_name}. "
             "Could you please confirm whether they paid rent on time, kept the unit in good condition, and whether "
             "you would rent to them again? Any details you can share would be greatly appreciated.\n\n"
-            f"Thank you,\n{org_name}"
+            f"Thank you,\n{owner_name}\n{org_name}\n{owner_email}"
+            + (f"\n{owner_phone}" if owner_phone else "")
         )
 
     return EmployerReferenceLetterOut(subject=subject, body=letter_body)
@@ -1324,6 +1367,7 @@ async def generate_landlord_reference_letter(
 @router.post("/person/{tenant_user_id}/ai-screen")
 async def ai_screen_tenant(
     tenant_user_id: str,
+    _rl: None = Depends(check_ai_rate_limit),
     current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
@@ -1785,6 +1829,7 @@ async def list_available_units(
 async def generate_missing_info_message(
     tenant_user_id: str,
     body: dict,
+    _rl: None = Depends(check_ai_rate_limit),
     current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):
@@ -1801,6 +1846,8 @@ async def generate_missing_info_message(
     org = org_res.scalar_one_or_none()
     org_name = org.name if org else "Property Management"
     owner_name = owner_user.display_name or org_name
+    owner_email = owner_user.email
+    owner_phone = owner_user.phone or ""
 
     missing = body.get("missing", [])  # e.g. ["employer_reference", "landlord_reference"]
     tenant_name = tenant_user.display_name or tenant_user.email
@@ -1818,13 +1865,18 @@ async def generate_missing_info_message(
     tenant_portal_base = os.environ.get("FRONTEND_URL", "http://localhost:3000").replace(":3001", ":8002").replace(":3000", ":8002")
     portal_login_url = f"{tenant_portal_base}/login"
 
+    owner_contact = f"{owner_name} | {org_name} | {owner_email}"
+    if owner_phone:
+        owner_contact += f" | {owner_phone}"
+
     prompt = (
         f"Write a short, friendly email from {owner_name} at {org_name} to a rental applicant "
         f"named {tenant_name}, asking them to complete their rental application by providing the following missing information:\n\n"
         f"{missing_text}\n\n"
         "Keep it polite and professional. Explain why this information is needed (to complete their screening). "
         f"Tell them they can log in to the tenant portal at {portal_login_url} to update their application. "
-        f"Sign the email with the sender's name '{owner_name}' and company '{org_name}'. "
+        f"Sign the email with: name '{owner_name}', company '{org_name}', email '{owner_email}'"
+        + (f", phone '{owner_phone}'" if owner_phone else "") + ". "
         "Include a subject line on the first line as 'Subject: ...' then a blank line then the email body. "
         "Do not use any placeholders like [Your Name] or [Company]. Return plain text only."
     )
@@ -1841,7 +1893,14 @@ async def generate_missing_info_message(
         subject = lines[0][8:].strip()
         body_lines = lines[2:] if len(lines) > 2 else []
 
-    return EmployerReferenceLetterOut(subject=subject, body="\n".join(body_lines).strip())
+    body_text = "\n".join(body_lines).strip()
+    # Append owner contact block if the AI didn't include it
+    if owner_email not in body_text:
+        contact_block = f"\n\n{owner_name}\n{org_name}\n{owner_email}"
+        if owner_phone:
+            contact_block += f"\n{owner_phone}"
+        body_text += contact_block
+    return EmployerReferenceLetterOut(subject=subject, body=body_text)
 
 
 @router.post("/person/{tenant_user_id}/notify-missing-info", response_model=TenantScreeningNoteOut)

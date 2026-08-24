@@ -468,6 +468,9 @@ export interface TenantEmploymentOut {
   company: string | null;
   position: string | null;
   employment_length: string | null;
+  employer_reference_first_name: string | null;
+  employer_reference_middle_name: string | null;
+  employer_reference_last_name: string | null;
   employer_reference_name: string | null;
   employer_reference_phone: string | null;
   employer_reference_email: string | null;
@@ -486,6 +489,9 @@ export interface TenantAddressHistoryOut {
   move_out_date: string | null;
   monthly_rent: number | null;
   reason_for_moving: string | null;
+  landlord_first_name: string | null;
+  landlord_middle_name: string | null;
+  landlord_last_name: string | null;
   landlord_name: string | null;
   landlord_phone: string | null;
   landlord_email: string | null;
