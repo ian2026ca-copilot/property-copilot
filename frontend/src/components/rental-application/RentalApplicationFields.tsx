@@ -25,7 +25,7 @@ export function Section({ title, subtitle, children }: { title: string; subtitle
     <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
       <div className="px-5 py-3.5 border-b border-slate-100 bg-slate-50">
         <p className="text-sm font-semibold text-slate-900">{title}</p>
-        {subtitle && <p className="text-[11px] text-slate-400 mt-0.5">{subtitle}</p>}
+        {subtitle && <p className="text-[13px] text-slate-400 mt-0.5">{subtitle}</p>}
       </div>
       <div className="p-5 space-y-4">{children}</div>
     </div>
@@ -233,7 +233,7 @@ export function RentalApplicationSections({ state: s, askCriminalRecord = true, 
                 <Field label="Reason for moving" className="col-span-2"><Input value={a.reason_for_moving} onChange={e => updateAt<AddressEntry>(s.setAddresses, idx, { reason_for_moving: e.target.value })} /></Field>
               )}
             </div>
-            <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wide pt-1">Landlord reference (optional)</p>
+            <p className="text-[13px] font-medium text-slate-400 uppercase tracking-wide pt-1">Landlord reference (optional)</p>
             <div className="grid grid-cols-3 gap-3">
               <Field label="First name"><Input value={a.landlord_first_name} onChange={e => updateAt<AddressEntry>(s.setAddresses, idx, { landlord_first_name: e.target.value })} /></Field>
               <Field label="Middle name"><Input value={a.landlord_middle_name} onChange={e => updateAt<AddressEntry>(s.setAddresses, idx, { landlord_middle_name: e.target.value })} /></Field>
@@ -271,7 +271,7 @@ export function RentalApplicationSections({ state: s, askCriminalRecord = true, 
               <Field label="Company LinkedIn URL"><Input value={emp.company_linkedin_url} onChange={e => updateAt<EmploymentEntry>(s.setEmployments, idx, { company_linkedin_url: e.target.value })} /></Field>
               <Field label="Additional notes" className="col-span-2"><Textarea rows={2} value={emp.additional_notes} onChange={e => updateAt<EmploymentEntry>(s.setEmployments, idx, { additional_notes: e.target.value })} /></Field>
             </div>
-            <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wide pt-1">Employer reference (optional)</p>
+            <p className="text-[13px] font-medium text-slate-400 uppercase tracking-wide pt-1">Employer reference (optional)</p>
             <div className="grid grid-cols-3 gap-3">
               <Field label="First name"><Input value={emp.employer_reference_first_name} onChange={e => updateAt<EmploymentEntry>(s.setEmployments, idx, { employer_reference_first_name: e.target.value })} /></Field>
               <Field label="Middle name"><Input value={emp.employer_reference_middle_name} onChange={e => updateAt<EmploymentEntry>(s.setEmployments, idx, { employer_reference_middle_name: e.target.value })} /></Field>
@@ -323,7 +323,7 @@ export function RentalApplicationSections({ state: s, askCriminalRecord = true, 
                 <input className={rowInputClass} placeholder="Phone" value={o.phone} onChange={e => updateAt<OccupantEntry>(s.setOccupants, idx, { phone: e.target.value })} />
                 <input className={rowInputClass} type="number" min="0" placeholder="Rent $" value={o.share_of_rent} onChange={e => updateAt<OccupantEntry>(s.setOccupants, idx, { share_of_rent: e.target.value })} />
                 <button type="button" onClick={() => removeAt<OccupantEntry>(s.setOccupants, idx)} className="text-slate-400 hover:text-red-500 text-lg shrink-0">×</button>
-                <label className="col-span-6 flex items-center gap-1.5 text-[11px] text-slate-500 -mt-1">
+                <label className="col-span-6 flex items-center gap-1.5 text-[13px] text-slate-500 -mt-1">
                   <input type="checkbox" checked={o.is_dependent} onChange={e => updateAt<OccupantEntry>(s.setOccupants, idx, { is_dependent: e.target.checked })} />
                   Dependant (child)
                 </label>
@@ -375,7 +375,7 @@ export function RentalApplicationSections({ state: s, askCriminalRecord = true, 
                   <option value="">Sex</option><option value="M">M</option><option value="F">F</option>
                 </select>
                 <input className={rowInputClass} type="number" min="0" placeholder="Age" value={p.age} onChange={e => updateAt<PetEntry>(s.setPets, idx, { age: e.target.value })} />
-                <label className="flex items-center gap-1 text-[11px] text-slate-500 whitespace-nowrap">
+                <label className="flex items-center gap-1 text-[13px] text-slate-500 whitespace-nowrap">
                   <input type="checkbox" checked={p.is_fixed} onChange={e => updateAt<PetEntry>(s.setPets, idx, { is_fixed: e.target.checked })} /> Fixed
                 </label>
                 <button type="button" onClick={() => removeAt<PetEntry>(s.setPets, idx)} className="text-slate-400 hover:text-red-500 text-lg shrink-0">×</button>

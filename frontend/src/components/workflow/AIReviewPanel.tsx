@@ -258,21 +258,21 @@ export default function AIReviewPanel({ tenantId, tenantName, tenantEmail, tenan
               <div className="flex items-start justify-between gap-2 px-4 pt-3 pb-2">
                 <div className="space-y-1 min-w-0">
                   <div className="flex items-center gap-1.5 flex-wrap">
-                    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${kindColor(action.kind)}`}>
+                    <span className={`text-[12px] font-semibold px-1.5 py-0.5 rounded-full ${kindColor(action.kind)}`}>
                       {kindLabel(action.kind)}
                     </span>
                     {action.status === "sent" && (
-                      <span className="text-[10px] text-green-600 font-medium">✓ Sent</span>
+                      <span className="text-[12px] text-green-600 font-medium">✓ Sent</span>
                     )}
                     {action.status === "skipped" && (
-                      <span className="text-[10px] text-slate-400">Skipped</span>
+                      <span className="text-[12px] text-slate-400">Skipped</span>
                     )}
                     {action.status === "error" && (
-                      <span className="text-[10px] text-red-600">{action.error}</span>
+                      <span className="text-[12px] text-red-600">{action.error}</span>
                     )}
                   </div>
                   <p className="text-xs font-medium text-slate-800">To: {action.refLabel}</p>
-                  <p className="text-[11px] text-slate-400">
+                  <p className="text-[13px] text-slate-400">
                     {action.recipientEmail && <span>{action.recipientEmail}</span>}
                     {action.recipientEmail && action.recipientPhone && <span> · </span>}
                     {action.recipientPhone && <span>{action.recipientPhone}</span>}
@@ -281,7 +281,7 @@ export default function AIReviewPanel({ tenantId, tenantName, tenantEmail, tenan
                 {/* Channel checkboxes — both checked by default */}
                 {action.status === "pending" && (
                   <div className="flex items-center gap-2.5 shrink-0">
-                    <label className={`flex items-center gap-1 text-[11px] font-medium ${!action.recipientEmail ? "opacity-30 cursor-not-allowed" : "cursor-pointer"}`}>
+                    <label className={`flex items-center gap-1 text-[13px] font-medium ${!action.recipientEmail ? "opacity-30 cursor-not-allowed" : "cursor-pointer"}`}>
                       <input
                         type="checkbox"
                         disabled={!action.recipientEmail}
@@ -290,7 +290,7 @@ export default function AIReviewPanel({ tenantId, tenantName, tenantEmail, tenan
                       />
                       Email
                     </label>
-                    <label className={`flex items-center gap-1 text-[11px] font-medium ${!action.recipientPhone ? "opacity-30 cursor-not-allowed" : "cursor-pointer"}`}>
+                    <label className={`flex items-center gap-1 text-[13px] font-medium ${!action.recipientPhone ? "opacity-30 cursor-not-allowed" : "cursor-pointer"}`}>
                       <input
                         type="checkbox"
                         disabled={!action.recipientPhone}

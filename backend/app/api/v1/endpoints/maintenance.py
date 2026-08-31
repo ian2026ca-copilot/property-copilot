@@ -11,6 +11,7 @@ from sqlalchemy.orm import selectinload
 from app.core.database import get_db
 from app.core.ai_client import generate_ai_text
 from app.core.file_validation import validate_upload, DOCS_AND_IMAGES
+from app.core.ai_rate_limit import check_ai_rate_limit
 from app.api.deps import get_current_user, require_min_role
 from app.models.user import User, OrganizationMember, UserRole
 from app.models.maintenance import (
@@ -196,6 +197,7 @@ async def create_request(
 @router.post("/ai-generate", response_model=MaintenanceAIGenerateOut)
 async def ai_generate_request(
     body: MaintenanceAIGenerateIn,
+    _rl: None = Depends(check_ai_rate_limit),
     current: tuple[User, OrganizationMember] = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):

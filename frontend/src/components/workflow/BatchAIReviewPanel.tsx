@@ -124,28 +124,67 @@ async function draftForTenant(
   return results.flatMap(r => r.status === "fulfilled" ? [r.value] : []);
 }
 
+// Per-tenant action type config
+interface TenantActions { employer: boolean; landlord: boolean; notify: boolean; }
+// Which action types are available / needed
+interface TenantAvail  { employer: boolean; landlord: boolean; notify: boolean; }
+
 // ─── Step 1: Configure ────────────────────────────────────────────────────────
 
 function ConfigureStep({
   allTenants,
   selectedIds,
   setSelectedIds,
-  includeEmployer,
-  setIncludeEmployer,
-  includeLandlord,
-  setIncludeLandlord,
-  includeNotify,
-  setIncludeNotify,
+  tenantActions,
+  setTenantActions,
   onStart,
 }: {
   allTenants: TenantMeta[];
   selectedIds: Set<string>;
   setSelectedIds: (s: Set<string>) => void;
-  includeEmployer: boolean; setIncludeEmployer: (v: boolean) => void;
-  includeLandlord: boolean; setIncludeLandlord: (v: boolean) => void;
-  includeNotify: boolean;   setIncludeNotify:   (v: boolean) => void;
+  tenantActions: Map<string, TenantActions>;
+  setTenantActions: (m: Map<string, TenantActions>) => void;
   onStart: () => void;
 }) {
+  const [checking, setChecking] = useState(true);
+  const [avail, setAvail] = useState<Map<string, TenantAvail>>(new Map());
+
+  // On mount: fetch each tenant's application in parallel to auto-set defaults
+  useEffect(() => {
+    let cancelled = false;
+    async function autoDetect() {
+      const results = await Promise.allSettled(
+        allTenants.map(t => tenantsApi.getApplication(t.id).then(app => ({ id: t.id, app })))
+      );
+      if (cancelled) return;
+      const nextActions = new Map(tenantActions);
+      const nextAvail = new Map<string, TenantAvail>();
+      for (const r of results) {
+        if (r.status !== "fulfilled") continue;
+        const { id, app } = r.value;
+        const hasEmployer = (app.employment_history ?? []).some(
+          e => e.employer_reference_name && (e.employer_reference_email || e.employer_reference_phone)
+        );
+        const hasLandlord = (app.address_history ?? []).some(
+          a => a.landlord_name && (a.landlord_email || a.landlord_phone)
+        );
+        // notify is needed when refs or docs are missing
+        const tenant = allTenants.find(t => t.id === id)!;
+        const hasEmployerName = (app.employment_history ?? []).some(e => e.employer_reference_name);
+        const hasLandlordName = (app.address_history ?? []).some(a => a.landlord_name);
+        const notifyNeeded = !hasEmployerName || !hasLandlordName || tenant.docCount === 0;
+        nextAvail.set(id, { employer: hasEmployer, landlord: hasLandlord, notify: notifyNeeded });
+        nextActions.set(id, { employer: hasEmployer, landlord: hasLandlord, notify: notifyNeeded });
+      }
+      setAvail(nextAvail);
+      setTenantActions(nextActions);
+      setChecking(false);
+    }
+    autoDetect();
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   function toggleTenant(id: string) {
     const next = new Set(selectedIds);
     if (next.has(id)) next.delete(id); else next.add(id);
@@ -155,57 +194,70 @@ function ConfigureStep({
     if (selectedIds.size === allTenants.length) setSelectedIds(new Set());
     else setSelectedIds(new Set(allTenants.map(t => t.id)));
   }
+  function setAction(id: string, key: keyof TenantActions, val: boolean) {
+    const next = new Map(tenantActions);
+    next.set(id, { ...next.get(id)!, [key]: val });
+    setTenantActions(next);
+  }
 
   const allSelected = selectedIds.size === allTenants.length;
-  const canStart = selectedIds.size > 0 && (includeEmployer || includeLandlord || includeNotify);
+  const canStart = !checking && selectedIds.size > 0 && [...selectedIds].some(id => {
+    const a = tenantActions.get(id);
+    return a && (a.employer || a.landlord || a.notify);
+  });
 
   return (
-    <div className="flex-1 overflow-y-auto p-5 space-y-5">
-      {/* Tenants */}
-      <div>
-        <div className="flex items-center justify-between mb-2">
-          <p className="text-xs font-semibold text-slate-700">Tenants</p>
-          <button onClick={toggleAll} className="text-[11px] text-violet-600 hover:underline font-medium">
-            {allSelected ? "Deselect all" : "Select all"}
-          </button>
-        </div>
-        <div className="space-y-1.5">
-          {allTenants.map(t => (
-            <label key={t.id} className="flex items-center gap-3 px-3 py-2.5 border border-slate-100 rounded-lg hover:bg-slate-50 cursor-pointer">
-              <input type="checkbox" checked={selectedIds.has(t.id)} onChange={() => toggleTenant(t.id)} className="shrink-0" />
-              <div className="min-w-0">
-                <p className="text-xs font-medium text-slate-900 truncate">{t.name}</p>
-                <p className="text-[10px] text-slate-400 truncate">{t.email}</p>
-              </div>
-            </label>
-          ))}
-        </div>
+    <div className="flex-1 overflow-y-auto p-5 space-y-3">
+      <div className="flex items-center justify-between mb-1">
+        <p className="text-xs font-semibold text-slate-700">Tenants & actions</p>
+        {checking
+          ? <span className="text-[12px] text-slate-400 flex items-center gap-1.5"><span className="w-3 h-3 border border-slate-300 border-t-transparent rounded-full animate-spin inline-block" />Checking refs…</span>
+          : <button onClick={toggleAll} className="text-[13px] text-violet-600 hover:underline font-medium">{allSelected ? "Deselect all" : "Select all"}</button>
+        }
       </div>
 
-      {/* Action types */}
-      <div>
-        <p className="text-xs font-semibold text-slate-700 mb-2">Action types to send</p>
-        <div className="space-y-1.5">
-          {[
-            { label: "Employer reference check", desc: "Email/SMS to each employer reference on file", val: includeEmployer, set: setIncludeEmployer },
-            { label: "Landlord reference check", desc: "Email/SMS to each landlord reference on file", val: includeLandlord, set: setIncludeLandlord },
-            { label: "Request more info from tenant", desc: "Notify tenant if references or documents are missing", val: includeNotify, set: setIncludeNotify },
-          ].map(({ label, desc, val, set }) => (
-            <label key={label} className="flex items-start gap-3 px-3 py-2.5 border border-slate-100 rounded-lg hover:bg-slate-50 cursor-pointer">
-              <input type="checkbox" checked={val} onChange={e => set(e.target.checked)} className="shrink-0 mt-0.5" />
-              <div>
-                <p className="text-xs font-medium text-slate-900">{label}</p>
-                <p className="text-[10px] text-slate-400">{desc}</p>
+      {allTenants.map(t => {
+        const a = tenantActions.get(t.id)!;
+        const av = avail.get(t.id) ?? { employer: false, landlord: false, notify: true };
+        const selected = selectedIds.has(t.id);
+        return (
+          <div key={t.id} className={`border rounded-xl overflow-hidden transition-colors ${selected ? "border-slate-200" : "border-slate-100 opacity-50"}`}>
+            {/* Tenant row */}
+            <label className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-slate-50">
+              <input type="checkbox" checked={selected} onChange={() => toggleTenant(t.id)} className="shrink-0" />
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-slate-900 truncate">{t.name}</p>
+                <p className="text-[12px] text-slate-400 truncate">{t.email}</p>
               </div>
             </label>
-          ))}
-        </div>
-      </div>
+            {/* Per-tenant action checkboxes */}
+            {selected && (
+              <div className="px-4 pb-3 flex items-center gap-4 border-t border-slate-100 pt-2">
+                {([
+                  { key: "employer" as keyof TenantActions, label: "Employer ref",  disabled: !checking && !av.employer },
+                  { key: "landlord" as keyof TenantActions, label: "Landlord ref",  disabled: !checking && !av.landlord },
+                  { key: "notify"   as keyof TenantActions, label: "Notify tenant", disabled: !checking && !av.notify },
+                ]).map(({ key, label, disabled }) => (
+                  <label key={key} className={`flex items-center gap-1.5 text-[13px] ${disabled ? "opacity-35 cursor-not-allowed" : "cursor-pointer text-slate-700"}`}>
+                    <input
+                      type="checkbox"
+                      checked={a[key]}
+                      disabled={disabled}
+                      onChange={e => !disabled && setAction(t.id, key, e.target.checked)}
+                    />
+                    {label}
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
 
       <button
         disabled={!canStart}
         onClick={onStart}
-        className="w-full py-2.5 text-sm font-semibold bg-black text-white rounded-xl hover:bg-slate-800 disabled:opacity-40 transition-colors"
+        className="w-full py-2.5 text-sm font-semibold bg-black text-white rounded-xl hover:bg-slate-800 disabled:opacity-40 transition-colors mt-2"
       >
         Draft letters for {selectedIds.size} tenant{selectedIds.size !== 1 ? "s" : ""}
       </button>
@@ -282,10 +334,10 @@ function ReviewStep({
             <div key={tName}>
               {/* Tenant header */}
               <div className="flex items-center justify-between mb-2">
-                <p className="text-[11px] font-semibold text-slate-600 uppercase tracking-wide">{tName}</p>
+                <p className="text-[13px] font-semibold text-slate-600 uppercase tracking-wide">{tName}</p>
                 <button
                   onClick={() => removeAllForTenant(tName)}
-                  className="text-[10px] text-slate-400 hover:text-red-500 transition-colors font-medium"
+                  className="text-[12px] text-slate-400 hover:text-red-500 transition-colors font-medium"
                 >
                   Remove tenant
                 </button>
@@ -302,11 +354,11 @@ function ReviewStep({
         {/* Removed tenants — restore section */}
         {removedTenants.length > 0 && (
           <div className="border border-dashed border-slate-200 rounded-xl p-3 space-y-1.5">
-            <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Removed tenants</p>
+            <p className="text-[12px] font-semibold text-slate-400 uppercase tracking-wide">Removed tenants</p>
             {removedTenants.map(name => (
               <div key={name} className="flex items-center justify-between">
                 <span className="text-xs text-slate-500">{name}</span>
-                <button onClick={() => restoreAllForTenant(name)} className="text-[11px] text-violet-600 hover:underline font-medium">
+                <button onClick={() => restoreAllForTenant(name)} className="text-[13px] text-violet-600 hover:underline font-medium">
                   Add back
                 </button>
               </div>
@@ -322,7 +374,7 @@ function ReviewStep({
             className="w-full py-2.5 text-sm font-semibold bg-black text-white rounded-xl hover:bg-slate-800 transition-colors">
             Send all {pending.length} action{pending.length !== 1 ? "s" : ""}
           </button>
-          <p className="text-[10px] text-slate-400 text-center">Sends via selected channels to all active tenants</p>
+          <p className="text-[12px] text-slate-400 text-center">Sends via selected channels to all active tenants</p>
         </div>
       )}
     </>
@@ -345,14 +397,14 @@ function ActionCard({
       <div className="flex items-start justify-between gap-2 px-4 pt-3 pb-2">
         <div className="space-y-1 min-w-0">
           <div className="flex items-center gap-1.5 flex-wrap">
-            <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${KIND_COLOR[action.kind]}`}>
+            <span className={`text-[12px] font-semibold px-1.5 py-0.5 rounded-full ${KIND_COLOR[action.kind]}`}>
               {KIND_LABEL[action.kind]}
             </span>
-            {action.status === "sent" && <span className="text-[10px] text-green-600 font-medium">✓ Sent</span>}
-            {action.status === "error" && <span className="text-[10px] text-red-600">{action.error}</span>}
+            {action.status === "sent" && <span className="text-[12px] text-green-600 font-medium">✓ Sent</span>}
+            {action.status === "error" && <span className="text-[12px] text-red-600">{action.error}</span>}
           </div>
           <p className="text-xs font-medium text-slate-800">To: {action.refLabel}</p>
-          <p className="text-[11px] text-slate-400">
+          <p className="text-[13px] text-slate-400">
             {[action.recipientEmail, action.recipientPhone].filter(Boolean).join(" · ")}
           </p>
         </div>
@@ -360,12 +412,12 @@ function ActionCard({
           {/* Channel checkboxes */}
           {action.status === "pending" && (
             <div className="flex items-center gap-2.5">
-              <label className={`flex items-center gap-1 text-[11px] font-medium ${!action.recipientEmail ? "opacity-30 cursor-not-allowed" : "cursor-pointer"}`}>
+              <label className={`flex items-center gap-1 text-[13px] font-medium ${!action.recipientEmail ? "opacity-30 cursor-not-allowed" : "cursor-pointer"}`}>
                 <input type="checkbox" disabled={!action.recipientEmail} checked={action.sendEmail}
                   onChange={e => update(action.id, { sendEmail: e.target.checked })} />
                 Email
               </label>
-              <label className={`flex items-center gap-1 text-[11px] font-medium ${!action.recipientPhone ? "opacity-30 cursor-not-allowed" : "cursor-pointer"}`}>
+              <label className={`flex items-center gap-1 text-[13px] font-medium ${!action.recipientPhone ? "opacity-30 cursor-not-allowed" : "cursor-pointer"}`}>
                 <input type="checkbox" disabled={!action.recipientPhone} checked={action.sendSms}
                   onChange={e => update(action.id, { sendSms: e.target.checked })} />
                 SMS
@@ -413,11 +465,11 @@ function ActionCard({
 export default function BatchAIReviewPanel({ tenants, onClose }: BatchAIReviewPanelProps) {
   const [step, setStep] = useState<"configure" | "review">("configure");
 
-  // Config state
+  // Config state — per-tenant action selections, all checked by default
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set(tenants.map(t => t.id)));
-  const [includeEmployer, setIncludeEmployer] = useState(true);
-  const [includeLandlord, setIncludeLandlord] = useState(true);
-  const [includeNotify, setIncludeNotify] = useState(true);
+  const [tenantActions, setTenantActions] = useState<Map<string, TenantActions>>(
+    () => new Map(tenants.map(t => [t.id, { employer: true, landlord: true, notify: true }]))
+  );
 
   // Review state
   const [actions, setActions] = useState<ActionItem[]>([]);
@@ -439,11 +491,8 @@ export default function BatchAIReviewPanel({ tenants, onClose }: BatchAIReviewPa
       const all: ActionItem[] = [];
       for (const tenant of selected) {
         if (cancelled) return;
-        const items = await draftForTenant(tenant, {
-          employer: includeEmployer,
-          landlord: includeLandlord,
-          notify: includeNotify,
-        });
+        const include = tenantActions.get(tenant.id) ?? { employer: true, landlord: true, notify: true };
+        const items = await draftForTenant(tenant, include);
         all.push(...items);
         if (!cancelled) setProgress(p => p + 1);
       }
@@ -497,7 +546,7 @@ export default function BatchAIReviewPanel({ tenants, onClose }: BatchAIReviewPa
         <div className="px-5 py-4 border-b border-slate-100 flex items-start justify-between gap-3 shrink-0">
           <div>
             {step === "review" && (
-              <button onClick={() => setStep("configure")} className="text-[11px] text-violet-600 hover:underline mb-1 block">← Back to configure</button>
+              <button onClick={() => setStep("configure")} className="text-[13px] text-violet-600 hover:underline mb-1 block">← Back to configure</button>
             )}
             <h2 className="text-sm font-semibold text-slate-900">{title}</h2>
             <p className="text-xs text-slate-500 mt-0.5">{subtitle}</p>
@@ -510,9 +559,8 @@ export default function BatchAIReviewPanel({ tenants, onClose }: BatchAIReviewPa
             allTenants={tenants}
             selectedIds={selectedIds}
             setSelectedIds={setSelectedIds}
-            includeEmployer={includeEmployer} setIncludeEmployer={setIncludeEmployer}
-            includeLandlord={includeLandlord} setIncludeLandlord={setIncludeLandlord}
-            includeNotify={includeNotify} setIncludeNotify={setIncludeNotify}
+            tenantActions={tenantActions}
+            setTenantActions={setTenantActions}
             onStart={() => setStep("review")}
           />
         )}

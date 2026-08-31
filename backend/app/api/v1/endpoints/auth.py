@@ -319,7 +319,8 @@ async def me(
     # Re-decoded here (rather than threading through get_current_user, which dozens of
     # other endpoints destructure as `user, member = current`) just to surface whether
     # this session was minted by admin impersonation, for the frontend banner.
-    impersonated = bool(decode_token(credentials.credentials).get("impersonated_by"))
+    raw_token = credentials.credentials if credentials else None
+    impersonated = bool(raw_token and decode_token(raw_token).get("impersonated_by"))
     return UserOut(
         id=str(user.id),
         email=user.email,

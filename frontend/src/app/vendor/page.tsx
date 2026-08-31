@@ -83,7 +83,7 @@ function JobCard({ req, onUpdate }: { req: MaintenanceOut; onUpdate: (r: Mainten
             <p className="text-xs text-slate-400 mt-0.5">{req.category} · {req.property_name} Unit {req.unit_number}</p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            <span className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-medium ${STATUS_STYLE[req.status]}`}>{STATUS_LABEL[req.status]}</span>
+            <span className={`inline-flex px-2 py-0.5 rounded-full text-[13px] font-medium ${STATUS_STYLE[req.status]}`}>{STATUS_LABEL[req.status]}</span>
             <svg className={`w-4 h-4 text-slate-400 transition-transform ${expanded ? "rotate-180" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
           </div>
         </div>
@@ -97,7 +97,7 @@ function JobCard({ req, onUpdate }: { req: MaintenanceOut; onUpdate: (r: Mainten
           {/* Tenant contact */}
           {req.submitted_by_name && (
             <div className="bg-slate-50 rounded-lg px-4 py-3 space-y-1">
-              <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wide">Tenant contact</p>
+              <p className="text-[13px] font-medium text-slate-500 uppercase tracking-wide">Tenant contact</p>
               <p className="text-sm font-medium text-slate-900">{req.submitted_by_name}</p>
               <div className="flex flex-wrap gap-3 mt-0.5">
                 {req.tenant_email && (
@@ -129,8 +129,8 @@ function JobCard({ req, onUpdate }: { req: MaintenanceOut; onUpdate: (r: Mainten
           {/* Estimate */}
           {(req.est_cost_min || req.est_hours_min) && (
             <div className="bg-slate-50 rounded-lg px-4 py-3 flex gap-6">
-              {req.est_hours_min != null && <div><p className="text-[11px] text-slate-400">Estimated hours</p><p className="text-sm font-medium">{req.est_hours_min}–{req.est_hours_max} hrs</p></div>}
-              {req.est_cost_min != null && <div><p className="text-[11px] text-slate-400">Estimated cost</p><p className="text-sm font-medium">${req.est_cost_min}–${req.est_cost_max}</p></div>}
+              {req.est_hours_min != null && <div><p className="text-[13px] text-slate-400">Estimated hours</p><p className="text-sm font-medium">{req.est_hours_min}–{req.est_hours_max} hrs</p></div>}
+              {req.est_cost_min != null && <div><p className="text-[13px] text-slate-400">Estimated cost</p><p className="text-sm font-medium">${req.est_cost_min}–${req.est_cost_max}</p></div>}
             </div>
           )}
 
@@ -143,7 +143,7 @@ function JobCard({ req, onUpdate }: { req: MaintenanceOut; onUpdate: (r: Mainten
                   <div key={a.id} className="rounded-lg overflow-hidden border border-slate-200 aspect-square bg-slate-50 flex items-center justify-center">
                     {a.original_name.match(/\.(jpg|jpeg|png|webp)$/i)
                       ? <img src={a.url} alt={a.original_name} className="w-full h-full object-cover" />
-                      : <p className="text-[9px] text-slate-500 truncate p-1">{a.original_name}</p>}
+                      : <p className="text-[13px] text-slate-500 truncate p-1">{a.original_name}</p>}
                   </div>
                 ))}
               </div>
@@ -160,9 +160,9 @@ function JobCard({ req, onUpdate }: { req: MaintenanceOut; onUpdate: (r: Mainten
                     <div className="flex items-center justify-between gap-2">
                       <p className="text-xs font-medium text-slate-700">{n.author_name}</p>
                       <div className="flex items-center gap-2 shrink-0">
-                        <p className="text-[11px] text-slate-400">{fmtDt(n.created_at)}</p>
+                        <p className="text-[13px] text-slate-400">{fmtDt(n.created_at)}</p>
                         {n.author_user_id === user?.id && (
-                          <button onClick={() => deleteNote(n.id)} className="text-[11px] text-slate-400 hover:text-red-500">Delete</button>
+                          <button onClick={() => deleteNote(n.id)} className="text-[13px] text-slate-400 hover:text-red-500">Delete</button>
                         )}
                       </div>
                     </div>
@@ -316,7 +316,7 @@ function AvailabilityCalendarView({ vendorId, slots, onChanged }: { vendorId: st
       </div>
       <div className="grid grid-cols-7 border-b border-slate-100">
         {WEEKDAY_LABELS.map(d => (
-          <div key={d} className="px-2 py-2 text-center text-[11px] font-medium text-slate-400 uppercase tracking-wide">{d}</div>
+          <div key={d} className="px-2 py-2 text-center text-[13px] font-medium text-slate-400 uppercase tracking-wide">{d}</div>
         ))}
       </div>
       <div className="grid grid-cols-7">
@@ -327,16 +327,16 @@ function AvailabilityCalendarView({ vendorId, slots, onChanged }: { vendorId: st
           return (
             <button key={i} type="button" onClick={() => openDay(key)}
               className={`min-h-[90px] border-b border-r border-slate-100 p-1.5 text-left hover:bg-violet-50/60 transition-colors ${!cell.inMonth ? "bg-slate-50/60" : ""}`}>
-              <p className={`text-[11px] mb-1 ${isToday ? "inline-flex items-center justify-center w-5 h-5 rounded-full bg-black text-white font-semibold" : cell.inMonth ? "text-slate-600 font-medium" : "text-slate-300"}`}>
+              <p className={`text-[13px] mb-1 ${isToday ? "inline-flex items-center justify-center w-5 h-5 rounded-full bg-black text-white font-semibold" : cell.inMonth ? "text-slate-600 font-medium" : "text-slate-300"}`}>
                 {cell.date.getDate()}
               </p>
               <div className="space-y-1">
                 {daySlotsForCell.slice(0, 3).map(s => (
-                  <div key={s.id} className="px-1.5 py-0.5 rounded text-[10px] font-medium truncate bg-emerald-100 text-emerald-700">
+                  <div key={s.id} className="px-1.5 py-0.5 rounded text-[12px] font-medium truncate bg-emerald-100 text-emerald-700">
                     {s.start_time.slice(0, 5)}–{s.end_time.slice(0, 5)}
                   </div>
                 ))}
-                {daySlotsForCell.length > 3 && <p className="text-[10px] text-slate-400 px-1.5">+{daySlotsForCell.length - 3} more</p>}
+                {daySlotsForCell.length > 3 && <p className="text-[12px] text-slate-400 px-1.5">+{daySlotsForCell.length - 3} more</p>}
               </div>
             </button>
           );
@@ -360,11 +360,11 @@ function AvailabilityCalendarView({ vendorId, slots, onChanged }: { vendorId: st
                   <div key={slot.id} className="border border-violet-200 rounded-lg p-2 space-y-2">
                     <div className="grid grid-cols-2 gap-2">
                       <div>
-                        <label className="block text-[10px] text-slate-400 mb-0.5">Start</label>
+                        <label className="block text-[12px] text-slate-400 mb-0.5">Start</label>
                         <input type="time" value={editForm.start_time} onChange={e => setEditForm(f => ({ ...f, start_time: e.target.value }))} className={`${inp} text-xs px-2 py-1`} />
                       </div>
                       <div>
-                        <label className="block text-[10px] text-slate-400 mb-0.5">End</label>
+                        <label className="block text-[12px] text-slate-400 mb-0.5">End</label>
                         <input type="time" value={editForm.end_time} onChange={e => setEditForm(f => ({ ...f, end_time: e.target.value }))} className={`${inp} text-xs px-2 py-1`} />
                       </div>
                     </div>
@@ -387,14 +387,14 @@ function AvailabilityCalendarView({ vendorId, slots, onChanged }: { vendorId: st
               </div>
 
               <div className="border-t border-slate-100 pt-3 space-y-2">
-                <p className="text-[11px] font-medium text-slate-500">Add a slot</p>
+                <p className="text-[13px] font-medium text-slate-500">Add a slot</p>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="block text-[10px] text-slate-400 mb-0.5">Start</label>
+                    <label className="block text-[12px] text-slate-400 mb-0.5">Start</label>
                     <input type="time" value={newSlotForm.start_time} onChange={e => setNewSlotForm(f => ({ ...f, start_time: e.target.value }))} className={`${inp} text-xs px-2 py-1`} />
                   </div>
                   <div>
-                    <label className="block text-[10px] text-slate-400 mb-0.5">End</label>
+                    <label className="block text-[12px] text-slate-400 mb-0.5">End</label>
                     <input type="time" value={newSlotForm.end_time} onChange={e => setNewSlotForm(f => ({ ...f, end_time: e.target.value }))} className={`${inp} text-xs px-2 py-1`} />
                   </div>
                 </div>
@@ -520,15 +520,15 @@ function AvailabilitySection({ vendorId }: { vendorId: string }) {
         {error && <p className="text-red-600 text-xs">{error}</p>}
         <div className="grid grid-cols-7 gap-2 items-end">
           <div className="col-span-3">
-            <label className="block text-[11px] text-slate-400 mb-1">Date</label>
+            <label className="block text-[13px] text-slate-400 mb-1">Date</label>
             <input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} className={inp} />
           </div>
           <div className="col-span-2">
-            <label className="block text-[11px] text-slate-400 mb-1">Start</label>
+            <label className="block text-[13px] text-slate-400 mb-1">Start</label>
             <input type="time" value={form.start_time} onChange={e => setForm(f => ({ ...f, start_time: e.target.value }))} className={inp} />
           </div>
           <div className="col-span-2">
-            <label className="block text-[11px] text-slate-400 mb-1">End</label>
+            <label className="block text-[13px] text-slate-400 mb-1">End</label>
             <input type="time" value={form.end_time} onChange={e => setForm(f => ({ ...f, end_time: e.target.value }))} className={inp} />
           </div>
         </div>
@@ -565,11 +565,11 @@ function AvailabilitySection({ vendorId }: { vendorId: string }) {
 
           {suggestions.length > 0 && (
             <div className="border-t border-violet-200 pt-2 space-y-2">
-              <p className="text-[11px] font-medium text-violet-700">Review proposed slots ({selectedCount} selected)</p>
+              <p className="text-[13px] font-medium text-violet-700">Review proposed slots ({selectedCount} selected)</p>
               <div className="space-y-2 max-h-56 overflow-y-auto">
                 {Object.entries(suggestionIdxByDate).sort(([a], [b]) => a.localeCompare(b)).map(([date, idxs]) => (
                   <div key={date}>
-                    <p className="text-[11px] font-medium text-slate-500 mb-1">{fmtDate(date)}</p>
+                    <p className="text-[13px] font-medium text-slate-500 mb-1">{fmtDate(date)}</p>
                     <div className="space-y-1">
                       {idxs.map((idx) => {
                         const s = suggestions[idx];
@@ -578,15 +578,15 @@ function AvailabilitySection({ vendorId }: { vendorId: string }) {
                             <div key={idx} className="bg-white border border-violet-300 rounded-lg px-3 py-2 space-y-2">
                               <div className="grid grid-cols-3 gap-2">
                                 <div>
-                                  <label className="block text-[10px] text-slate-400 mb-0.5">Date</label>
+                                  <label className="block text-[12px] text-slate-400 mb-0.5">Date</label>
                                   <input type="date" value={s.date} onChange={e => updateSuggestion(idx, { date: e.target.value })} className={`${inp} text-xs px-2 py-1`} />
                                 </div>
                                 <div>
-                                  <label className="block text-[10px] text-slate-400 mb-0.5">Start</label>
+                                  <label className="block text-[12px] text-slate-400 mb-0.5">Start</label>
                                   <input type="time" value={s.start_time.slice(0, 5)} onChange={e => updateSuggestion(idx, { start_time: e.target.value })} className={`${inp} text-xs px-2 py-1`} />
                                 </div>
                                 <div>
-                                  <label className="block text-[10px] text-slate-400 mb-0.5">End</label>
+                                  <label className="block text-[12px] text-slate-400 mb-0.5">End</label>
                                   <input type="time" value={s.end_time.slice(0, 5)} onChange={e => updateSuggestion(idx, { end_time: e.target.value })} className={`${inp} text-xs px-2 py-1`} />
                                 </div>
                               </div>

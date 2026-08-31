@@ -137,7 +137,7 @@ function OccupancyBar({ occupied, total }: { occupied: number; total: number }) 
   const pct = total > 0 ? Math.round((occupied / total) * 100) : 0;
   return (
     <div className="mt-2">
-      <div className="flex justify-between text-[11px] text-slate-500 mb-1">
+      <div className="flex justify-between text-[13px] text-slate-500 mb-1">
         <span>{occupied}/{total} units</span>
         <span>{pct}%</span>
       </div>
@@ -228,7 +228,7 @@ function ImageGalleryModal({ title, images, onUpload, onDelete, onClose, uploadi
                   <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors" />
                   {/* Cover badge */}
                   {coverId === img.id && (
-                    <div className="absolute top-1.5 left-1.5 bg-amber-400 text-black text-[9px] font-bold px-1.5 py-0.5 rounded-full">Cover</div>
+                    <div className="absolute top-1.5 left-1.5 bg-amber-400 text-black text-[13px] font-bold px-1.5 py-0.5 rounded-full">Cover</div>
                   )}
                   <div className="absolute top-1.5 right-1.5 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     {onSetCover && coverId !== img.id && (
@@ -252,7 +252,7 @@ function ImageGalleryModal({ title, images, onUpload, onDelete, onClose, uploadi
                       </svg>
                     </button>
                   </div>
-                  <p className="absolute bottom-0 inset-x-0 bg-black/50 text-white text-[10px] px-2 py-1 truncate opacity-0 group-hover:opacity-100 transition-opacity">{img.original_name}</p>
+                  <p className="absolute bottom-0 inset-x-0 bg-black/50 text-white text-[12px] px-2 py-1 truncate opacity-0 group-hover:opacity-100 transition-opacity">{img.original_name}</p>
                 </div>
               ))}
             </div>
@@ -584,7 +584,7 @@ function SingleUnitPropertyModal({ onClose, onSaved, title = "Add single-unit pr
           </div>
 
           <div className="border-t border-slate-100 pt-4">
-            <p className="text-[11px] uppercase tracking-wider font-medium text-slate-400 mb-3">The unit{unitKeys.length > 1 ? "s" : ""}</p>
+            <p className="text-[13px] uppercase tracking-wider font-medium text-slate-400 mb-3">The unit{unitKeys.length > 1 ? "s" : ""}</p>
 
             {unitKeys.map((k, idx) => (
               <UnitBlock
@@ -892,7 +892,7 @@ function UnitModal({ propertyId, propertyName, initial, onClose, onSave }: {
           </div>
 
           <div className="border-t border-slate-100 pt-4">
-            <p className="text-[11px] uppercase tracking-wider font-medium text-slate-400 mb-3">Contact</p>
+            <p className="text-[13px] uppercase tracking-wider font-medium text-slate-400 mb-3">Contact</p>
             <label className="block text-xs font-medium text-slate-700 mb-1.5">Select contact method</label>
             <div className="flex items-center gap-4 mb-3">
               <label className="flex items-center gap-1.5 text-sm text-slate-700 cursor-pointer">
@@ -1029,7 +1029,7 @@ function UnitModal({ propertyId, propertyName, initial, onClose, onSave }: {
           <div className="border-t border-slate-100 pt-4 mt-4">
             <div className="flex items-center justify-between mb-1">
               <label className="block text-xs font-medium text-slate-700">Property heading</label>
-              <span className="text-[11px] text-slate-400">{form.property_heading.length}/80</span>
+              <span className="text-[13px] text-slate-400">{form.property_heading.length}/80</span>
             </div>
             <input value={form.property_heading} onChange={(e) => setForm((v) => ({ ...v, property_heading: e.target.value.slice(0, 80) }))}
               placeholder="e.g. Cozy 1 Bedroom Downtown Condo" maxLength={80}
@@ -1046,10 +1046,10 @@ function UnitModal({ propertyId, propertyName, initial, onClose, onSave }: {
 
           <div className="mt-4">
             <label className="block text-xs font-medium text-slate-700 mb-1">Full description</label>
-            <p className="text-[11px] text-amber-600 mb-1">Please don&apos;t put email addresses in the description — it can lead to spam and scams.</p>
+            <p className="text-[13px] text-amber-600 mb-1">Please don&apos;t put email addresses in the description — it can lead to spam and scams.</p>
             <textarea value={form.description} onChange={set("description")} rows={5}
               className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black resize-y" />
-            {descAiError && <p className="text-[11px] text-red-600 mt-1">{descAiError}</p>}
+            {descAiError && <p className="text-[13px] text-red-600 mt-1">{descAiError}</p>}
             <button type="button" onClick={handleGenerateDescription} disabled={generatingDesc}
               className="mt-1.5 px-3 py-1.5 text-xs font-medium bg-violet-600 text-white rounded-lg hover:bg-violet-700 disabled:opacity-50">
               {generatingDesc ? "Generating…" : "✨ Generate with AI"}
@@ -1275,7 +1275,7 @@ const UnitBlock = forwardRef<UnitBlockHandle, {
     <div className="border-t border-slate-100 pt-4 mt-4 first:mt-0 first:border-t-0 first:pt-0">
       {label && (
         <div className="flex items-center justify-between mb-3">
-          <p className="text-[11px] uppercase tracking-wider font-medium text-slate-400">{label}</p>
+          <p className="text-[13px] uppercase tracking-wider font-medium text-slate-400">{label}</p>
           {onRemove && (
             <button type="button" onClick={onRemove} className="text-xs text-slate-400 hover:text-red-600">Remove unit ✕</button>
           )}
@@ -1394,7 +1394,7 @@ const UnitBlock = forwardRef<UnitBlockHandle, {
       <div className="border-t border-slate-100 pt-4 mt-4">
         <div className="flex items-center justify-between mb-1">
           <label className="block text-xs font-medium text-slate-700">Property heading *</label>
-          <span className="text-[11px] text-slate-400">{form.property_heading.length}/80</span>
+          <span className="text-[13px] text-slate-400">{form.property_heading.length}/80</span>
         </div>
         <input value={form.property_heading} onChange={(e) => setForm((v) => ({ ...v, property_heading: e.target.value.slice(0, 80) }))}
           placeholder="e.g. Cozy 1 Bedroom Downtown Condo" maxLength={80}
@@ -1411,10 +1411,10 @@ const UnitBlock = forwardRef<UnitBlockHandle, {
 
       <div className="mt-4">
         <label className="block text-xs font-medium text-slate-700 mb-1">Full description</label>
-        <p className="text-[11px] text-amber-600 mb-1">Please don&apos;t put email addresses in the description — it can lead to spam and scams.</p>
+        <p className="text-[13px] text-amber-600 mb-1">Please don&apos;t put email addresses in the description — it can lead to spam and scams.</p>
         <textarea value={form.description} onChange={set("description")} rows={5}
           className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black resize-y" />
-        {descAiError && <p className="text-[11px] text-red-600 mt-1">{descAiError}</p>}
+        {descAiError && <p className="text-[13px] text-red-600 mt-1">{descAiError}</p>}
         <button type="button" onClick={handleGenerateDescription} disabled={generatingDesc}
           className="mt-1.5 px-3 py-1.5 text-xs font-medium bg-violet-600 text-white rounded-lg hover:bg-violet-700 disabled:opacity-50">
           {generatingDesc ? "Generating…" : "✨ Generate with AI"}
@@ -1869,7 +1869,7 @@ export default function PropertiesPage() {
       {/* Header */}
       <div className="flex items-end justify-between">
         <div>
-          <p className="text-[11px] uppercase tracking-widest text-slate-400 font-medium">Assets</p>
+          <p className="text-[13px] uppercase tracking-widest text-slate-400 font-medium">Assets</p>
           <h1 className="text-xl font-bold text-slate-900 mt-0.5">Properties and units</h1>
         </div>
         <div className="flex items-center gap-2">
@@ -1904,7 +1904,7 @@ export default function PropertiesPage() {
             }} className={`bg-white rounded-xl border overflow-hidden hover:shadow-md transition-shadow group cursor-pointer ${selectedPropertyIds.has(p.id) ? "border-black ring-2 ring-black" : "border-slate-200"}`}>
             {/* Slim accent header with action buttons */}
             <div className="h-10 bg-slate-100 flex items-center justify-end px-2 gap-1 relative">
-              <span className="absolute left-3 text-[10px] font-medium text-slate-400 uppercase tracking-wider">
+              <span className="absolute left-3 text-[12px] font-medium text-slate-400 uppercase tracking-wider">
                 {TYPE_LABELS[p.property_type] ?? p.property_type}
               </span>
               <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -1977,7 +1977,7 @@ export default function PropertiesPage() {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
                     </svg>
-                    <span className="text-[9px] text-slate-400 hidden group-hover/logo:block mt-0.5">Upload</span>
+                    <span className="text-[13px] text-slate-400 hidden group-hover/logo:block mt-0.5">Upload</span>
                   </div>
                 )}
               </button>
@@ -2040,14 +2040,14 @@ export default function PropertiesPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100">
-                <th className="text-left text-[11px] font-medium text-slate-400 uppercase tracking-wider px-5 py-3">Unit</th>
-                <th className="text-left text-[11px] font-medium text-slate-400 uppercase tracking-wider px-3 py-3">Property</th>
-                <th className="text-left text-[11px] font-medium text-slate-400 uppercase tracking-wider px-3 py-3">Layout</th>
-                <th className="text-left text-[11px] font-medium text-slate-400 uppercase tracking-wider px-3 py-3">Rent</th>
-                <th className="text-left text-[11px] font-medium text-slate-400 uppercase tracking-wider px-3 py-3">Status</th>
-                <th className="text-left text-[11px] font-medium text-slate-400 uppercase tracking-wider px-3 py-3">Tenant</th>
-                <th className="text-left text-[11px] font-medium text-slate-400 uppercase tracking-wider px-3 py-3">Lease period</th>
-                <th className="text-left text-[11px] font-medium text-slate-400 uppercase tracking-wider px-3 py-3">Outstanding</th>
+                <th className="text-left text-[13px] font-medium text-slate-400 uppercase tracking-wider px-5 py-3">Unit</th>
+                <th className="text-left text-[13px] font-medium text-slate-400 uppercase tracking-wider px-3 py-3">Property</th>
+                <th className="text-left text-[13px] font-medium text-slate-400 uppercase tracking-wider px-3 py-3">Layout</th>
+                <th className="text-left text-[13px] font-medium text-slate-400 uppercase tracking-wider px-3 py-3">Rent</th>
+                <th className="text-left text-[13px] font-medium text-slate-400 uppercase tracking-wider px-3 py-3">Status</th>
+                <th className="text-left text-[13px] font-medium text-slate-400 uppercase tracking-wider px-3 py-3">Tenant</th>
+                <th className="text-left text-[13px] font-medium text-slate-400 uppercase tracking-wider px-3 py-3">Lease period</th>
+                <th className="text-left text-[13px] font-medium text-slate-400 uppercase tracking-wider px-3 py-3">Outstanding</th>
                 <th className="px-3 py-3"></th>
               </tr>
             </thead>
@@ -2073,7 +2073,7 @@ export default function PropertiesPage() {
                       <td className="px-3 py-3 text-slate-500 text-xs">{u.layout}</td>
                       <td className="px-3 py-3 font-medium text-slate-900 text-xs">${u.rent.toLocaleString()}</td>
                       <td className="px-3 py-3">
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${STATUS_STYLES[u.status] ?? ""}`}>
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[13px] font-medium ${STATUS_STYLES[u.status] ?? ""}`}>
                           {u.status}
                         </span>
                       </td>
@@ -2091,7 +2091,7 @@ export default function PropertiesPage() {
                                     // eslint-disable-next-line @next/next/no-img-element
                                     <img src={t.tenant_avatar_url} alt={t.tenant_name ?? ""} className="w-6 h-6 rounded-full object-cover border border-slate-200 shrink-0" />
                                   ) : (
-                                    <div className="w-6 h-6 rounded-full bg-black text-white text-[9px] font-bold flex items-center justify-center shrink-0">
+                                    <div className="w-6 h-6 rounded-full bg-black text-white text-[13px] font-bold flex items-center justify-center shrink-0">
                                       {initials}
                                     </div>
                                   )}
@@ -2109,7 +2109,7 @@ export default function PropertiesPage() {
                               // eslint-disable-next-line @next/next/no-img-element
                               <img src={u.tenantAvatarUrl} alt={u.tenant} className="w-6 h-6 rounded-full object-cover border border-slate-200 shrink-0" />
                             ) : (
-                              <div className="w-6 h-6 rounded-full bg-black text-white text-[9px] font-bold flex items-center justify-center shrink-0">
+                              <div className="w-6 h-6 rounded-full bg-black text-white text-[13px] font-bold flex items-center justify-center shrink-0">
                                 {u.tenant.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase()}
                               </div>
                             )}
@@ -2124,8 +2124,8 @@ export default function PropertiesPage() {
                           const days = Math.round((new Date(u.leaseEnd).getTime() - Date.now()) / 86400000);
                           return (
                             <div>
-                              <p className="text-[11px] text-slate-500">{u.leaseStart} →</p>
-                              <p className={`text-[11px] font-medium ${days < 60 ? "text-red-500" : days < 90 ? "text-amber-500" : "text-slate-500"}`}>{u.leaseEnd}</p>
+                              <p className="text-[13px] text-slate-500">{u.leaseStart} →</p>
+                              <p className={`text-[13px] font-medium ${days < 60 ? "text-red-500" : days < 90 ? "text-amber-500" : "text-slate-500"}`}>{u.leaseEnd}</p>
                             </div>
                           );
                         })() : <span className="text-slate-300 text-xs">—</span>}

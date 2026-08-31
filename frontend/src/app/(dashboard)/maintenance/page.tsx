@@ -197,7 +197,7 @@ function SubmitModal({units,vendors,editing,onClose,onSave}:{units:UnitDetailOut
             {/* Auto-fill info card */}
             {selectedUnit && (
               <div className={`mt-2 rounded-lg px-3 py-2.5 flex items-center gap-3 text-xs ${selectedUnit.tenant_name ? "bg-slate-50 border border-slate-200" : "bg-amber-50 border border-amber-200"}`}>
-                <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-[11px] font-bold ${selectedUnit.tenant_name ? "bg-slate-200 text-slate-600" : "bg-amber-200 text-amber-700"}`}>
+                <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-[13px] font-bold ${selectedUnit.tenant_name ? "bg-slate-200 text-slate-600" : "bg-amber-200 text-amber-700"}`}>
                   {selectedUnit.tenant_name ? selectedUnit.tenant_name.split(" ").map((w:string)=>w[0]).join("").slice(0,2).toUpperCase() : "—"}
                 </div>
                 <div className="min-w-0">
@@ -299,27 +299,27 @@ function SubmitModal({units,vendors,editing,onClose,onSave}:{units:UnitDetailOut
           {/* Vendor picker — managers & agents only */}
           {perms.manageMaintenance && (
             <div className="border-t border-slate-100 pt-3">
-              <p className="text-[11px] uppercase tracking-wider font-medium text-slate-400 mb-2">Assign vendor (optional)</p>
+              <p className="text-[13px] uppercase tracking-wider font-medium text-slate-400 mb-2">Assign vendor (optional)</p>
               {selectedVendor ? (
                 <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5">
-                  <div className="w-8 h-8 rounded-full bg-black text-white flex items-center justify-center text-[11px] font-bold shrink-0">
+                  <div className="w-8 h-8 rounded-full bg-black text-white flex items-center justify-center text-[13px] font-bold shrink-0">
                     {selectedVendor.full_name.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase()}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-slate-900">{selectedVendor.full_name}</p>
-                    <p className="text-[11px] text-slate-500">{selectedVendor.business_name} · {selectedVendor.service_categories.join(", ")}</p>
+                    <p className="text-[13px] text-slate-500">{selectedVendor.business_name} · {selectedVendor.service_categories.join(", ")}</p>
                   </div>
                   <button type="button" onClick={()=>{setSelectedVendor(null);setShowVendorPicker(true);}} className="text-xs text-slate-500 hover:text-black shrink-0">Change</button>
                   <button type="button" onClick={()=>setSelectedVendor(null)} className="text-slate-400 hover:text-slate-600 text-lg shrink-0">×</button>
                 </div>
               ) : legacyAssigneeName && !showVendorPicker ? (
                 <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5">
-                  <div className="w-8 h-8 rounded-full bg-slate-300 text-slate-700 flex items-center justify-center text-[11px] font-bold shrink-0">
+                  <div className="w-8 h-8 rounded-full bg-slate-300 text-slate-700 flex items-center justify-center text-[13px] font-bold shrink-0">
                     {legacyAssigneeName.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase()}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-slate-900">{legacyAssigneeName}</p>
-                    <p className="text-[11px] text-slate-400">Not linked to a vendor record</p>
+                    <p className="text-[13px] text-slate-400">Not linked to a vendor record</p>
                   </div>
                   <button type="button" onClick={()=>setShowVendorPicker(true)} className="text-xs text-slate-500 hover:text-black shrink-0">Change</button>
                 </div>
@@ -346,15 +346,15 @@ function SubmitModal({units,vendors,editing,onClose,onSave}:{units:UnitDetailOut
                         <button key={v.id} type="button"
                           onClick={()=>{setSelectedVendor(v);setVendorSearch("");setShowVendorPicker(false);}}
                           className="w-full text-left px-3 py-2.5 hover:bg-slate-50 flex items-center gap-3">
-                          <div className="w-7 h-7 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center text-[10px] font-bold shrink-0">
+                          <div className="w-7 h-7 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center text-[12px] font-bold shrink-0">
                             {v.full_name.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase()}
                           </div>
                           <div className="min-w-0">
                             <p className="text-sm font-medium text-slate-900">{v.full_name}</p>
-                            <p className="text-[11px] text-slate-500 truncate">{v.business_name} · {v.service_categories.join(", ")}</p>
+                            <p className="text-[13px] text-slate-500 truncate">{v.business_name} · {v.service_categories.join(", ")}</p>
                           </div>
                           {v.service_categories.some(c=>c.toLowerCase()===form.category.toLowerCase()) && (
-                            <span className="ml-auto text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full shrink-0">match</span>
+                            <span className="ml-auto text-[12px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full shrink-0">match</span>
                           )}
                         </button>
                       ))}
@@ -372,7 +372,7 @@ function SubmitModal({units,vendors,editing,onClose,onSave}:{units:UnitDetailOut
           )}
 
           <div className="border-t border-slate-100 pt-3">
-            <p className="text-[11px] uppercase tracking-wider font-medium text-slate-400 mb-2">Preferred time window (optional)</p>
+            <p className="text-[13px] uppercase tracking-wider font-medium text-slate-400 mb-2">Preferred time window (optional)</p>
             <div className="grid grid-cols-2 gap-3">
               <div><label className="block text-xs font-medium text-slate-500 mb-1">From</label>
                 <input type="datetime-local" value={form.preferred_time_start} onChange={e=>set("preferred_time_start",e.target.value)} className={inp}/>
@@ -390,18 +390,18 @@ function SubmitModal({units,vendors,editing,onClose,onSave}:{units:UnitDetailOut
                     <div key={a.id} className="relative rounded-lg overflow-hidden border border-slate-200 aspect-square bg-slate-50 flex items-center justify-center">
                       {a.original_name.match(/\.(jpg|jpeg|png|webp)$/i)
                         ?<img src={a.url} alt={a.original_name} className="w-full h-full object-cover"/>
-                        :<p className="text-[10px] text-slate-500 truncate p-1.5 text-center">{a.original_name}</p>}
+                        :<p className="text-[12px] text-slate-500 truncate p-1.5 text-center">{a.original_name}</p>}
                       <button type="button" onClick={()=>removeExistingAttachment(a.id)}
-                        className="absolute top-1 right-1 w-4 h-4 rounded-full bg-black/60 text-white text-[10px] leading-none flex items-center justify-center hover:bg-red-600">×</button>
+                        className="absolute top-1 right-1 w-4 h-4 rounded-full bg-black/60 text-white text-[12px] leading-none flex items-center justify-center hover:bg-red-600">×</button>
                     </div>
                   ))}
                   {files.map((f,i)=>(
                     <div key={i} className="relative rounded-lg overflow-hidden border border-slate-200 aspect-square bg-slate-50 flex items-center justify-center">
                       {filePreviews[i]
                         ?<img src={filePreviews[i]!} alt={f.name} className="w-full h-full object-cover"/>
-                        :<p className="text-[10px] text-slate-500 truncate p-1.5 text-center">{f.name}</p>}
+                        :<p className="text-[12px] text-slate-500 truncate p-1.5 text-center">{f.name}</p>}
                       <button type="button" onClick={()=>setFiles(fs=>fs.filter((_,j)=>j!==i))}
-                        className="absolute top-1 right-1 w-4 h-4 rounded-full bg-black/60 text-white text-[10px] leading-none flex items-center justify-center hover:bg-red-600">×</button>
+                        className="absolute top-1 right-1 w-4 h-4 rounded-full bg-black/60 text-white text-[12px] leading-none flex items-center justify-center hover:bg-red-600">×</button>
                     </div>
                   ))}
                 </div>
@@ -413,7 +413,7 @@ function SubmitModal({units,vendors,editing,onClose,onSave}:{units:UnitDetailOut
           </div>
           {editing && (
             <div className="border-t border-slate-100 pt-3">
-              <p className="text-[11px] uppercase tracking-wider font-medium text-slate-400 mb-2">Notes ({notes.length})</p>
+              <p className="text-[13px] uppercase tracking-wider font-medium text-slate-400 mb-2">Notes ({notes.length})</p>
               {notes.length>0&&(
                 <div className="space-y-2 mb-2 max-h-44 overflow-y-auto pr-1">
                   {notes.map(n=>(
@@ -421,9 +421,9 @@ function SubmitModal({units,vendors,editing,onClose,onSave}:{units:UnitDetailOut
                       <div className="flex items-center justify-between gap-2">
                         <p className="text-xs font-medium text-slate-700">{n.author_name}</p>
                         <div className="flex items-center gap-2 shrink-0">
-                          <p className="text-[11px] text-slate-400">{fmtDt(n.created_at)}</p>
+                          <p className="text-[13px] text-slate-400">{fmtDt(n.created_at)}</p>
                           {n.author_user_id===user?.id&&(
-                            <button type="button" onClick={()=>deleteNote(n.id)} className="text-[11px] text-slate-400 hover:text-red-500">Delete</button>
+                            <button type="button" onClick={()=>deleteNote(n.id)} className="text-[13px] text-slate-400 hover:text-red-500">Delete</button>
                           )}
                         </div>
                       </div>
@@ -528,7 +528,7 @@ function ManageModal({req,vendors,onClose,onSave}:{req:MaintenanceOut;vendors:Ve
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
           <div>
             <h2 className="text-base font-semibold">Manage request</h2>
-            <p className="text-[11px] text-slate-400 mt-0.5">{req.property_name} · Unit {req.unit_number}</p>
+            <p className="text-[13px] text-slate-400 mt-0.5">{req.property_name} · Unit {req.unit_number}</p>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl shrink-0">×</button>
         </div>
@@ -539,15 +539,15 @@ function ManageModal({req,vendors,onClose,onSave}:{req:MaintenanceOut;vendors:Ve
           <div className="bg-slate-50 rounded-lg px-4 py-3">
             <p className="text-sm font-medium text-slate-900">{req.title}</p>
             <div className="flex items-center gap-2 mt-1">
-              <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-medium ${PRIORITY_STYLE[req.priority]}`}>{req.priority}</span>
-              <span className="text-[11px] text-slate-400">{req.category}</span>
-              {req.preferred_time_start&&<span className="text-[11px] text-blue-600">Preferred: {fmtDt(req.preferred_time_start)}</span>}
+              <span className={`inline-flex px-2 py-0.5 rounded-full text-[12px] font-medium ${PRIORITY_STYLE[req.priority]}`}>{req.priority}</span>
+              <span className="text-[13px] text-slate-400">{req.category}</span>
+              {req.preferred_time_start&&<span className="text-[13px] text-blue-600">Preferred: {fmtDt(req.preferred_time_start)}</span>}
             </div>
           </div>
 
           {/* ── Section 1: Status & Estimate ── */}
           <div className="space-y-3">
-            <p className="text-[11px] uppercase tracking-wider font-semibold text-slate-400">Status &amp; Estimate</p>
+            <p className="text-[13px] uppercase tracking-wider font-semibold text-slate-400">Status &amp; Estimate</p>
             <div className="grid grid-cols-2 gap-3">
               <div><label className="block text-xs font-medium text-slate-500 mb-1">Status</label>
                 <select value={form.status} onChange={e=>setF("status",e.target.value)} className={inp}>
@@ -578,7 +578,7 @@ function ManageModal({req,vendors,onClose,onSave}:{req:MaintenanceOut;vendors:Ve
 
           {/* ── Section 2: Vendor & Schedule ── */}
           <div className="border-t border-slate-100 pt-4 space-y-3">
-            <p className="text-[11px] uppercase tracking-wider font-semibold text-slate-400">Vendor &amp; Schedule <span className="normal-case font-normal text-slate-300">(optional)</span></p>
+            <p className="text-[13px] uppercase tracking-wider font-semibold text-slate-400">Vendor &amp; Schedule <span className="normal-case font-normal text-slate-300">(optional)</span></p>
             <div><label className="block text-xs font-medium text-slate-500 mb-1">Vendor</label>
               <select value={vendorId} onChange={e=>{setVendorId(e.target.value);setSelectedSlot(null);setScheduledStart("");setScheduledEnd("");}} className={inp}>
                 <option value="">— no vendor assigned —</option>
@@ -593,7 +593,7 @@ function ManageModal({req,vendors,onClose,onSave}:{req:MaintenanceOut;vendors:Ve
                   :<div className="space-y-2 max-h-36 overflow-y-auto pr-1">
                     {Object.entries(slotsByDate).map(([date,daySlots])=>(
                       <div key={date}>
-                        <p className="text-[11px] font-medium text-slate-500 mb-1">{fmtDate(date)}</p>
+                        <p className="text-[13px] font-medium text-slate-500 mb-1">{fmtDate(date)}</p>
                         <div className="flex flex-wrap gap-1.5">
                           {daySlots.map(slot=>(
                             <button key={slot.id} type="button" onClick={()=>selectSlot(slot)}
@@ -679,7 +679,7 @@ function CalendarView({requests,onSelect}:{requests:MaintenanceOut[];onSelect:(r
       </div>
       <div className="grid grid-cols-7 border-b border-slate-100">
         {WEEKDAY_LABELS.map(d=>(
-          <div key={d} className="px-2 py-2 text-center text-[11px] font-medium text-slate-400 uppercase tracking-wide">{d}</div>
+          <div key={d} className="px-2 py-2 text-center text-[13px] font-medium text-slate-400 uppercase tracking-wide">{d}</div>
         ))}
       </div>
       <div className="grid grid-cols-7">
@@ -689,17 +689,17 @@ function CalendarView({requests,onSelect}:{requests:MaintenanceOut[];onSelect:(r
           const isToday=key===todayKey;
           return (
             <div key={i} className={`min-h-[100px] border-b border-r border-slate-100 p-1.5 ${!cell.inMonth?"bg-slate-50/60":""}`}>
-              <p className={`text-[11px] mb-1 ${isToday?"inline-flex items-center justify-center w-5 h-5 rounded-full bg-black text-white font-semibold":cell.inMonth?"text-slate-600 font-medium":"text-slate-300"}`}>
+              <p className={`text-[13px] mb-1 ${isToday?"inline-flex items-center justify-center w-5 h-5 rounded-full bg-black text-white font-semibold":cell.inMonth?"text-slate-600 font-medium":"text-slate-300"}`}>
                 {cell.date.getDate()}
               </p>
               <div className="space-y-1">
                 {dayReqs.slice(0,3).map(r=>(
                   <button key={r.id} type="button" onClick={()=>onSelect(r)}
-                    className={`w-full text-left px-1.5 py-0.5 rounded text-[10px] font-medium truncate ${STATUS_STYLE[r.status]}`}>
+                    className={`w-full text-left px-1.5 py-0.5 rounded text-[12px] font-medium truncate ${STATUS_STYLE[r.status]}`}>
                     {r.title}
                   </button>
                 ))}
-                {dayReqs.length>3&&<p className="text-[10px] text-slate-400 px-1.5">+{dayReqs.length-3} more</p>}
+                {dayReqs.length>3&&<p className="text-[12px] text-slate-400 px-1.5">+{dayReqs.length-3} more</p>}
               </div>
             </div>
           );
@@ -762,7 +762,7 @@ export default function MaintenancePage() {
     <div className="max-w-[1280px] mx-auto px-6 py-6 space-y-5">
       <div className="flex items-end justify-between">
         <div>
-          <p className="text-[11px] uppercase tracking-widest text-slate-400 font-medium">Operations</p>
+          <p className="text-[13px] uppercase tracking-widest text-slate-400 font-medium">Operations</p>
           <h1 className="text-xl font-bold text-slate-900 mt-0.5">Maintenance</h1>
         </div>
         <div className="flex items-center gap-2">
@@ -801,7 +801,7 @@ export default function MaintenancePage() {
           <thead>
             <tr className="border-b border-slate-100">
               {["Title","Unit","Category","Priority","Status","Total price","Estimate","Scheduled","Files",""].map(h=>(
-                <th key={h} className="text-left text-[11px] font-medium text-slate-400 uppercase tracking-wider px-4 py-3">{h}</th>
+                <th key={h} className="text-left text-[13px] font-medium text-slate-400 uppercase tracking-wider px-4 py-3">{h}</th>
               ))}
             </tr>
           </thead>
@@ -816,19 +816,19 @@ export default function MaintenancePage() {
               <tr key={r.id} className="hover:bg-slate-50 transition-colors group cursor-pointer" onClick={()=>setModal({type:"edit",req:r})}>
                 <td className="px-4 py-3 max-w-[200px]">
                   <p className="text-xs font-medium text-slate-900 truncate">{r.title}</p>
-                  <p className="text-[11px] text-slate-400">{r.submitted_by_name}</p>
+                  <p className="text-[13px] text-slate-400">{r.submitted_by_name}</p>
                 </td>
                 <td className="px-4 py-3">
                   <p className="text-xs text-slate-700">Unit {r.unit_number}</p>
-                  <p className="text-[11px] text-slate-400 truncate max-w-[120px]">{r.property_name}</p>
+                  <p className="text-[13px] text-slate-400 truncate max-w-[120px]">{r.property_name}</p>
                 </td>
                 <td className="px-4 py-3 text-xs text-slate-500">{r.category}</td>
-                <td className="px-4 py-3"><span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-medium ${PRIORITY_STYLE[r.priority]}`}>{r.priority}</span></td>
-                <td className="px-4 py-3"><span className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-medium ${STATUS_STYLE[r.status]}`}>{STATUS_LABEL[r.status]}</span></td>
+                <td className="px-4 py-3"><span className={`inline-flex px-2 py-0.5 rounded-full text-[12px] font-medium ${PRIORITY_STYLE[r.priority]}`}>{r.priority}</span></td>
+                <td className="px-4 py-3"><span className={`inline-flex px-2 py-0.5 rounded-full text-[13px] font-medium ${STATUS_STYLE[r.status]}`}>{STATUS_LABEL[r.status]}</span></td>
                 <td className="px-4 py-3 text-xs font-medium text-slate-700">
                   {r.total!=null?`$${r.total.toFixed(2)}`:"—"}
                   {r.total!=null&&(
-                    <span className={`ml-1.5 inline-flex px-1.5 py-0.5 rounded-full text-[9px] font-medium align-middle ${PAYMENT_STATUS_STYLE[r.payment_status]}`}>
+                    <span className={`ml-1.5 inline-flex px-1.5 py-0.5 rounded-full text-[13px] font-medium align-middle ${PAYMENT_STATUS_STYLE[r.payment_status]}`}>
                       {r.payment_status==="PAID"?"Paid":"Unpaid"}
                     </span>
                   )}

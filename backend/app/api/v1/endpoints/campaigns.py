@@ -12,6 +12,7 @@ from sqlalchemy.orm import selectinload
 from app.core.database import get_db
 from app.core.ai_client import generate_ai_text
 from app.core.file_validation import validate_upload, IMAGES_ONLY
+from app.core.ai_rate_limit import check_ai_rate_limit
 from app.api.deps import get_current_user, require_min_role
 from app.models.user import User, OrganizationMember, UserRole
 from app.models.campaign import Campaign, CampaignStatus
@@ -168,6 +169,7 @@ MAX_AI_PHOTOS = 6
 
 @router.post("/ai-generate", response_model=CampaignAIGenerateOut)
 async def ai_generate_campaign(
+    _rl: None = Depends(check_ai_rate_limit),
     unit_id: str | None = Form(None),
     extra_instructions: str | None = Form(None),
     monthly_rent: str | None = Form(None),

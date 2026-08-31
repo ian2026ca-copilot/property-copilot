@@ -450,7 +450,7 @@ function EditPaymentModal({ payment, onClose, onSaved, onNotesChanged }: {
                   {noticeError && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{noticeError}</p>}
                   {noticeResult && <p className="text-xs text-emerald-700 bg-emerald-50 rounded-lg px-3 py-2">{noticeResult}</p>}
                   <div>
-                    <label className="block text-[11px] font-medium text-slate-600 mb-1">Extra instructions (optional)</label>
+                    <label className="block text-[13px] font-medium text-slate-600 mb-1">Extra instructions (optional)</label>
                     <input
                       value={noticeInstructions}
                       onChange={e => setNoticeInstructions(e.target.value)}
@@ -467,7 +467,7 @@ function EditPaymentModal({ payment, onClose, onSaved, onNotesChanged }: {
                     {generatingNotice ? "Generating…" : "✨ Generate with AI"}
                   </button>
                   <div>
-                    <label className="block text-[11px] font-medium text-slate-600 mb-1">Subject</label>
+                    <label className="block text-[13px] font-medium text-slate-600 mb-1">Subject</label>
                     <input
                       value={noticeSubject}
                       onChange={e => setNoticeSubject(e.target.value)}
@@ -476,7 +476,7 @@ function EditPaymentModal({ payment, onClose, onSaved, onNotesChanged }: {
                     />
                   </div>
                   <div>
-                    <label className="block text-[11px] font-medium text-slate-600 mb-1">Message</label>
+                    <label className="block text-[13px] font-medium text-slate-600 mb-1">Message</label>
                     <textarea
                       value={noticeMessage}
                       onChange={e => setNoticeMessage(e.target.value)}
@@ -550,7 +550,7 @@ function EditPaymentModal({ payment, onClose, onSaved, onNotesChanged }: {
             </div>
           )}
           <div className="border-t border-slate-100 pt-3">
-            <p className="text-[11px] uppercase tracking-wider font-medium text-slate-400 mb-2">Notes ({notes.length})</p>
+            <p className="text-[13px] uppercase tracking-wider font-medium text-slate-400 mb-2">Notes ({notes.length})</p>
             {notes.length > 0 && (
               <div className="space-y-2 mb-2 max-h-44 overflow-y-auto pr-1">
                 {notes.map(n => (
@@ -558,9 +558,9 @@ function EditPaymentModal({ payment, onClose, onSaved, onNotesChanged }: {
                     <div className="flex items-center justify-between gap-2">
                       <p className="text-xs font-medium text-slate-700">{n.author_name}</p>
                       <div className="flex items-center gap-2 shrink-0">
-                        <p className="text-[11px] text-slate-400">{fmtNoteDt(n.created_at)}</p>
+                        <p className="text-[13px] text-slate-400">{fmtNoteDt(n.created_at)}</p>
                         {n.author_user_id === user?.id && (
-                          <button type="button" onClick={() => deleteNote(n.id)} className="text-[11px] text-slate-400 hover:text-red-500">Delete</button>
+                          <button type="button" onClick={() => deleteNote(n.id)} className="text-[13px] text-slate-400 hover:text-red-500">Delete</button>
                         )}
                       </div>
                     </div>
@@ -755,31 +755,31 @@ function BatchNoticeModal({ payments, onClose, onDone }: {
                 <Avatar ini={r.tenantAvatar} url={r.tenantAvatarUrl} />
                 <div className="min-w-0 flex-1">
                   <p className="text-xs font-medium text-slate-900 truncate">{r.tenantName}</p>
-                  <p className="text-[11px] text-slate-400 truncate">{r.unitProperty} · ${r.amount.toLocaleString()} due {r.dueDate}</p>
-                  <p className="text-[11px] text-slate-400 truncate">
+                  <p className="text-[13px] text-slate-400 truncate">{r.unitProperty} · ${r.amount.toLocaleString()} due {r.dueDate}</p>
+                  <p className="text-[13px] text-slate-400 truncate">
                     <span className={r.tenantEmail ? "" : "text-slate-300"}>{r.tenantEmail ?? "No email"}</span>
                     {" · "}
                     <span className={r.tenantPhone ? "" : "text-slate-300"}>{r.tenantPhone ?? "No phone"}</span>
                   </p>
                   {r.lastNoticeSentAt && (
-                    <p className="text-[11px] text-amber-600 truncate">Last notice sent: {fmtNoteDt(r.lastNoticeSentAt)}</p>
+                    <p className="text-[13px] text-amber-600 truncate">Last notice sent: {fmtNoteDt(r.lastNoticeSentAt)}</p>
                   )}
                 </div>
-                {r.sendStatus === "sent" && <span className="text-[11px] font-medium text-emerald-600 shrink-0">✓ {r.sendMessage}</span>}
-                {r.sendStatus === "error" && <span className="text-[11px] font-medium text-red-600 shrink-0">✗ {r.sendMessage}</span>}
-                {r.sendStatus === "sending" && <span className="text-[11px] text-slate-400 shrink-0">Sending…</span>}
+                {r.sendStatus === "sent" && <span className="text-[13px] font-medium text-emerald-600 shrink-0">✓ {r.sendMessage}</span>}
+                {r.sendStatus === "error" && <span className="text-[13px] font-medium text-red-600 shrink-0">✗ {r.sendMessage}</span>}
+                {r.sendStatus === "sending" && <span className="text-[13px] text-slate-400 shrink-0">Sending…</span>}
                 {r.sendStatus === "idle" && (
                   <button
                     type="button"
                     onClick={() => generateOne(r.paymentId)}
                     disabled={r.generating}
-                    className="text-[11px] font-medium text-violet-600 hover:text-violet-700 shrink-0 disabled:opacity-50"
+                    className="text-[13px] font-medium text-violet-600 hover:text-violet-700 shrink-0 disabled:opacity-50"
                   >
                     {r.generating ? "Generating…" : "✨ Generate"}
                   </button>
                 )}
               </div>
-              {r.genError && <p className="text-[11px] text-red-600 mb-2">{r.genError}</p>}
+              {r.genError && <p className="text-[13px] text-red-600 mb-2">{r.genError}</p>}
               {r.sendStatus !== "sent" && (
                 <div className="space-y-1.5">
                   <input
@@ -796,7 +796,7 @@ function BatchNoticeModal({ payments, onClose, onDone }: {
                     className="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 outline-none focus:border-black resize-y"
                   />
                   <div className="flex items-center gap-3">
-                    <label className={`flex items-center gap-1 text-[11px] ${r.tenantEmail ? "text-slate-600" : "text-slate-300"}`}>
+                    <label className={`flex items-center gap-1 text-[13px] ${r.tenantEmail ? "text-slate-600" : "text-slate-300"}`}>
                       <input
                         type="checkbox"
                         checked={r.channels.email}
@@ -805,7 +805,7 @@ function BatchNoticeModal({ payments, onClose, onDone }: {
                       />
                       Email{!r.tenantEmail && " (none)"}
                     </label>
-                    <label className={`flex items-center gap-1 text-[11px] ${r.tenantPhone ? "text-slate-600" : "text-slate-300"}`}>
+                    <label className={`flex items-center gap-1 text-[13px] ${r.tenantPhone ? "text-slate-600" : "text-slate-300"}`}>
                       <input
                         type="checkbox"
                         checked={r.channels.sms}
@@ -951,8 +951,8 @@ function BatchMarkPaidModal({ payments, onClose, onDone }: {
               <Avatar ini={r.tenantAvatar} url={r.tenantAvatarUrl} />
               <div className="min-w-0 flex-1">
                 <p className="text-xs font-medium text-slate-900 truncate">{r.tenantName}</p>
-                <p className="text-[11px] text-slate-400 truncate">{r.unitProperty} · ${r.amount.toLocaleString()} due {r.dueDate}</p>
-                {r.status === "error" && <p className="text-[11px] text-red-600 mt-0.5">{r.errorMessage}</p>}
+                <p className="text-[13px] text-slate-400 truncate">{r.unitProperty} · ${r.amount.toLocaleString()} due {r.dueDate}</p>
+                {r.status === "error" && <p className="text-[13px] text-red-600 mt-0.5">{r.errorMessage}</p>}
               </div>
               {r.status === "idle" && (
                 <input
@@ -962,9 +962,9 @@ function BatchMarkPaidModal({ payments, onClose, onDone }: {
                   className="text-xs border border-slate-200 rounded-lg px-2 py-1 outline-none focus:border-black"
                 />
               )}
-              {r.status === "marking" && <span className="text-[11px] text-slate-400 shrink-0">Marking…</span>}
-              {r.status === "done" && <span className="text-[11px] font-medium text-emerald-600 shrink-0">✓ Paid {r.paidDate}</span>}
-              {r.status === "error" && <span className="text-[11px] font-medium text-red-600 shrink-0">✗ Failed</span>}
+              {r.status === "marking" && <span className="text-[13px] text-slate-400 shrink-0">Marking…</span>}
+              {r.status === "done" && <span className="text-[13px] font-medium text-emerald-600 shrink-0">✓ Paid {r.paidDate}</span>}
+              {r.status === "error" && <span className="text-[13px] font-medium text-red-600 shrink-0">✗ Failed</span>}
             </div>
           ))}
         </div>
@@ -1085,15 +1085,15 @@ function NoticeHistoryModal({ payments, onClose }: { payments: PaymentRow[]; onC
                   <Avatar ini={e.tenantAvatar} url={e.tenantAvatarUrl} />
                   <div className="min-w-0 flex-1">
                     <p className="text-xs font-medium text-slate-900 truncate">{e.tenantName}</p>
-                    <p className="text-[11px] text-slate-400 truncate">{e.unitProperty} · ${e.amount.toLocaleString()}</p>
+                    <p className="text-[13px] text-slate-400 truncate">{e.unitProperty} · ${e.amount.toLocaleString()}</p>
                   </div>
-                  <p className="text-[11px] text-slate-400 shrink-0">{fmtNoteDt(e.createdAt)}</p>
+                  <p className="text-[13px] text-slate-400 shrink-0">{fmtNoteDt(e.createdAt)}</p>
                 </div>
                 <p className="text-xs text-slate-700">{summary}</p>
                 {isExpanded && detail && (
                   <p className="text-xs text-slate-600 whitespace-pre-wrap bg-slate-50 rounded-lg p-2 mt-1.5">{detail}</p>
                 )}
-                <p className="text-[11px] text-slate-400 mt-0.5">by {e.authorName}</p>
+                <p className="text-[13px] text-slate-400 mt-0.5">by {e.authorName}</p>
               </div>
             );
           })}
@@ -1139,7 +1139,7 @@ function Avatar({ ini, url }: { ini: string; url: string | null }) {
     <img src={url} alt={ini} className="w-7 h-7 rounded-full object-cover border border-slate-200 shrink-0" />
   );
   return (
-    <div className="w-7 h-7 rounded-full bg-black text-white text-[10px] font-bold flex items-center justify-center shrink-0">{ini}</div>
+    <div className="w-7 h-7 rounded-full bg-black text-white text-[12px] font-bold flex items-center justify-center shrink-0">{ini}</div>
   );
 }
 
@@ -1281,7 +1281,7 @@ export default function PaymentsPage() {
       {/* Header */}
       <div className="flex items-end justify-between">
         <div>
-          <p className="text-[11px] uppercase tracking-widest text-slate-400 font-medium">Receivables</p>
+          <p className="text-[13px] uppercase tracking-widest text-slate-400 font-medium">Receivables</p>
           <h1 className="text-xl font-bold text-slate-900 mt-0.5">Payments and collections</h1>
         </div>
         <button
@@ -1301,7 +1301,7 @@ export default function PaymentsPage() {
           { label: "Due in 30 days", value: dueSoon, sub: "Upcoming payments" },
         ].map(k => (
           <div key={k.label} className="bg-white rounded-xl border border-slate-200 px-5 py-4">
-            <p className="text-[11px] uppercase tracking-wider text-slate-400 font-medium">{k.label}</p>
+            <p className="text-[13px] uppercase tracking-wider text-slate-400 font-medium">{k.label}</p>
             <p className="text-2xl font-bold text-slate-900 mt-1">{k.value}</p>
             <p className="text-xs text-slate-500 mt-0.5">{k.sub}</p>
           </div>
@@ -1344,7 +1344,7 @@ export default function PaymentsPage() {
               <thead>
                 <tr className="border-b border-slate-100">
                   {["Tenant", "Unit", "Type", "Due", "Amount", "Paid on", "Status", ""].map(h => (
-                    <th key={h} className="text-left text-[11px] font-medium text-slate-400 uppercase tracking-wider px-4 py-3 whitespace-nowrap">{h}</th>
+                    <th key={h} className="text-left text-[13px] font-medium text-slate-400 uppercase tracking-wider px-4 py-3 whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -1362,7 +1362,7 @@ export default function PaymentsPage() {
                     </td>
                     <td className="px-4 py-3">
                       <p className="text-xs text-slate-700">{p.unitNumber ?? "—"}</p>
-                      <p className="text-[11px] text-slate-400 truncate max-w-[120px]">{p.propertyName ?? ""}</p>
+                      <p className="text-[13px] text-slate-400 truncate max-w-[120px]">{p.propertyName ?? ""}</p>
                     </td>
                     <td className="px-4 py-3 text-xs text-slate-600">{TYPE_LABELS[p.type] ?? p.type}</td>
                     <td className="px-4 py-3 text-xs text-slate-500">{p.dueDate}</td>
@@ -1373,12 +1373,12 @@ export default function PaymentsPage() {
                     <td className="px-4 py-3">
                       <span
                         title={formatStatusUpdated(p.statusUpdatedByName, p.statusUpdatedAt) ?? undefined}
-                        className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-medium ${STATUS_STYLES[p.status] ?? "bg-slate-100 text-slate-500"}`}
+                        className={`inline-flex px-2 py-0.5 rounded-full text-[13px] font-medium ${STATUS_STYLES[p.status] ?? "bg-slate-100 text-slate-500"}`}
                       >
                         {STATUS_LABELS[p.status] ?? p.status}
                       </span>
                       {p.statusUpdatedByName && (
-                        <p className="text-[10px] text-slate-400 mt-0.5 truncate max-w-[140px]">
+                        <p className="text-[12px] text-slate-400 mt-0.5 truncate max-w-[140px]">
                           by {p.statusUpdatedByName}
                         </p>
                       )}
@@ -1472,12 +1472,12 @@ export default function PaymentsPage() {
                     <Avatar ini={p.tenantAvatar} url={p.tenantAvatarUrl} />
                     <div className="min-w-0">
                       <p className="text-xs font-medium text-slate-900 truncate">{p.tenantName}</p>
-                      <p className="text-[11px] text-slate-400 truncate">{p.unitProperty}</p>
+                      <p className="text-[13px] text-slate-400 truncate">{p.unitProperty}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <span className="text-xs font-semibold text-red-600">${p.amount.toLocaleString()}</span>
-                    <button onClick={() => handleMarkPaid(p)} className="text-[11px] text-emerald-600 hover:underline font-medium">Mark paid</button>
+                    <button onClick={() => handleMarkPaid(p)} className="text-[13px] text-emerald-600 hover:underline font-medium">Mark paid</button>
                   </div>
                 </div>
               ))}
@@ -1496,7 +1496,7 @@ export default function PaymentsPage() {
                 <div key={r.id} className="flex gap-3 p-3 rounded-lg border border-slate-100 hover:border-slate-200 transition-colors">
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-semibold text-slate-900 mb-0.5">{r.name}</p>
-                    <p className="text-[11px] text-slate-500 leading-relaxed">{r.description}</p>
+                    <p className="text-[13px] text-slate-500 leading-relaxed">{r.description}</p>
                   </div>
                   <button
                     onClick={() => setRules(prev => prev.map(x => x.id === r.id ? { ...x, active: !x.active } : x))}

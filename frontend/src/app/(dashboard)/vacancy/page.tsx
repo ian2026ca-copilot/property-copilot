@@ -69,7 +69,7 @@ const initialLeads: Lead[] = [
 
 function ScoreBadge({ score }: { score: number }) {
   const color = score >= 80 ? "text-emerald-600 bg-emerald-50" : score >= 65 ? "text-amber-600 bg-amber-50" : "text-red-600 bg-red-50";
-  return <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${color}`}>{score}</span>;
+  return <span className={`text-[12px] font-bold px-1.5 py-0.5 rounded ${color}`}>{score}</span>;
 }
 
 function LeadCard({ lead, onMove, onSelect, onCreateCampaign }: {
@@ -88,7 +88,7 @@ function LeadCard({ lead, onMove, onSelect, onCreateCampaign }: {
       className="bg-white rounded-xl border border-slate-200 p-3.5 cursor-pointer hover:shadow-md hover:border-slate-300 transition-all group"
     >
       <div className="flex items-start gap-2.5">
-        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm shrink-0 ${isUnit ? "bg-slate-100" : "bg-black text-white text-[11px] font-bold"}`}>
+        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm shrink-0 ${isUnit ? "bg-slate-100" : "bg-black text-white text-[13px] font-bold"}`}>
           {lead.avatar}
         </div>
         <div className="flex-1 min-w-0">
@@ -96,19 +96,19 @@ function LeadCard({ lead, onMove, onSelect, onCreateCampaign }: {
             <p className="text-xs font-semibold text-slate-900 truncate">{lead.name}</p>
             {lead.score !== undefined && <ScoreBadge score={lead.score} />}
           </div>
-          <p className="text-[11px] text-slate-500 truncate">{lead.property} · Unit {lead.unit}</p>
+          <p className="text-[13px] text-slate-500 truncate">{lead.property} · Unit {lead.unit}</p>
         </div>
       </div>
 
       <div className="mt-2.5 flex items-center justify-between">
         <span className="text-xs font-semibold text-slate-900">${lead.rent.toLocaleString()}<span className="text-slate-400 font-normal">/mo</span></span>
-        <span className="text-[11px] text-slate-400">{lead.beds}</span>
+        <span className="text-[13px] text-slate-400">{lead.beds}</span>
       </div>
 
-      <p className="text-[11px] text-slate-500 mt-1.5 leading-relaxed line-clamp-2">{lead.note}</p>
+      <p className="text-[13px] text-slate-500 mt-1.5 leading-relaxed line-clamp-2">{lead.note}</p>
 
       {lead.tours && (
-        <div className="mt-2 flex items-center gap-1 text-[11px] text-blue-600">
+        <div className="mt-2 flex items-center gap-1 text-[13px] text-blue-600">
           <span>📅</span><span>{lead.tours} tour{lead.tours > 1 ? "s" : ""} scheduled</span>
         </div>
       )}
@@ -117,7 +117,7 @@ function LeadCard({ lead, onMove, onSelect, onCreateCampaign }: {
         <div className="mt-2.5" onClick={e => e.stopPropagation()}>
           <button
             onClick={() => onCreateCampaign(lead)}
-            className="w-full py-1 text-[10px] font-medium text-violet-700 border border-violet-200 rounded hover:bg-violet-50 transition-colors"
+            className="w-full py-1 text-[12px] font-medium text-violet-700 border border-violet-200 rounded hover:bg-violet-50 transition-colors"
           >
             + Create new campaign
           </button>
@@ -127,10 +127,10 @@ function LeadCard({ lead, onMove, onSelect, onCreateCampaign }: {
       {/* Move buttons */}
       <div className="flex gap-1.5 mt-3 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
         {stageIdx > 0 && (
-          <button onClick={() => onMove(lead.id, -1)} className="flex-1 py-1 text-[10px] border border-slate-200 rounded text-slate-500 hover:bg-slate-50">← Back</button>
+          <button onClick={() => onMove(lead.id, -1)} className="flex-1 py-1 text-[12px] border border-slate-200 rounded text-slate-500 hover:bg-slate-50">← Back</button>
         )}
         {stageIdx < STAGES.length - 1 && (
-          <button onClick={() => onMove(lead.id, 1)} className="flex-1 py-1 text-[10px] bg-black text-white rounded hover:bg-slate-800">Advance →</button>
+          <button onClick={() => onMove(lead.id, 1)} className="flex-1 py-1 text-[12px] bg-black text-white rounded hover:bg-slate-800">Advance →</button>
         )}
       </div>
     </div>
@@ -159,7 +159,7 @@ function LeadDrawer({ lead, onClose }: { lead: Lead; onClose: () => void }) {
           </div>
 
           <div className="bg-slate-50 rounded-xl p-4 space-y-2 text-sm">
-            <p className="text-[11px] uppercase tracking-wider text-slate-400 font-medium">Details</p>
+            <p className="text-[13px] uppercase tracking-wider text-slate-400 font-medium">Details</p>
             <div className="grid grid-cols-2 gap-y-2">
               <span className="text-slate-500">Unit</span><span className="font-medium text-slate-900">{lead.unit}</span>
               <span className="text-slate-500">Property</span><span className="font-medium text-slate-900">{lead.property}</span>
@@ -173,7 +173,7 @@ function LeadDrawer({ lead, onClose }: { lead: Lead; onClose: () => void }) {
           </div>
 
           <div>
-            <p className="text-[11px] uppercase tracking-wider text-slate-400 font-medium mb-1">Note</p>
+            <p className="text-[13px] uppercase tracking-wider text-slate-400 font-medium mb-1">Note</p>
             <p className="text-sm text-slate-600 leading-relaxed">{lead.note}</p>
           </div>
 
@@ -249,7 +249,7 @@ export default function VacancyPage() {
       {/* Header */}
       <div className="flex items-end justify-between">
         <div>
-          <p className="text-[11px] uppercase tracking-widest text-slate-400 font-medium">Leasing</p>
+          <p className="text-[13px] uppercase tracking-widest text-slate-400 font-medium">Leasing</p>
           <h1 className="text-xl font-bold text-slate-900 mt-0.5">Vacancy pipeline</h1>
         </div>
         <button className="px-3 py-1.5 bg-black text-white text-xs font-medium rounded-lg hover:bg-slate-800 transition-colors">
@@ -284,7 +284,7 @@ export default function VacancyPage() {
                   <span className={`w-2 h-2 rounded-full ${s.dot}`} />
                   <span className="text-xs font-semibold text-slate-700">{stage}</span>
                 </div>
-                <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded-full ${s.count}`}>{cards.length}</span>
+                <span className={`text-[13px] font-bold px-1.5 py-0.5 rounded-full ${s.count}`}>{cards.length}</span>
               </div>
 
               {/* Cards */}
@@ -294,12 +294,12 @@ export default function VacancyPage() {
                 ))}
                 {cards.length === 0 && stage === "Available" && loadingUnits && (
                   <div className="flex-1 flex items-center justify-center">
-                    <p className="text-[11px] text-slate-300 text-center">Loading vacant units…</p>
+                    <p className="text-[13px] text-slate-300 text-center">Loading vacant units…</p>
                   </div>
                 )}
                 {cards.length === 0 && !(stage === "Available" && loadingUnits) && (
                   <div className="flex-1 flex items-center justify-center">
-                    <p className="text-[11px] text-slate-300 text-center">No leads</p>
+                    <p className="text-[13px] text-slate-300 text-center">No leads</p>
                   </div>
                 )}
               </div>

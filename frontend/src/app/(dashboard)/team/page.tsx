@@ -97,7 +97,7 @@ function EditMemberModal({ member, onClose, onSave }: { member: TeamMemberOut; o
           <div>
             <label className="block text-xs font-medium text-slate-700 mb-1">Email</label>
             <p className="text-sm text-slate-500 border border-slate-100 bg-slate-50 rounded-lg px-3 py-2">{member.email}</p>
-            <p className="text-[11px] text-slate-400 mt-1">Email cannot be changed</p>
+            <p className="text-[13px] text-slate-400 mt-1">Email cannot be changed</p>
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-700 mb-1">Phone</label>
@@ -143,7 +143,7 @@ function EditMemberModal({ member, onClose, onSave }: { member: TeamMemberOut; o
                 <input type="checkbox" className="mt-0.5" checked={isPublic} onChange={e => setIsPublic(e.target.checked)} />
                 <div>
                   <p className="text-sm font-medium text-slate-900">Make this vendor public</p>
-                  <p className="text-[11px] text-slate-500 mt-0.5">
+                  <p className="text-[13px] text-slate-500 mt-0.5">
                     {isPublic
                       ? "Public — other organizations can also add and share this vendor."
                       : "Private (default) — this vendor works exclusively for your organization."}
@@ -250,7 +250,7 @@ function CreateVendorModal({ onClose, onSave }: { onClose: () => void; onSave: (
             <input type="checkbox" className="mt-0.5" checked={isPublic} onChange={e => setIsPublic(e.target.checked)} />
             <div>
               <p className="text-sm font-medium text-slate-900">Make this vendor public</p>
-              <p className="text-[11px] text-slate-500 mt-0.5">
+              <p className="text-[13px] text-slate-500 mt-0.5">
                 {isPublic
                   ? "Public — other organizations can also add and share this vendor."
                   : "Private (default) — this vendor works exclusively for your organization."}
@@ -332,7 +332,7 @@ export default function TeamPage() {
 
       <div className="flex items-end justify-between">
         <div>
-          <p className="text-[11px] uppercase tracking-widest text-slate-400 font-medium">Operations</p>
+          <p className="text-[13px] uppercase tracking-widest text-slate-400 font-medium">Operations</p>
           <h1 className="text-xl font-bold text-slate-900 mt-0.5">Team</h1>
         </div>
         {perms.inviteStaff && (
@@ -371,16 +371,16 @@ export default function TeamPage() {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <p className="text-sm font-medium text-slate-900">{m.full_name}</p>
-                  {isCurrentUser && <span className="text-[10px] text-slate-400 font-medium">(you)</span>}
+                  {isCurrentUser && <span className="text-[12px] text-slate-400 font-medium">(you)</span>}
                 </div>
                 <p className="text-xs text-slate-500">{m.email}</p>
                 {m.phone && <p className="text-xs text-slate-400">{m.phone}</p>}
               </div>
-              <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full ${ROLE_STYLES[m.role]}`}>
+              <span className={`text-[13px] font-semibold px-2.5 py-1 rounded-full ${ROLE_STYLES[m.role]}`}>
                 {ROLE_LABELS[m.role]}
               </span>
               {m.role === "VENDOR" && (
-                <span className={`text-[10px] px-1.5 py-0.5 rounded ${m.is_public ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
+                <span className={`text-[12px] px-1.5 py-0.5 rounded ${m.is_public ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
                   {m.is_public ? "Public" : "Private"}
                 </span>
               )}

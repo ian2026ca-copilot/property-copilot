@@ -54,13 +54,13 @@ export default function Sidebar() {
       >
         {/* Brand */}
         <div className="flex items-center gap-2.5 px-3.5 h-14 border-b border-white/10 shrink-0">
-          <div className="w-7 h-7 rounded-md bg-white flex items-center justify-center text-black font-black text-[11px] shrink-0">
+          <div className="w-7 h-7 rounded-md bg-white flex items-center justify-center text-black font-black text-[13px] shrink-0">
             PC
           </div>
           {!collapsed && (
             <div className="min-w-0">
               <p className="text-white text-xs font-semibold leading-none truncate">PropertyCopilot</p>
-              <p className="text-white/40 text-[10px] leading-none mt-0.5">AI operations</p>
+              <p className="text-white/40 text-[12px] leading-none mt-0.5">AI operations</p>
             </div>
           )}
         </div>
@@ -108,13 +108,13 @@ export default function Sidebar() {
               title={collapsed ? (user?.full_name ?? "") : undefined}
               className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-white/10 transition-colors ${collapsed ? "justify-center" : ""}`}
             >
-              <div className="w-[18px] h-[18px] rounded-full bg-white/20 text-white text-[9px] font-bold flex items-center justify-center shrink-0">
+              <div className="w-[18px] h-[18px] rounded-full bg-white/20 text-white text-[13px] font-bold flex items-center justify-center shrink-0">
                 {(user?.full_name ?? "U").split(" ").map(w => w[0]).join("").slice(0, 2)}
               </div>
               {!collapsed && (
                 <div className="min-w-0 text-left">
-                  <p className="text-white text-[11px] font-medium truncate leading-none">{user?.full_name}</p>
-                  <p className="text-white/40 text-[10px] truncate leading-none mt-0.5">{ROLE_LABELS[user?.role ?? ""] ?? user?.role}</p>
+                  <p className="text-white text-[13px] font-medium truncate leading-none">{user?.full_name}</p>
+                  <p className="text-white/40 text-[12px] truncate leading-none mt-0.5">{ROLE_LABELS[user?.role ?? ""] ?? user?.role}</p>
                 </div>
               )}
             </button>
@@ -123,8 +123,8 @@ export default function Sidebar() {
               <div className={`absolute bottom-full mb-1 w-44 bg-white rounded-lg shadow-lg border border-slate-100 py-1 z-50 ${collapsed ? "left-0" : "left-0 right-0"}`}>
                 <div className="px-3 py-2 border-b border-slate-100">
                   <p className="text-xs font-semibold text-slate-900 truncate">{user?.full_name}</p>
-                  <p className="text-[11px] text-slate-400 truncate">{ROLE_LABELS[user?.role ?? ""] ?? user?.role}</p>
-                  <p className="text-[11px] text-slate-500 truncate">{user?.org_name}</p>
+                  <p className="text-[13px] text-slate-400 truncate">{ROLE_LABELS[user?.role ?? ""] ?? user?.role}</p>
+                  <p className="text-[13px] text-slate-500 truncate">{user?.org_name}</p>
                 </div>
                 <button
                   onClick={() => { setShowUserMenu(false); logout(); }}

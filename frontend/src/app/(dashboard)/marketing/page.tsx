@@ -72,7 +72,7 @@ export default function MarketingPage() {
     <div className="max-w-[1100px] mx-auto px-6 py-6 space-y-5">
       <div className="flex items-end justify-between flex-wrap gap-3">
         <div>
-          <p className="text-[11px] uppercase tracking-widest text-slate-400 font-medium">Growth</p>
+          <p className="text-[13px] uppercase tracking-widest text-slate-400 font-medium">Growth</p>
           <h1 className="text-xl font-bold text-slate-900 mt-0.5">Marketing</h1>
         </div>
         {perms.manageMaintenance && (
@@ -112,10 +112,10 @@ export default function MarketingPage() {
             <thead>
               <tr className="text-left border-b border-slate-100">
                 <th className="px-4 py-3 w-14"></th>
-                <th className="px-4 py-3 text-[11px] uppercase tracking-wider font-medium text-slate-400">Campaign</th>
-                <th className="px-4 py-3 text-[11px] uppercase tracking-wider font-medium text-slate-400">Property</th>
-                <th className="px-4 py-3 text-[11px] uppercase tracking-wider font-medium text-slate-400">Unit</th>
-                <th className="px-4 py-3 text-[11px] uppercase tracking-wider font-medium text-slate-400 text-right">Price</th>
+                <th className="px-4 py-3 text-[13px] uppercase tracking-wider font-medium text-slate-400">Campaign</th>
+                <th className="px-4 py-3 text-[13px] uppercase tracking-wider font-medium text-slate-400">Property</th>
+                <th className="px-4 py-3 text-[13px] uppercase tracking-wider font-medium text-slate-400">Unit</th>
+                <th className="px-4 py-3 text-[13px] uppercase tracking-wider font-medium text-slate-400 text-right">Price</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -132,7 +132,7 @@ export default function MarketingPage() {
                   <td className="px-4 py-2.5 max-w-[260px]">
                     <div className="flex items-center gap-2">
                       <p className="font-medium text-slate-900 truncate">{c.title}</p>
-                      <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-medium shrink-0 ${STATUS_STYLE[c.status]}`}>
+                      <span className={`inline-flex px-2 py-0.5 rounded-full text-[12px] font-medium shrink-0 ${STATUS_STYLE[c.status]}`}>
                         {STATUS_LABEL[c.status]}
                       </span>
                     </div>

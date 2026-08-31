@@ -135,7 +135,7 @@ export default function RegisterPage() {
                       }`}
                     >
                       <p className="font-medium">{r.label}</p>
-                      <p className={`text-[11px] mt-0.5 leading-snug ${form.role === r.value ? "text-white/70" : "text-slate-400"}`}>
+                      <p className={`text-[13px] mt-0.5 leading-snug ${form.role === r.value ? "text-white/70" : "text-slate-400"}`}>
                         {r.description}
                       </p>
                     </button>
@@ -191,7 +191,7 @@ export default function RegisterPage() {
               <div className="space-y-1.5">
                 <Label htmlFor="phone">Phone number</Label>
                 <Input id="phone" type="tel" placeholder="6041234567" value={form.phone} onChange={set("phone")} required />
-                <p className="text-[11px] text-slate-400">10-digit number (e.g. 6041234567) or international format (+15550001234)</p>
+                <p className="text-[13px] text-slate-400">10-digit number (e.g. 6041234567) or international format (+15550001234)</p>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="password">Password</Label>

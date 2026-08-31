@@ -399,7 +399,7 @@ export function CampaignModal({
           <div className="flex items-center gap-2">
             <h2 className="text-base font-semibold">{campaign ? "Edit campaign" : "New campaign"}</h2>
             {liveCampaign && (
-              <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-medium ${STATUS_STYLE[liveCampaign.status]}`}>
+              <span className={`inline-flex px-2 py-0.5 rounded-full text-[12px] font-medium ${STATUS_STYLE[liveCampaign.status]}`}>
                 {STATUS_LABEL[liveCampaign.status]}
               </span>
             )}
@@ -480,7 +480,7 @@ export function CampaignModal({
               ))}
             </select>
             {!campaign && form.unit_id && (
-              <p className="text-[11px] text-slate-400 mt-1">📷 Photos already uploaded for this unit will be added to the campaign automatically.</p>
+              <p className="text-[13px] text-slate-400 mt-1">📷 Photos already uploaded for this unit will be added to the campaign automatically.</p>
             )}
           </div>
 
@@ -489,7 +489,7 @@ export function CampaignModal({
               <label className="block text-xs font-medium text-slate-500 mb-1">Monthly rent ($)</label>
               <input type="number" min="0" value={form.monthly_rent} onChange={e => set("monthly_rent", e.target.value)} placeholder="2500" className={inp} />
               {suggestedRent != null && (
-                <p className="text-[11px] text-violet-600 mt-1">
+                <p className="text-[13px] text-violet-600 mt-1">
                   ✨ AI suggests ${suggestedRent.toLocaleString()}/mo —{" "}
                   <button type="button" onClick={() => { set("monthly_rent", String(suggestedRent)); setSuggestedRent(null); }}
                     className="underline hover:text-violet-800">
@@ -505,7 +505,7 @@ export function CampaignModal({
           </div>
 
           <div className="border-t border-slate-100 pt-3">
-            <p className="text-[11px] uppercase tracking-wider font-medium text-slate-400 mb-2">Contact info</p>
+            <p className="text-[13px] uppercase tracking-wider font-medium text-slate-400 mb-2">Contact info</p>
             <div className="space-y-2.5">
               <input value={form.contact_name} onChange={e => set("contact_name", e.target.value)} placeholder="Contact name" className={inp} />
               <div className="grid grid-cols-2 gap-3">
@@ -516,7 +516,7 @@ export function CampaignModal({
           </div>
 
           <div className="border-t border-slate-100 pt-3 space-y-3">
-            <p className="text-[11px] uppercase tracking-wider font-medium text-slate-400">Listing details</p>
+            <p className="text-[13px] uppercase tracking-wider font-medium text-slate-400">Listing details</p>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -574,24 +574,24 @@ export function CampaignModal({
                 <div className="mt-2.5 space-y-2.5 border border-slate-100 rounded-lg p-3 bg-slate-50/50">
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-[11px] text-slate-500 mb-1">Total spaces</label>
+                      <label className="block text-[13px] text-slate-500 mb-1">Total spaces</label>
                       <input type="number" min="0" value={parkingTotalSpaces} onChange={e => setParkingTotalSpaces(e.target.value)} className={inp} />
                     </div>
                     <div>
-                      <label className="block text-[11px] text-slate-500 mb-1">Garage monthly fee ($)</label>
+                      <label className="block text-[13px] text-slate-500 mb-1">Garage monthly fee ($)</label>
                       <input type="number" min="0" value={parkingGarageFee} onChange={e => setParkingGarageFee(e.target.value)} className={inp} />
                     </div>
                   </div>
                   <div>
-                    <label className="block text-[11px] text-slate-500 mb-1">Type</label>
+                    <label className="block text-[13px] text-slate-500 mb-1">Type</label>
                     <TagPicker options={PARKING_TYPE_OPTIONS} selected={parkingTypes} onToggle={v => toggleTag(setParkingTypes, v)} />
                   </div>
                   <div>
-                    <label className="block text-[11px] text-slate-500 mb-1">Options for tenant</label>
+                    <label className="block text-[13px] text-slate-500 mb-1">Options for tenant</label>
                     <TagPicker options={PARKING_TENANT_OPTIONS} selected={parkingTenantOptions} onToggle={v => toggleTag(setParkingTenantOptions, v)} />
                   </div>
                   <div>
-                    <label className="block text-[11px] text-slate-500 mb-1">Notes</label>
+                    <label className="block text-[13px] text-slate-500 mb-1">Notes</label>
                     <textarea value={parkingNotes} onChange={e => setParkingNotes(e.target.value)} rows={2} className={`${inp} resize-none`} />
                   </div>
                 </div>
@@ -617,7 +617,7 @@ export function CampaignModal({
               <div className="border border-dashed border-slate-200 rounded-lg p-3 space-y-3">
                 {form.unit_id && (loadingUnitImages || unitImages.length > 0) && (
                   <div className="space-y-1.5 pb-1 border-b border-slate-100">
-                    <p className="text-[11px] uppercase tracking-wider font-medium text-slate-400">
+                    <p className="text-[13px] uppercase tracking-wider font-medium text-slate-400">
                       From this unit {!loadingUnitImages && `(${unitImages.length})`} — added automatically
                     </p>
                     {loadingUnitImages ? (
@@ -726,7 +726,7 @@ export function CampaignModal({
                   placeholder="e.g. pet-friendly, close to downtown, includes parking"
                   className="w-full border border-violet-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-violet-500 resize-none" />
                 {(campaign ? existingPhotos.length : photos.length) > 0 && (
-                  <p className="text-[11px] text-violet-600">
+                  <p className="text-[13px] text-violet-600">
                     📷 Will look at your {campaign ? existingPhotos.length : photos.length} uploaded photo{(campaign ? existingPhotos.length : photos.length) === 1 ? "" : "s"} for visual details.
                   </p>
                 )}
@@ -748,7 +748,7 @@ export function CampaignModal({
             <div className="flex items-center justify-between mb-1">
               <label className="block text-xs font-medium text-slate-500">Description / marketing copy</label>
               <button type="button" onClick={handleCopyDescription} disabled={!form.description}
-                className="text-[11px] text-slate-500 hover:text-black underline disabled:opacity-40 disabled:no-underline">
+                className="text-[13px] text-slate-500 hover:text-black underline disabled:opacity-40 disabled:no-underline">
                 {descCopied ? "Copied!" : "Copy"}
               </button>
             </div>
@@ -761,7 +761,7 @@ export function CampaignModal({
                 className="w-7 h-7 flex items-center justify-center text-xs border border-slate-200 rounded hover:bg-slate-50">•≡</button>
               <button type="button" onClick={insertDescDetails}
                 title="Insert location, rent, availability & contact as new lines"
-                className="h-7 px-2 flex items-center justify-center text-[11px] border border-slate-200 rounded hover:bg-slate-50 text-slate-600">
+                className="h-7 px-2 flex items-center justify-center text-[13px] border border-slate-200 rounded hover:bg-slate-50 text-slate-600">
                 + Details
               </button>
             </div>

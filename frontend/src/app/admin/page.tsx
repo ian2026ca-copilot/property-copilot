@@ -48,7 +48,7 @@ function StatsOverview({ owners }: { owners: OwnerRowOut[] }) {
       {cards.map((c) => (
         <div key={c.label} className="bg-white rounded-xl border border-slate-200 px-3 py-3">
           <p className={`text-xl font-semibold ${c.accent ?? "text-slate-900"}`}>{c.value}</p>
-          <p className="text-[11px] text-slate-400 mt-0.5">{c.label}</p>
+          <p className="text-[13px] text-slate-400 mt-0.5">{c.label}</p>
         </div>
       ))}
     </div>
@@ -107,23 +107,23 @@ function OwnerDetailDrawer({ orgId, onClose }: { orgId: string; onClose: () => v
                 {impersonating ? "Logging in…" : "Log in as owner →"}
               </button>
               {detail.is_suspended && (
-                <p className="text-[11px] text-red-600 mt-1">Reactivate this organization before logging in as its owner.</p>
+                <p className="text-[13px] text-red-600 mt-1">Reactivate this organization before logging in as its owner.</p>
               )}
               {!detail.owner_email && !detail.is_suspended && (
-                <p className="text-[11px] text-slate-400 mt-1">This organization has no owner to log in as.</p>
+                <p className="text-[13px] text-slate-400 mt-1">This organization has no owner to log in as.</p>
               )}
             </div>
 
             <div>
-              <p className="text-[11px] uppercase tracking-wider text-slate-400 font-medium mb-2">Owner</p>
+              <p className="text-[13px] uppercase tracking-wider text-slate-400 font-medium mb-2">Owner</p>
               <p className="text-sm text-slate-900">{detail.owner_name ?? "—"}</p>
               <p className="text-xs text-slate-500">{detail.owner_email}</p>
               {detail.owner_phone && <p className="text-xs text-slate-500">{detail.owner_phone}</p>}
-              <p className="text-[11px] text-slate-400 mt-1">/{detail.organization_slug} · created {new Date(detail.created_at).toLocaleDateString()}</p>
+              <p className="text-[13px] text-slate-400 mt-1">/{detail.organization_slug} · created {new Date(detail.created_at).toLocaleDateString()}</p>
             </div>
 
             <div>
-              <p className="text-[11px] uppercase tracking-wider text-slate-400 font-medium mb-2">Billing</p>
+              <p className="text-[13px] uppercase tracking-wider text-slate-400 font-medium mb-2">Billing</p>
               <p className="text-sm text-slate-700">
                 {detail.billing_exempt ? "Comped" : detail.subscription_status ? detail.subscription_status.replace("_", " ") : "No subscription"}
                 {detail.is_suspended && <span className="text-red-600"> · Suspended</span>}
@@ -133,15 +133,15 @@ function OwnerDetailDrawer({ orgId, onClose }: { orgId: string; onClose: () => v
                 <p className="text-xs text-slate-400">Trial ends {new Date(detail.trial_ends_at).toLocaleDateString()}</p>
               )}
               {detail.stripe_customer_id && (
-                <p className="text-[11px] text-slate-400 mt-1 font-mono break-all">customer: {detail.stripe_customer_id}</p>
+                <p className="text-[13px] text-slate-400 mt-1 font-mono break-all">customer: {detail.stripe_customer_id}</p>
               )}
               {detail.stripe_subscription_id && (
-                <p className="text-[11px] text-slate-400 font-mono break-all">subscription: {detail.stripe_subscription_id}</p>
+                <p className="text-[13px] text-slate-400 font-mono break-all">subscription: {detail.stripe_subscription_id}</p>
               )}
             </div>
 
             <div>
-              <p className="text-[11px] uppercase tracking-wider text-slate-400 font-medium mb-2">
+              <p className="text-[13px] uppercase tracking-wider text-slate-400 font-medium mb-2">
                 Team ({detail.tenant_count} tenants · {detail.vendor_count} vendors)
               </p>
               <div className="space-y-1.5">
@@ -155,7 +155,7 @@ function OwnerDetailDrawer({ orgId, onClose }: { orgId: string; onClose: () => v
             </div>
 
             <div>
-              <p className="text-[11px] uppercase tracking-wider text-slate-400 font-medium mb-2">
+              <p className="text-[13px] uppercase tracking-wider text-slate-400 font-medium mb-2">
                 Properties ({detail.property_count})
               </p>
               {detail.properties.length === 0 ? (
@@ -173,19 +173,19 @@ function OwnerDetailDrawer({ orgId, onClose }: { orgId: string; onClose: () => v
             </div>
 
             <div>
-              <p className="text-[11px] uppercase tracking-wider text-slate-400 font-medium mb-2">Payments</p>
+              <p className="text-[13px] uppercase tracking-wider text-slate-400 font-medium mb-2">Payments</p>
               <div className="grid grid-cols-3 gap-2 mb-3">
                 <div className="bg-emerald-50 rounded-lg px-2.5 py-2">
                   <p className="text-sm font-semibold text-emerald-700">${detail.payments_collected_total.toLocaleString()}</p>
-                  <p className="text-[10px] text-emerald-600">Collected</p>
+                  <p className="text-[12px] text-emerald-600">Collected</p>
                 </div>
                 <div className="bg-red-50 rounded-lg px-2.5 py-2">
                   <p className="text-sm font-semibold text-red-700">${detail.payments_overdue_total.toLocaleString()}</p>
-                  <p className="text-[10px] text-red-600">Overdue ({detail.payments_overdue_count})</p>
+                  <p className="text-[12px] text-red-600">Overdue ({detail.payments_overdue_count})</p>
                 </div>
                 <div className="bg-slate-50 rounded-lg px-2.5 py-2">
                   <p className="text-sm font-semibold text-slate-700">${detail.payments_pending_total.toLocaleString()}</p>
-                  <p className="text-[10px] text-slate-500">Pending</p>
+                  <p className="text-[12px] text-slate-500">Pending</p>
                 </div>
               </div>
               {detail.recent_payments.length === 0 ? (

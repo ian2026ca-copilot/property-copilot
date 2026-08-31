@@ -29,7 +29,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       <header className="bg-black h-14 flex items-center px-4 sticky top-0 z-30">
         <div className="flex items-center gap-2">
           <div className="w-7 h-7 bg-white rounded-md flex items-center justify-center">
-            <span className="text-black text-[11px] font-black">PC</span>
+            <span className="text-black text-[13px] font-black">PC</span>
           </div>
           <span className="text-white text-sm font-semibold hidden sm:block">PropertyCopilot</span>
           <span className="text-white/40 text-xs mx-2 hidden sm:block">·</span>

@@ -48,7 +48,7 @@ export default function RiskDonut({ occupancyPct, overdueCount, totalLeases }: P
 
       <div className="flex flex-col items-center -mt-[120px] mb-[60px] pointer-events-none">
         <span className="text-2xl font-bold text-slate-900">{riskScore}</span>
-        <span className="text-[10px] text-slate-400 uppercase tracking-wide">Risk score</span>
+        <span className="text-[12px] text-slate-400 uppercase tracking-wide">Risk score</span>
       </div>
 
       <div className="space-y-1.5 mt-2">

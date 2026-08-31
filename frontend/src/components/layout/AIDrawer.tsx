@@ -79,7 +79,7 @@ export default function AIDrawer({ open, onClose }: { open: boolean; onClose: ()
       >
         <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-black">
           <div>
-            <p className="text-white/50 text-[10px] uppercase tracking-wider">Copilot</p>
+            <p className="text-white/50 text-[12px] uppercase tracking-wider">Copilot</p>
             <h2 className="text-white text-sm font-semibold">AI Property Assistant</h2>
           </div>
           <button onClick={onClose} className="text-white/60 hover:text-white text-lg leading-none">✕</button>

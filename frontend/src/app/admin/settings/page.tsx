@@ -153,7 +153,7 @@ function AIProvidersCard() {
                 </label>
               ))}
             </div>
-            <p className="text-[11px] text-slate-400 mt-2">
+            <p className="text-[13px] text-slate-400 mt-2">
               Every AI call in the app uses whichever provider is selected here. Make sure that
               provider's key is saved below before switching.
             </p>
@@ -227,7 +227,7 @@ function AIProvidersCard() {
                     </div>
                   </div>
                 </div>
-                <p className="text-[11px] text-slate-400 -mt-2">Leave blank to use the default shown above.</p>
+                <p className="text-[13px] text-slate-400 -mt-2">Leave blank to use the default shown above.</p>
 
                 <div>
                   <button

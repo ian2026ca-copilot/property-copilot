@@ -9,6 +9,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
 from app.core.ai_client import generate_ai_text
+from app.core.ai_rate_limit import check_ai_rate_limit
 from app.core.email import send_overdue_notice_email
 from app.core.sms import send_sms
 from app.api.deps import get_current_user, require_min_role
@@ -327,6 +328,7 @@ async def delete_note(
 async def ai_generate_notice(
     payment_id: str,
     body: PaymentNoticeAIGenerateIn,
+    _rl: None = Depends(check_ai_rate_limit),
     current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):

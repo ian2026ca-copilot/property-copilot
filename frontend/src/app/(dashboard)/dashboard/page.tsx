@@ -277,7 +277,7 @@ export default function DashboardPage() {
       {/* Header */}
       <div className="flex items-end justify-between">
         <div>
-          <p className="text-[11px] uppercase tracking-widest text-slate-400 font-medium">Managed portfolio</p>
+          <p className="text-[13px] uppercase tracking-widest text-slate-400 font-medium">Managed portfolio</p>
           <h1 className="text-xl font-bold text-slate-900 mt-0.5">
             {loading ? "Loading dashboard…" : `${totalUnits}-unit operating dashboard`}
           </h1>
@@ -293,7 +293,7 @@ export default function DashboardPage() {
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         {kpis.map((k) => (
           <div key={k.label} className="bg-white rounded-xl border border-slate-200 px-5 py-4">
-            <p className="text-[11px] uppercase tracking-wider text-slate-400 font-medium">{k.label}</p>
+            <p className="text-[13px] uppercase tracking-wider text-slate-400 font-medium">{k.label}</p>
             {k.value === null ? (
               <>
                 <Skeleton className="h-8 w-16 mt-2" />
@@ -385,7 +385,7 @@ export default function DashboardPage() {
                     <p className="text-xs font-semibold text-slate-900">{ins.title}</p>
                     <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">{ins.body}</p>
                   </div>
-                  <button className="text-[11px] text-black font-medium shrink-0 hover:underline">{ins.action}</button>
+                  <button className="text-[13px] text-black font-medium shrink-0 hover:underline">{ins.action}</button>
                 </div>
               ))}
             </div>
@@ -410,7 +410,7 @@ export default function DashboardPage() {
                     <p className="text-xs font-semibold text-slate-900">{a.title}</p>
                     <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">{a.body}</p>
                   </div>
-                  <button className="text-[11px] font-medium text-black shrink-0 px-2.5 py-1 border border-black/20 rounded-lg hover:bg-black hover:text-white transition-colors">
+                  <button className="text-[13px] font-medium text-black shrink-0 px-2.5 py-1 border border-black/20 rounded-lg hover:bg-black hover:text-white transition-colors">
                     {a.action}
                   </button>
                 </div>
@@ -432,7 +432,7 @@ export default function DashboardPage() {
               <thead>
                 <tr className="border-b border-slate-100">
                   {["Property", "Type", "Units", "Occupied", "Occupancy", ""].map(h => (
-                    <th key={h} className="text-left text-[11px] font-medium text-slate-400 uppercase tracking-wider px-5 py-3">{h}</th>
+                    <th key={h} className="text-left text-[13px] font-medium text-slate-400 uppercase tracking-wider px-5 py-3">{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -443,7 +443,7 @@ export default function DashboardPage() {
                     <tr key={p.id} className="hover:bg-slate-50 transition-colors">
                       <td className="px-5 py-3">
                         <p className="text-xs font-semibold text-slate-900">{p.name}</p>
-                        <p className="text-[11px] text-slate-400">{p.address}, {p.city}</p>
+                        <p className="text-[13px] text-slate-400">{p.address}, {p.city}</p>
                       </td>
                       <td className="px-5 py-3 text-xs text-slate-500 capitalize">{p.property_type.replace("_", " ").toLowerCase()}</td>
                       <td className="px-5 py-3 text-xs text-slate-600">{p.unit_count}</td>
@@ -458,7 +458,7 @@ export default function DashboardPage() {
                       </td>
                       <td className="px-5 py-3 text-right">
                         {p.occupied_count < p.unit_count && (
-                          <span className="text-[11px] text-amber-600 font-medium">{p.unit_count - p.occupied_count} vacant</span>
+                          <span className="text-[13px] text-amber-600 font-medium">{p.unit_count - p.occupied_count} vacant</span>
                         )}
                       </td>
                     </tr>

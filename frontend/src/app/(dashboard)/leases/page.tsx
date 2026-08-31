@@ -146,7 +146,7 @@ function AILeaseModal({ units, persons, templates, landlordSuggestions, onClose,
             </div>
             <div>
               <p className="text-sm font-semibold text-slate-900">AI Lease Assistant</p>
-              <p className="text-[11px] text-slate-400">Powered by Gemini</p>
+              <p className="text-[13px] text-slate-400">Powered by Gemini</p>
             </div>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
@@ -675,7 +675,7 @@ function CreateLeaseModal({ units, persons, landlordSuggestions, presetTenantId,
                           </div>
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-medium text-slate-800 truncate">{t.name}</p>
-                            {t.description && <p className="text-[11px] text-slate-400 truncate">{t.description}</p>}
+                            {t.description && <p className="text-[13px] text-slate-400 truncate">{t.description}</p>}
                           </div>
                         </button>
                       </li>
@@ -912,7 +912,7 @@ function EditLeaseModal({ lease, templates, landlordSuggestions, onClose, onSave
                           </div>
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-medium text-slate-800 truncate">{t.name}</p>
-                            {t.description && <p className="text-[11px] text-slate-400 truncate">{t.description}</p>}
+                            {t.description && <p className="text-[13px] text-slate-400 truncate">{t.description}</p>}
                           </div>
                         </button>
                       </li>
@@ -1211,7 +1211,7 @@ function RenewModal({ lease, units, persons, landlordSuggestions, templates, onC
                           </div>
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-medium text-slate-800 truncate">{t.name}</p>
-                            {t.description && <p className="text-[11px] text-slate-400 truncate">{t.description}</p>}
+                            {t.description && <p className="text-[13px] text-slate-400 truncate">{t.description}</p>}
                           </div>
                         </button>
                       </li>
@@ -1369,7 +1369,7 @@ function DocUploadCell({ lease, templates, onUploaded }: DocUploadProps) {
 
   return (
     <div className="space-y-1">
-      {error && <p className="text-[10px] text-red-500">{error}</p>}
+      {error && <p className="text-[12px] text-red-500">{error}</p>}
       {lease.document_url ? (
         <div className="flex items-center gap-1.5">
           <a href={lease.document_url} target="_blank" rel="noopener noreferrer"
@@ -1388,7 +1388,7 @@ function DocUploadCell({ lease, templates, onUploaded }: DocUploadProps) {
           <div className="relative shrink-0">
             <button onClick={() => setShowTemplatePicker(p => !p)} title="Regenerate document"
               className="text-slate-400 hover:text-violet-600 shrink-0 p-0.5 rounded hover:bg-violet-50" disabled={generating}>
-              {generating ? <span className="text-[10px]">…</span> : (
+              {generating ? <span className="text-[12px]">…</span> : (
                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                 </svg>
@@ -1397,7 +1397,7 @@ function DocUploadCell({ lease, templates, onUploaded }: DocUploadProps) {
             {showTemplatePicker && (
               <div className="absolute z-10 mt-1 w-56 border border-slate-200 bg-white rounded-xl shadow-lg overflow-hidden">
                 {templates.length === 0 ? (
-                  <div className="px-3 py-2.5 text-[11px] text-slate-400 text-center italic">
+                  <div className="px-3 py-2.5 text-[13px] text-slate-400 text-center italic">
                     No templates yet — go to Templates to upload or AI-generate one.
                   </div>
                 ) : (
@@ -1417,7 +1417,7 @@ function DocUploadCell({ lease, templates, onUploaded }: DocUploadProps) {
           </div>
           <button onClick={handleDelete} title="Delete document"
             className="text-slate-400 hover:text-red-500 shrink-0 p-0.5 rounded hover:bg-red-50" disabled={uploading || deleting}>
-            {deleting ? <span className="text-[10px]">…</span> : (
+            {deleting ? <span className="text-[12px]">…</span> : (
               <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
               </svg>
@@ -1444,7 +1444,7 @@ function DocUploadCell({ lease, templates, onUploaded }: DocUploadProps) {
             {showTemplatePicker && (
               <div className="absolute z-10 mt-1 w-56 border border-slate-200 bg-white rounded-xl shadow-lg overflow-hidden">
                 {templates.length === 0 ? (
-                  <div className="px-3 py-2.5 text-[11px] text-slate-400 text-center italic">
+                  <div className="px-3 py-2.5 text-[13px] text-slate-400 text-center italic">
                     No templates yet — go to Templates to upload or AI-generate one.
                   </div>
                 ) : (
@@ -1527,10 +1527,10 @@ function SignatureCell({ lease, onUpdated }: SignatureCellProps) {
 
   return (
     <div className="mt-1 space-y-1">
-      {error && <p className="text-[10px] text-red-500 max-w-[140px]">{error}</p>}
+      {error && <p className="text-[12px] text-red-500 max-w-[140px]">{error}</p>}
       {lease.docusign_envelope_id ? (
         <div className="flex items-center gap-1">
-          <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium ${SIGNATURE_STATUS_STYLES[lease.signature_status ?? ""] ?? "bg-slate-100 text-slate-500"}`}>
+          <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[12px] font-medium ${SIGNATURE_STATUS_STYLES[lease.signature_status ?? ""] ?? "bg-slate-100 text-slate-500"}`}>
             {SIGNATURE_STATUS_LABEL[lease.signature_status ?? ""] ?? lease.signature_status ?? "Sent"}
           </span>
           <button onClick={handleCheckStatus} title="Check signature status" disabled={checking}
@@ -1540,7 +1540,7 @@ function SignatureCell({ lease, onUpdated }: SignatureCellProps) {
         </div>
       ) : (
         <button onClick={handleSend} disabled={sending}
-          className="flex items-center gap-1 px-2 py-1 rounded-lg border border-dashed border-blue-300 hover:border-blue-500 text-[10px] text-blue-600 hover:text-blue-800 transition-colors disabled:opacity-50">
+          className="flex items-center gap-1 px-2 py-1 rounded-lg border border-dashed border-blue-300 hover:border-blue-500 text-[12px] text-blue-600 hover:text-blue-800 transition-colors disabled:opacity-50">
           <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
           </svg>
@@ -1685,7 +1685,7 @@ export default function LeasesPage() {
       {/* Header */}
       <div className="flex items-end justify-between">
         <div>
-          <p className="text-[11px] uppercase tracking-widest text-slate-400 font-medium">Lease management</p>
+          <p className="text-[13px] uppercase tracking-widest text-slate-400 font-medium">Lease management</p>
           <h1 className="text-xl font-bold text-slate-900 mt-0.5">Leases</h1>
         </div>
         <div className="flex gap-2">
@@ -1734,7 +1734,7 @@ export default function LeasesPage() {
             <thead>
               <tr className="border-b border-slate-100">
                 {["Tenant", "Unit / Property", "Type", "Period", "Rent", "Deposit", "Status", "Document", ""].map(h => (
-                  <th key={h} className="text-left text-[11px] font-medium text-slate-400 uppercase tracking-wider px-4 py-3">{h}</th>
+                  <th key={h} className="text-left text-[13px] font-medium text-slate-400 uppercase tracking-wider px-4 py-3">{h}</th>
                 ))}
               </tr>
             </thead>
@@ -1772,14 +1772,14 @@ export default function LeasesPage() {
                         <Avatar name={l.tenant?.full_name ?? "?"} url={l.tenant?.avatar_url} size={7} />
                         <div>
                           <p className="text-xs font-semibold text-slate-900">{l.tenant?.full_name ?? "—"}</p>
-                          <p className="text-[11px] text-slate-400">{l.tenant?.email}</p>
+                          <p className="text-[13px] text-slate-400">{l.tenant?.email}</p>
                           {l.co_tenants?.length > 0 && (
-                            <p className="text-[10px] text-slate-400 mt-0.5">
+                            <p className="text-[12px] text-slate-400 mt-0.5">
                               +{l.co_tenants.map(t => t.full_name).join(", ")}
                             </p>
                           )}
                           {hasMore && isFirst && (
-                            <p className="text-[10px] text-slate-400 mt-0.5">
+                            <p className="text-[12px] text-slate-400 mt-0.5">
                               {g.leases.length} leases{isExpanded ? " · showing all" : ` · ${g.leases.length - 1} hidden`}
                             </p>
                           )}
@@ -1788,7 +1788,7 @@ export default function LeasesPage() {
                     </td>
                     <td className="px-4 py-3">
                       <p className="text-xs font-medium text-slate-900">Unit {l.unit_number}</p>
-                      <p className="text-[11px] text-slate-400">{l.property_name}</p>
+                      <p className="text-[13px] text-slate-400">{l.property_name}</p>
                     </td>
                     <td className="px-4 py-3">
                       <span className="text-xs text-slate-500">
@@ -1799,13 +1799,13 @@ export default function LeasesPage() {
                       <p className="text-xs text-slate-700">{l.start_date} →</p>
                       <p className={`text-xs font-medium ${expiring ? "text-amber-600" : expired ? "text-red-500" : "text-slate-700"}`}>
                         {l.end_date}
-                        {expiring && <span className="ml-1 text-[10px]">({l._daysUntilExpiry}d)</span>}
+                        {expiring && <span className="ml-1 text-[12px]">({l._daysUntilExpiry}d)</span>}
                       </p>
                     </td>
                     <td className="px-4 py-3 text-xs text-slate-700 font-medium">{fmt$(l.monthly_rent)}</td>
                     <td className="px-4 py-3 text-xs text-slate-500">{fmt$(l.security_deposit)}</td>
                     <td className="px-4 py-3">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${STATUS_STYLES[l.status] ?? "bg-slate-100 text-slate-500"}`}>
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[13px] font-medium ${STATUS_STYLES[l.status] ?? "bg-slate-100 text-slate-500"}`}>
                         {STATUS_LABEL[l.status] ?? l.status}
                       </span>
                     </td>

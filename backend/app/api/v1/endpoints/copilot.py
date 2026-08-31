@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.ai_client import generate_ai_text
+from app.core.ai_rate_limit import check_ai_rate_limit
 from app.api.deps import require_min_role
 from app.models.user import User, OrganizationMember, UserRole
 from app.schemas.copilot import CopilotChatIn, CopilotChatOut, CopilotExecuteIn, CopilotExecuteOut, CopilotMessage
@@ -105,6 +106,7 @@ def _extract_json_action(text: str) -> dict | None:
 @router.post("/chat", response_model=CopilotChatOut)
 async def copilot_chat(
     body: CopilotChatIn,
+    _rl: None = Depends(check_ai_rate_limit),
     current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
 ):
     prompt = _build_prompt(body.messages, body.created_context)

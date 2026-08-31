@@ -107,7 +107,7 @@ function InviteModal({ onClose, onSave }: { onClose: () => void; onSave: (v: Ven
             <input type="checkbox" className="mt-0.5" checked={isPublic} onChange={e => setIsPublic(e.target.checked)} />
             <div>
               <p className="text-sm font-medium text-slate-900">Make this vendor public</p>
-              <p className="text-[11px] text-slate-500 mt-0.5">
+              <p className="text-[13px] text-slate-500 mt-0.5">
                 {isPublic
                   ? "Public — other organizations can also add and share this vendor."
                   : "Private (default) — this vendor works exclusively for your organization."}
@@ -179,15 +179,15 @@ function AvailabilityPanel({ vendor, onClose }: { vendor: VendorOut; onClose: ()
             {error && <p className="text-red-600 text-xs">{error}</p>}
             <div className="grid grid-cols-3 gap-2">
               <div className="col-span-3">
-                <label className="block text-[11px] text-slate-400 mb-1">Date</label>
+                <label className="block text-[13px] text-slate-400 mb-1">Date</label>
                 <input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} className={inp} />
               </div>
               <div className="col-span-1">
-                <label className="block text-[11px] text-slate-400 mb-1">Start</label>
+                <label className="block text-[13px] text-slate-400 mb-1">Start</label>
                 <input type="time" value={form.start_time} onChange={e => setForm(f => ({ ...f, start_time: e.target.value }))} className={inp} />
               </div>
               <div className="col-span-1">
-                <label className="block text-[11px] text-slate-400 mb-1">End</label>
+                <label className="block text-[13px] text-slate-400 mb-1">End</label>
                 <input type="time" value={form.end_time} onChange={e => setForm(f => ({ ...f, end_time: e.target.value }))} className={inp} />
               </div>
               <div className="col-span-1 flex items-end">
@@ -300,7 +300,7 @@ function EditVendorModal({ vendor, onClose, onSave }: { vendor: VendorOut; onClo
             <input type="checkbox" className="mt-0.5" checked={isPublic} onChange={e => setIsPublic(e.target.checked)} />
             <div>
               <p className="text-sm font-medium text-slate-900">Make this vendor public</p>
-              <p className="text-[11px] text-slate-500 mt-0.5">
+              <p className="text-[13px] text-slate-500 mt-0.5">
                 {isPublic
                   ? "Public — other organizations can also add and share this vendor."
                   : "Private — this vendor works exclusively for your organization."}
@@ -351,7 +351,7 @@ export default function VendorsPage() {
     <div className="max-w-[1280px] mx-auto px-6 py-6 space-y-5">
       <div className="flex items-end justify-between">
         <div>
-          <p className="text-[11px] uppercase tracking-widest text-slate-400 font-medium">Operations</p>
+          <p className="text-[13px] uppercase tracking-widest text-slate-400 font-medium">Operations</p>
           <h1 className="text-xl font-bold text-slate-900 mt-0.5">Vendors</h1>
         </div>
         <button onClick={() => setShowInvite(true)} className="px-4 py-2 bg-black text-white text-sm font-medium rounded-xl hover:bg-slate-800">+ Invite vendor</button>
@@ -368,7 +368,7 @@ export default function VendorsPage() {
           <thead>
             <tr className="border-b border-slate-100">
               {["Vendor", "Email", "Phone", "Services", ""].map(h => (
-                <th key={h} className="text-left text-[11px] font-medium text-slate-400 uppercase tracking-wider px-4 py-3">{h}</th>
+                <th key={h} className="text-left text-[13px] font-medium text-slate-400 uppercase tracking-wider px-4 py-3">{h}</th>
               ))}
             </tr>
           </thead>
@@ -389,11 +389,11 @@ export default function VendorsPage() {
                     <div>
                       <div className="flex items-center gap-1.5">
                         <p className="text-xs font-medium text-slate-900">{v.full_name}</p>
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded ${v.is_public ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
+                        <span className={`text-[12px] px-1.5 py-0.5 rounded ${v.is_public ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
                           {v.is_public ? "Public" : "Private"}
                         </span>
                       </div>
-                      {v.business_name && <p className="text-[11px] text-slate-400">{v.business_name}</p>}
+                      {v.business_name && <p className="text-[13px] text-slate-400">{v.business_name}</p>}
                     </div>
                   </div>
                 </td>
@@ -404,9 +404,9 @@ export default function VendorsPage() {
                     ? <span className="text-xs text-slate-400 italic">None</span>
                     : <div className="flex flex-wrap gap-1">
                       {v.service_categories.slice(0, 3).map(c => (
-                        <span key={c} className="px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded text-[10px]">{c}</span>
+                        <span key={c} className="px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded text-[12px]">{c}</span>
                       ))}
-                      {v.service_categories.length > 3 && <span className="text-[10px] text-slate-400">+{v.service_categories.length - 3}</span>}
+                      {v.service_categories.length > 3 && <span className="text-[12px] text-slate-400">+{v.service_categories.length - 3}</span>}
                     </div>}
                 </td>
                 <td className="px-4 py-3">

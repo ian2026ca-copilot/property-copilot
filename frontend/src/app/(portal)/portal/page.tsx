@@ -114,7 +114,7 @@ function PayModal({ onClose }: { onClose: () => void }) {
                       </span>
                       <div>
                         <p className="text-xs font-medium text-slate-900">{m.label}</p>
-                        <p className="text-[11px] text-slate-500">{m.sub}</p>
+                        <p className="text-[13px] text-slate-500">{m.sub}</p>
                       </div>
                     </button>
                   ))}
@@ -230,14 +230,14 @@ function HomeTab({ setTab, onPay, payments, paymentsLoading }: {
 
       {/* Lease info */}
       <div className="bg-white rounded-xl border border-slate-200 p-4">
-        <p className="text-[11px] uppercase tracking-wider text-slate-400 font-medium mb-3">Your lease</p>
+        <p className="text-[13px] uppercase tracking-wider text-slate-400 font-medium mb-3">Your lease</p>
         <div className="grid grid-cols-2 gap-y-3 text-sm">
-          <div><p className="text-[11px] text-slate-400">Unit</p><p className="font-semibold text-slate-900">102 · Sunset Towers</p></div>
-          <div><p className="text-[11px] text-slate-400">Monthly rent</p><p className="font-semibold text-slate-900">$1,950 / mo</p></div>
-          <div><p className="text-[11px] text-slate-400">Lease start</p><p className="font-semibold text-slate-900">Feb 1, 2026</p></div>
-          <div><p className="text-[11px] text-slate-400">Lease end</p><p className="font-semibold text-slate-900">Jan 31, 2027</p></div>
-          <div><p className="text-[11px] text-slate-400">Security deposit</p><p className="font-semibold text-slate-900">$1,950</p></div>
-          <div><p className="text-[11px] text-slate-400">Status</p><span className="text-[11px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-medium">Active</span></div>
+          <div><p className="text-[13px] text-slate-400">Unit</p><p className="font-semibold text-slate-900">102 · Sunset Towers</p></div>
+          <div><p className="text-[13px] text-slate-400">Monthly rent</p><p className="font-semibold text-slate-900">$1,950 / mo</p></div>
+          <div><p className="text-[13px] text-slate-400">Lease start</p><p className="font-semibold text-slate-900">Feb 1, 2026</p></div>
+          <div><p className="text-[13px] text-slate-400">Lease end</p><p className="font-semibold text-slate-900">Jan 31, 2027</p></div>
+          <div><p className="text-[13px] text-slate-400">Security deposit</p><p className="font-semibold text-slate-900">$1,950</p></div>
+          <div><p className="text-[13px] text-slate-400">Status</p><span className="text-[13px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-medium">Active</span></div>
         </div>
       </div>
 
@@ -263,7 +263,7 @@ function HomeTab({ setTab, onPay, payments, paymentsLoading }: {
         <div>
           <p className="text-xs font-semibold text-amber-900">Open maintenance request</p>
           <p className="text-xs text-amber-700 mt-0.5">HVAC unit not cooling — technician scheduled for tomorrow 9–11am.</p>
-          <button onClick={() => setTab("maintenance")} className="text-[11px] text-amber-900 underline underline-offset-2 mt-1">View details</button>
+          <button onClick={() => setTab("maintenance")} className="text-[13px] text-amber-900 underline underline-offset-2 mt-1">View details</button>
         </div>
       </div>
     </div>
@@ -290,13 +290,13 @@ function PaymentsTab({ onPay, payments, loading }: { onPay: () => void; payments
               </div>
               <div className="flex-1">
                 <p className="text-sm font-semibold text-slate-900">{p.description ?? "Rent"}</p>
-                <p className="text-[11px] text-slate-500">
+                <p className="text-[13px] text-slate-500">
                   {p.status === "PAID" ? `Paid ${p.paid_date ?? ""}` : `Due ${p.due_date}`}
                 </p>
               </div>
               <div className="text-right">
                 <p className={`text-sm font-bold text-slate-900 ${p.status === "VOIDED" ? "line-through text-slate-400" : ""}`}>${p.amount.toLocaleString()}</p>
-                <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${PAYMENT_STATUS_STYLES[p.status] ?? "bg-slate-100 text-slate-500"}`}>
+                <span className={`text-[13px] px-2 py-0.5 rounded-full font-medium ${PAYMENT_STATUS_STYLES[p.status] ?? "bg-slate-100 text-slate-500"}`}>
                   {PAYMENT_STATUS_LABELS[p.status] ?? p.status}
                 </span>
               </div>
@@ -326,11 +326,11 @@ function MaintenanceTab({ onNew }: { onNew: () => void }) {
             <div className="flex items-start justify-between gap-2 mb-2">
               <div>
                 <p className="text-sm font-semibold text-slate-900">{r.title}</p>
-                <p className="text-[11px] text-slate-500">Submitted {r.submitted}</p>
+                <p className="text-[13px] text-slate-500">Submitted {r.submitted}</p>
               </div>
-              <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium shrink-0 ${STATUS_STYLES[r.status]}`}>{r.status}</span>
+              <span className={`text-[13px] px-2 py-0.5 rounded-full font-medium shrink-0 ${STATUS_STYLES[r.status]}`}>{r.status}</span>
             </div>
-            <span className="text-[11px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-medium">{r.category}</span>
+            <span className="text-[13px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-medium">{r.category}</span>
             {r.update && (
               <div className="mt-3 bg-slate-50 rounded-lg px-3 py-2 text-xs text-slate-600 leading-relaxed">
                 <span className="font-medium text-slate-900">Update: </span>{r.update}
@@ -360,10 +360,10 @@ function DocumentsTab() {
             <div className="w-9 h-9 bg-slate-100 rounded-lg flex items-center justify-center text-base shrink-0">📄</div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-slate-900 truncate">{d.name}</p>
-              <p className="text-[11px] text-slate-500">{d.date} · {d.size}</p>
+              <p className="text-[13px] text-slate-500">{d.date} · {d.size}</p>
             </div>
-            <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium shrink-0 ${TAG_COLORS[d.tag]}`}>{d.tag}</span>
-            <button className="text-[11px] text-slate-400 hover:text-black shrink-0">↓</button>
+            <span className={`text-[13px] px-2 py-0.5 rounded-full font-medium shrink-0 ${TAG_COLORS[d.tag]}`}>{d.tag}</span>
+            <button className="text-[13px] text-slate-400 hover:text-black shrink-0">↓</button>
           </div>
         ))}
       </div>
@@ -376,12 +376,12 @@ function MessagesTab() {
   return (
     <div className="flex flex-col h-[calc(100vh-200px)] min-h-[400px]">
       <div className="flex items-center gap-3 mb-4">
-        <div className="w-8 h-8 rounded-full bg-black text-white text-[11px] font-bold flex items-center justify-center">AM</div>
+        <div className="w-8 h-8 rounded-full bg-black text-white text-[13px] font-bold flex items-center justify-center">AM</div>
         <div>
           <p className="text-xs font-semibold text-slate-900">Alex Morgan</p>
-          <p className="text-[11px] text-slate-500">Property Manager · Sunset Towers</p>
+          <p className="text-[13px] text-slate-500">Property Manager · Sunset Towers</p>
         </div>
-        <span className="ml-auto flex items-center gap-1.5 text-[11px] text-emerald-600">
+        <span className="ml-auto flex items-center gap-1.5 text-[13px] text-emerald-600">
           <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
           Online
         </span>
@@ -391,13 +391,13 @@ function MessagesTab() {
         {messages.map(m => (
           <div key={m.id} className={`flex gap-2.5 ${m.mine ? "flex-row-reverse" : ""}`}>
             {!m.mine && (
-              <div className="w-7 h-7 rounded-full bg-black text-white text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5">{m.avatar}</div>
+              <div className="w-7 h-7 rounded-full bg-black text-white text-[12px] font-bold flex items-center justify-center shrink-0 mt-0.5">{m.avatar}</div>
             )}
             <div className={`max-w-[80%] ${m.mine ? "items-end" : "items-start"} flex flex-col gap-0.5`}>
               <div className={`rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${m.mine ? "bg-black text-white rounded-tr-sm" : "bg-white border border-slate-200 text-slate-800 rounded-tl-sm"}`}>
                 {m.text}
               </div>
-              <p className="text-[10px] text-slate-400 px-1">{m.time}</p>
+              <p className="text-[12px] text-slate-400 px-1">{m.time}</p>
             </div>
           </div>
         ))}
@@ -678,7 +678,7 @@ function ProfileTab() {
           </div>
           <div className="min-w-0">
             <p className="text-sm font-semibold text-slate-900 truncate">{user?.full_name}</p>
-            <p className="text-[11px] text-slate-500">Tenant</p>
+            <p className="text-[13px] text-slate-500">Tenant</p>
           </div>
         </div>
         <div className="grid grid-cols-2 gap-3">
@@ -754,7 +754,7 @@ export default function PortalPage() {
 
       {/* Greeting */}
       <div className="mb-5">
-        <p className="text-[11px] uppercase tracking-widest text-slate-400 font-medium">Welcome back</p>
+        <p className="text-[13px] uppercase tracking-widest text-slate-400 font-medium">Welcome back</p>
         <h1 className="text-xl font-bold text-slate-900 mt-0.5">{user?.full_name ?? "Tenant"}</h1>
       </div>
 
@@ -764,7 +764,7 @@ export default function PortalPage() {
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
-            className={`flex-1 flex flex-col items-center gap-0.5 py-2 rounded-lg text-[10px] font-medium transition-colors ${tab === t.id ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+            className={`flex-1 flex flex-col items-center gap-0.5 py-2 rounded-lg text-[12px] font-medium transition-colors ${tab === t.id ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
           >
             <span className="text-base leading-none">{t.icon}</span>
             <span className="hidden sm:block">{t.label}</span>

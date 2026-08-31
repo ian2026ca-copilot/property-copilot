@@ -38,7 +38,7 @@ function Gate({ children }: { children: React.ReactNode }) {
       <header className="bg-white border-b border-slate-200 px-6 py-3 flex items-center justify-between sticky top-0 z-10">
         <div className="flex items-center gap-6">
           <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-md bg-black flex items-center justify-center text-white font-black text-[11px]">PC</div>
+            <div className="w-7 h-7 rounded-md bg-black flex items-center justify-center text-white font-black text-[13px]">PC</div>
             <p className="text-sm font-semibold text-slate-900">Platform Admin</p>
           </div>
           <nav className="flex items-center gap-1">

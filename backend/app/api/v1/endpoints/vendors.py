@@ -10,6 +10,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
 from app.core.ai_client import generate_ai_text
+from app.core.ai_rate_limit import check_ai_rate_limit
 from app.core.security import hash_password
 from app.api.deps import get_current_user, require_min_role
 from app.models.user import User, OrganizationMember, UserRole
@@ -236,6 +237,7 @@ async def list_availability(
 async def ai_generate_availability(
     vendor_id: str,
     body: VendorAvailabilityAIGenerateIn,
+    _rl: None = Depends(check_ai_rate_limit),
     current: tuple[User, OrganizationMember] = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):

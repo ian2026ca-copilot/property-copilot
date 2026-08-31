@@ -203,7 +203,7 @@ export function LeaseTemplatesModal({ onClose, showList = true }: { onClose: () 
                       {t.name}
                     </a>
                     {t.description && <p className="text-xs text-slate-500 mt-0.5 truncate">{t.description}</p>}
-                    <p className="text-[10px] text-slate-400 mt-0.5">{t.original_name}</p>
+                    <p className="text-[12px] text-slate-400 mt-0.5">{t.original_name}</p>
                   </div>
                   <button onClick={() => handleDelete(t.id, t.name)} disabled={deleting === t.id}
                     className="p-1.5 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-500 transition-colors shrink-0 disabled:opacity-50">
