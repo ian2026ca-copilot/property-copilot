@@ -95,7 +95,7 @@ function ApplicantDrawer({
     return (
       <button type="button" onClick={() => toggleSection(id)}
         className="w-full flex items-center justify-between py-1 group">
-        <span className="text-[11px] uppercase tracking-wider text-slate-400 font-medium group-hover:text-slate-600 transition-colors flex items-center gap-2">
+        <span className="text-[13px] uppercase tracking-wider text-slate-400 font-medium group-hover:text-slate-600 transition-colors flex items-center gap-2">
           {label}{badge}
         </span>
         <span className="text-slate-300 group-hover:text-slate-500 text-xs transition-colors">{open ? "▲" : "▼"}</span>
@@ -113,6 +113,8 @@ function ApplicantDrawer({
   const [missingChannels, setMissingChannels] = useState({ email: true, sms: false });
   const [sendingMissing, setSendingMissing] = useState(false);
   const [missingError, setMissingError] = useState("");
+  const [checkingEmails, setCheckingEmails] = useState(false);
+  const [checkEmailResult, setCheckEmailResult] = useState<{ ok: boolean; message: string } | null>(null);
 
   async function handleGenerateMissingMsg(missing: string[]) {
     setGeneratingMissing(true);
@@ -151,6 +153,17 @@ function ApplicantDrawer({
 
   function refreshNotes() {
     return tenantsApi.listNotes(tenant.id).then(setNotes).catch(() => {});
+  }
+
+  async function handleCheckEmails() {
+    setCheckingEmails(true); setCheckEmailResult(null);
+    try {
+      const res = await tenantsApi.checkReferenceEmailsNow();
+      setCheckEmailResult(res);
+      if (res.new_responses > 0) await refreshNotes();
+    } catch (e: unknown) {
+      setCheckEmailResult({ ok: false, message: e instanceof Error ? e.message : "Check failed" });
+    } finally { setCheckingEmails(false); }
   }
 
   useEffect(() => {
@@ -270,6 +283,10 @@ function ApplicantDrawer({
   const employmentWithRef = (detail?.employment_history ?? []).filter((e) => e.employer_reference_name);
   const addressesWithRef = (detail?.address_history ?? []).filter((a) => a.landlord_name);
 
+  const employerRefSent = notes.some((n) => n.note.includes("(employer reference)"));
+  const landlordRefSent = notes.some((n) => n.note.includes("(landlord reference)"));
+  const tenantNotified = notes.some((n) => n.note.includes("requesting missing application info"));
+
   const status = asStatus(tenant.application_status);
   const docCount = tenant.documents.length;
 
@@ -293,15 +310,39 @@ function ApplicantDrawer({
             </div>
           </div>
 
+          {/* Outreach status */}
+          {(employerRefSent || landlordRefSent || tenantNotified) && (
+            <div className="flex flex-wrap gap-1.5">
+              {employerRefSent && (
+                <span className="flex items-center gap-1 text-[12px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full">
+                  <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
+                  Employer ref sent
+                </span>
+              )}
+              {landlordRefSent && (
+                <span className="flex items-center gap-1 text-[12px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full">
+                  <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
+                  Landlord ref sent
+                </span>
+              )}
+              {tenantNotified && (
+                <span className="flex items-center gap-1 text-[12px] font-medium bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-full">
+                  <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
+                  Tenant notified
+                </span>
+              )}
+            </div>
+          )}
+
           {/* AI verdict */}
           <div className="border-b border-slate-100 pb-1">
             <SectionHeader id="ai" label="AI summary" />
             {openSections.has("ai") && (
               <div className="rounded-xl border border-slate-200 p-3.5 mt-2">
                 <div className="flex items-center justify-between mb-1.5">
-                  <p className="text-[10px] uppercase tracking-wider font-medium text-slate-500">AI summary</p>
+                  <p className="text-[12px] uppercase tracking-wider font-medium text-slate-500">AI summary</p>
                   <button type="button" onClick={handleRunScreening} disabled={aiLoading}
-                    className="text-[11px] font-medium text-violet-700 hover:text-violet-900 disabled:opacity-50">
+                    className="text-[13px] font-medium text-violet-700 hover:text-violet-900 disabled:opacity-50">
                     {aiLoading ? "Running…" : ai ? "Run again" : "✨ Run screening"}
                   </button>
                 </div>
@@ -325,26 +366,26 @@ function ApplicantDrawer({
           {openSections.has("financials") && (
           <div className="bg-slate-50 rounded-xl p-4 grid grid-cols-2 gap-3 text-sm">
             <div>
-              <p className="text-[11px] text-slate-400 uppercase tracking-wider">Monthly income</p>
+              <p className="text-[13px] text-slate-400 uppercase tracking-wider">Monthly income</p>
               <p className="font-bold text-slate-900 mt-0.5">{monthlyIncome ? `$${monthlyIncome.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : "—"}</p>
             </div>
             <div>
-              <p className="text-[11px] text-slate-400 uppercase tracking-wider">Income ratio</p>
+              <p className="text-[13px] text-slate-400 uppercase tracking-wider">Income ratio</p>
               <p className={`font-bold mt-0.5 ${incomeRatio && incomeRatio >= 3 ? "text-emerald-600" : incomeRatio ? "text-amber-600" : "text-slate-400"}`}>
                 {incomeRatio ? `${incomeRatio.toFixed(1)}×` : "—"}
               </p>
             </div>
             <div>
-              <p className="text-[11px] text-slate-400 uppercase tracking-wider">Documents</p>
+              <p className="text-[13px] text-slate-400 uppercase tracking-wider">Documents</p>
               <p className={`font-bold mt-0.5 ${docCount > 0 ? "text-emerald-600" : "text-slate-400"}`}>{docCount}</p>
             </div>
             <div>
-              <p className="text-[11px] text-slate-400 uppercase tracking-wider">Employment on file</p>
+              <p className="text-[13px] text-slate-400 uppercase tracking-wider">Employment on file</p>
               <p className="font-medium text-slate-900 text-xs mt-0.5">{detail?.employment_history?.length ? `${detail.employment_history.length} record(s)` : "None"}</p>
             </div>
             {rentalHistoryEnabled && (
               <div>
-                <p className="text-[11px] text-slate-400 uppercase tracking-wider">Evicted / refused rent</p>
+                <p className="text-[13px] text-slate-400 uppercase tracking-wider">Evicted / refused rent</p>
                 <p className={`font-bold mt-0.5 ${detail?.evicted || detail?.refused_rent ? "text-red-600" : "text-emerald-600"}`}>
                   {detail?.evicted || detail?.refused_rent ? "Disclosed" : "None disclosed"}
                 </p>
@@ -352,7 +393,7 @@ function ApplicantDrawer({
             )}
             {criminalEnabled && (
               <div>
-                <p className="text-[11px] text-slate-400 uppercase tracking-wider">Criminal record</p>
+                <p className="text-[13px] text-slate-400 uppercase tracking-wider">Criminal record</p>
                 <p className={`font-bold mt-0.5 ${detail?.criminal_record ? "text-red-600" : "text-emerald-600"}`}>
                   {detail?.criminal_record ? "Disclosed" : "None disclosed"}
                 </p>
@@ -365,7 +406,7 @@ function ApplicantDrawer({
 
           {/* Documents */}
           <div className="border-b border-slate-100 pb-1">
-            <SectionHeader id="documents" label="Documents" badge={docCount > 0 ? <span className="bg-slate-100 text-slate-500 rounded-full px-1.5 py-0.5 text-[10px]">{docCount}</span> : undefined} />
+            <SectionHeader id="documents" label="Documents" badge={docCount > 0 ? <span className="bg-slate-100 text-slate-500 rounded-full px-1.5 py-0.5 text-[12px]">{docCount}</span> : undefined} />
           </div>
           {openSections.has("documents") && docCount > 0 && (
             <div>
@@ -378,10 +419,10 @@ function ApplicantDrawer({
                       {isImage ? (
                         <img src={d.url} alt={d.original_name} className="w-10 h-10 rounded-md object-cover border border-slate-200 shrink-0" />
                       ) : (
-                        <span className="w-10 h-10 rounded-md bg-slate-100 flex items-center justify-center text-slate-400 shrink-0 text-[9px] font-medium">FILE</span>
+                        <span className="w-10 h-10 rounded-md bg-slate-100 flex items-center justify-center text-slate-400 shrink-0 text-[13px] font-medium">FILE</span>
                       )}
                       <span className="truncate flex-1">{d.original_name}</span>
-                      <span className="text-[10px] text-slate-400 uppercase shrink-0">{d.doc_type.replace("_", " ")}</span>
+                      <span className="text-[12px] text-slate-400 uppercase shrink-0">{d.doc_type.replace("_", " ")}</span>
                     </a>
                   );
                 })}
@@ -394,7 +435,7 @@ function ApplicantDrawer({
 
           {/* Employer references */}
           <div className="border-b border-slate-100 pb-1">
-            <SectionHeader id="employer" label="Employer references" badge={employmentWithRef.length === 0 ? <span className="text-amber-500 text-[10px]">⚠ none</span> : <span className="bg-slate-100 text-slate-500 rounded-full px-1.5 py-0.5 text-[10px]">{employmentWithRef.length}</span>} />
+            <SectionHeader id="employer" label="Employer references" badge={employmentWithRef.length === 0 ? <span className="text-amber-500 text-[12px]">⚠ none</span> : <span className="bg-slate-100 text-slate-500 rounded-full px-1.5 py-0.5 text-[12px]">{employmentWithRef.length}</span>} />
           </div>
           {openSections.has("employer") && employmentWithRef.length === 0 && (
             <div className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2.5 text-xs text-amber-800 space-y-0.5">
@@ -420,7 +461,7 @@ function ApplicantDrawer({
                       <div className="pt-1">
                         <button type="button" disabled={(!emp.employer_reference_email && !emp.employer_reference_phone) || !!generatingLetter[emp.id]}
                           onClick={() => handleGenerateLetter("EMPLOYMENT", emp.id as string, !!emp.employer_reference_email, !!emp.employer_reference_phone)}
-                          className="px-2 py-1 text-[11px] font-medium border border-violet-200 text-violet-700 rounded-md hover:bg-violet-50 disabled:opacity-40 disabled:cursor-not-allowed">
+                          className="px-2 py-1 text-[13px] font-medium border border-violet-200 text-violet-700 rounded-md hover:bg-violet-50 disabled:opacity-40 disabled:cursor-not-allowed">
                           {generatingLetter[emp.id] ? "Drafting…" : "✨ AI send reference check email and sms"}
                         </button>
                       </div>
@@ -429,7 +470,7 @@ function ApplicantDrawer({
                     {emp.id && letterError[emp.id] && <p className="text-red-600">{letterError[emp.id]}</p>}
                     {emp.id && letterDrafts[emp.id] && (
                       <div className="mt-2 border border-violet-100 bg-violet-50/50 rounded-lg p-2.5 space-y-2">
-                        <p className="text-[10px] uppercase tracking-wider text-violet-500 font-medium">AI-drafted letter — review before sending</p>
+                        <p className="text-[12px] uppercase tracking-wider text-violet-500 font-medium">AI-drafted letter — review before sending</p>
                         <input value={letterDrafts[emp.id].subject}
                           onChange={(e) => setLetterDrafts((prev) => ({ ...prev, [emp.id as string]: { ...prev[emp.id as string], subject: e.target.value } }))}
                           className="w-full text-xs font-medium border border-slate-200 rounded-md px-2 py-1 outline-none focus:border-violet-400" />
@@ -454,12 +495,12 @@ function ApplicantDrawer({
                           <button type="button"
                             disabled={!!sendingLetter[emp.id] || (!sendChannels[emp.id as string]?.email && !sendChannels[emp.id as string]?.sms)}
                             onClick={() => handleSendLetter("EMPLOYMENT", emp.id as string)}
-                            className="px-2.5 py-1 text-[11px] font-medium bg-violet-600 text-white rounded-md hover:bg-violet-700 disabled:opacity-50">
+                            className="px-2.5 py-1 text-[13px] font-medium bg-violet-600 text-white rounded-md hover:bg-violet-700 disabled:opacity-50">
                             {sendingLetter[emp.id] ? "Sending…" : "Send letter"}
                           </button>
                           <button type="button"
                             onClick={() => setLetterDrafts((prev) => { const next = { ...prev }; delete next[emp.id as string]; return next; })}
-                            className="px-2.5 py-1 text-[11px] font-medium text-slate-500 hover:text-slate-700">
+                            className="px-2.5 py-1 text-[13px] font-medium text-slate-500 hover:text-slate-700">
                             Discard
                           </button>
                         </div>
@@ -473,7 +514,7 @@ function ApplicantDrawer({
 
           {/* Landlord references */}
           <div className="border-b border-slate-100 pb-1">
-            <SectionHeader id="landlord" label="Landlord references" badge={addressesWithRef.length === 0 ? <span className="text-amber-500 text-[10px]">⚠ none</span> : <span className="bg-slate-100 text-slate-500 rounded-full px-1.5 py-0.5 text-[10px]">{addressesWithRef.length}</span>} />
+            <SectionHeader id="landlord" label="Landlord references" badge={addressesWithRef.length === 0 ? <span className="text-amber-500 text-[12px]">⚠ none</span> : <span className="bg-slate-100 text-slate-500 rounded-full px-1.5 py-0.5 text-[12px]">{addressesWithRef.length}</span>} />
           </div>
           {openSections.has("landlord") && addressesWithRef.length === 0 && (
             <div className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2.5 text-xs text-amber-800 space-y-0.5">
@@ -501,7 +542,7 @@ function ApplicantDrawer({
                       <div className="pt-1">
                         <button type="button" disabled={(!a.landlord_email && !a.landlord_phone) || !!generatingLetter[a.id]}
                           onClick={() => handleGenerateLetter("ADDRESS", a.id as string, !!a.landlord_email, !!a.landlord_phone)}
-                          className="px-2 py-1 text-[11px] font-medium border border-violet-200 text-violet-700 rounded-md hover:bg-violet-50 disabled:opacity-40 disabled:cursor-not-allowed">
+                          className="px-2 py-1 text-[13px] font-medium border border-violet-200 text-violet-700 rounded-md hover:bg-violet-50 disabled:opacity-40 disabled:cursor-not-allowed">
                           {generatingLetter[a.id] ? "Drafting…" : "✨ AI send reference check email and sms"}
                         </button>
                       </div>
@@ -510,7 +551,7 @@ function ApplicantDrawer({
                     {a.id && letterError[a.id] && <p className="text-red-600">{letterError[a.id]}</p>}
                     {a.id && letterDrafts[a.id] && (
                       <div className="mt-2 border border-violet-100 bg-violet-50/50 rounded-lg p-2.5 space-y-2">
-                        <p className="text-[10px] uppercase tracking-wider text-violet-500 font-medium">AI-drafted letter — review before sending</p>
+                        <p className="text-[12px] uppercase tracking-wider text-violet-500 font-medium">AI-drafted letter — review before sending</p>
                         <input value={letterDrafts[a.id].subject}
                           onChange={(e) => setLetterDrafts((prev) => ({ ...prev, [a.id as string]: { ...prev[a.id as string], subject: e.target.value } }))}
                           className="w-full text-xs font-medium border border-slate-200 rounded-md px-2 py-1 outline-none focus:border-violet-400" />
@@ -535,12 +576,12 @@ function ApplicantDrawer({
                           <button type="button"
                             disabled={!!sendingLetter[a.id] || (!sendChannels[a.id as string]?.email && !sendChannels[a.id as string]?.sms)}
                             onClick={() => handleSendLetter("ADDRESS", a.id as string)}
-                            className="px-2.5 py-1 text-[11px] font-medium bg-violet-600 text-white rounded-md hover:bg-violet-700 disabled:opacity-50">
+                            className="px-2.5 py-1 text-[13px] font-medium bg-violet-600 text-white rounded-md hover:bg-violet-700 disabled:opacity-50">
                             {sendingLetter[a.id] ? "Sending…" : "Send letter"}
                           </button>
                           <button type="button"
                             onClick={() => setLetterDrafts((prev) => { const next = { ...prev }; delete next[a.id as string]; return next; })}
-                            className="px-2.5 py-1 text-[11px] font-medium text-slate-500 hover:text-slate-700">
+                            className="px-2.5 py-1 text-[13px] font-medium text-slate-500 hover:text-slate-700">
                             Discard
                           </button>
                         </div>
@@ -555,8 +596,8 @@ function ApplicantDrawer({
           {/* Status */}
           <div>
             <div className="flex items-center justify-between mb-2">
-              <p className="text-[11px] uppercase tracking-wider text-slate-400 font-medium">Application status</p>
-              <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full whitespace-nowrap ${STATUS_STYLES[status]}`}>
+              <p className="text-[13px] uppercase tracking-wider text-slate-400 font-medium">Application status</p>
+              <span className={`text-[13px] font-medium px-2 py-0.5 rounded-full whitespace-nowrap ${STATUS_STYLES[status]}`}>
                 {STATUS_LABELS[status]}
               </span>
             </div>
@@ -578,7 +619,7 @@ function ApplicantDrawer({
                     </button>
                     {missingDraft && (
                       <div className="border border-amber-200 bg-amber-50/60 rounded-xl p-3 space-y-2 text-xs">
-                        <p className="text-[10px] uppercase tracking-wider text-amber-600 font-medium">AI-drafted message — review before sending</p>
+                        <p className="text-[12px] uppercase tracking-wider text-amber-600 font-medium">AI-drafted message — review before sending</p>
                         {missingError && <p className="text-red-600">{missingError}</p>}
                         <input value={missingDraft.subject}
                           onChange={e => setMissingDraft(d => d ? { ...d, subject: e.target.value } : d)}
@@ -603,11 +644,11 @@ function ApplicantDrawer({
                         <div className="flex gap-2">
                           <button type="button" disabled={sendingMissing || (!missingChannels.email && !missingChannels.sms)}
                             onClick={handleSendMissingMsg}
-                            className="px-2.5 py-1 text-[11px] font-medium bg-amber-600 text-white rounded-md hover:bg-amber-700 disabled:opacity-50">
+                            className="px-2.5 py-1 text-[13px] font-medium bg-amber-600 text-white rounded-md hover:bg-amber-700 disabled:opacity-50">
                             {sendingMissing ? "Sending…" : "Send to tenant"}
                           </button>
                           <button type="button" onClick={() => setMissingDraft(null)}
-                            className="px-2.5 py-1 text-[11px] font-medium text-slate-500 hover:text-slate-700">
+                            className="px-2.5 py-1 text-[13px] font-medium text-slate-500 hover:text-slate-700">
                             Discard
                           </button>
                         </div>
@@ -653,9 +694,28 @@ function ApplicantDrawer({
             </div>
           </div>
 
+          {/* Check reference emails */}
+          <div className="border border-slate-200 rounded-xl p-3 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <p className="text-[13px] font-semibold text-slate-800">Check reference emails</p>
+                <p className="text-[12px] text-slate-400">Scan inbox for replies from employer or landlord references and auto-summarize with AI</p>
+              </div>
+              <button type="button" onClick={handleCheckEmails} disabled={checkingEmails}
+                className="shrink-0 px-3 py-1.5 text-[13px] font-medium border border-violet-200 text-violet-700 rounded-lg hover:bg-violet-50 transition-colors disabled:opacity-50">
+                {checkingEmails ? "Checking…" : "Check now"}
+              </button>
+            </div>
+            {checkEmailResult && (
+              <p className={`text-[12px] ${checkEmailResult.ok ? "text-emerald-600" : "text-red-600"}`}>
+                {checkEmailResult.ok ? "✓ " : "✗ "}{checkEmailResult.message}
+              </p>
+            )}
+          </div>
+
           {/* Notes */}
           <div className="border-b border-slate-100 pb-1">
-            <SectionHeader id="notes" label="Notes" badge={notes.length > 0 ? <span className="bg-slate-100 text-slate-500 rounded-full px-1.5 py-0.5 text-[10px]">{notes.length}</span> : undefined} />
+            <SectionHeader id="notes" label="Notes" badge={notes.length > 0 ? <span className="bg-slate-100 text-slate-500 rounded-full px-1.5 py-0.5 text-[12px]">{notes.length}</span> : undefined} />
           </div>
           {openSections.has("notes") && (
           <div>
@@ -676,7 +736,7 @@ function ApplicantDrawer({
               {notes.map((n) => {
                 if (n.kind === "STATUS_CHANGE") {
                   return (
-                    <p key={n.id} className="text-[11px] text-slate-400 italic px-0.5">
+                    <p key={n.id} className="text-[13px] text-slate-400 italic px-0.5">
                       {n.note} — <span className="font-medium">{n.author_name}</span>, {new Date(n.created_at).toLocaleString()}
                     </p>
                   );
@@ -689,11 +749,11 @@ function ApplicantDrawer({
                     <p className="text-xs text-slate-700 whitespace-pre-wrap">{displayText}</p>
                     {isLong && (
                       <button type="button" onClick={() => toggleNoteExpanded(n.id)}
-                        className="text-[10px] font-medium text-violet-600 hover:text-violet-800 mt-1">
+                        className="text-[12px] font-medium text-violet-600 hover:text-violet-800 mt-1">
                         {isExpanded ? "Show less" : "Show more"}
                       </button>
                     )}
-                    <p className="text-[10px] text-slate-400 mt-1">{n.author_name} · {new Date(n.created_at).toLocaleString()}</p>
+                    <p className="text-[12px] text-slate-400 mt-1">{n.author_name} · {new Date(n.created_at).toLocaleString()}</p>
                   </div>
                 );
               })}
@@ -713,6 +773,8 @@ export default function ScreeningPage() {
   const [loading, setLoading] = useState(!MOCK_MODE);
   const [selected, setSelected] = useState<TenantOut | null>(null);
   const [statusFilter, setStatusFilter] = useState<"all" | AppStatus>("all");
+  const [checkingAllEmails, setCheckingAllEmails] = useState(false);
+  const [checkAllEmailResult, setCheckAllEmailResult] = useState<{ ok: boolean; message: string } | null>(null);
 
   useEffect(() => {
     if (MOCK_MODE) { setLoading(false); return; }
@@ -721,6 +783,23 @@ export default function ScreeningPage() {
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
+
+  async function handleCheckAllEmails() {
+    setCheckingAllEmails(true);
+    setCheckAllEmailResult(null);
+    try {
+      const res = await tenantsApi.checkReferenceEmailsNow();
+      setCheckAllEmailResult({ ok: res.ok, message: res.message });
+      if (res.ok && res.new_responses > 0) {
+        const ppl = await tenantsApi.listPersons();
+        setTenants(ppl);
+      }
+    } catch {
+      setCheckAllEmailResult({ ok: false, message: "Failed to check emails." });
+    } finally {
+      setCheckingAllEmails(false);
+    }
+  }
 
   const unitsById = useMemo(() => {
     const map: Record<string, UnitInfo> = {};
@@ -752,8 +831,22 @@ export default function ScreeningPage() {
       {/* Header */}
       <div className="flex items-end justify-between">
         <div>
-          <p className="text-[11px] uppercase tracking-widest text-slate-400 font-medium">Applicants</p>
+          <p className="text-[13px] uppercase tracking-widest text-slate-400 font-medium">Applicants</p>
           <h1 className="text-xl font-bold text-slate-900 mt-0.5">Tenant screening</h1>
+        </div>
+        <div className="flex flex-col items-end gap-1">
+          <button
+            onClick={handleCheckAllEmails}
+            disabled={checkingAllEmails}
+            className="px-4 py-2 rounded-lg text-sm font-medium bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+          >
+            {checkingAllEmails ? "Checking…" : "Check all tenant email now"}
+          </button>
+          {checkAllEmailResult && (
+            <p className={`text-xs ${checkAllEmailResult.ok ? "text-green-600" : "text-red-600"}`}>
+              {checkAllEmailResult.message}
+            </p>
+          )}
         </div>
       </div>
 
@@ -766,7 +859,7 @@ export default function ScreeningPage() {
           { label: "Declined", value: tenants.filter((t) => t.application_status === "DECLINED").length },
         ].map((k) => (
           <div key={k.label} className="bg-white rounded-xl border border-slate-200 px-5 py-4">
-            <p className="text-[11px] uppercase tracking-wider text-slate-400 font-medium">{k.label}</p>
+            <p className="text-[13px] uppercase tracking-wider text-slate-400 font-medium">{k.label}</p>
             <p className="text-2xl font-bold text-slate-900 mt-1">{k.value}</p>
           </div>
         ))}
@@ -815,7 +908,7 @@ export default function ScreeningPage() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-sm font-semibold text-slate-900 truncate">{t.full_name}</p>
-                    <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full whitespace-nowrap ${STATUS_STYLES[status]}`}>
+                    <span className={`text-[13px] font-medium px-2 py-0.5 rounded-full whitespace-nowrap ${STATUS_STYLES[status]}`}>
                       {STATUS_LABELS[status]}
                     </span>
                   </div>
@@ -830,8 +923,22 @@ export default function ScreeningPage() {
                 <span>{t.documents.length} doc{t.documents.length === 1 ? "" : "s"}</span>
               </div>
 
+              {(t.employer_ref_sent || t.landlord_ref_sent || t.tenant_notified) && (
+                <div className="flex flex-wrap gap-1 mt-2">
+                  {t.employer_ref_sent && (
+                    <span className="text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded-full">✓ Employer ref sent</span>
+                  )}
+                  {t.landlord_ref_sent && (
+                    <span className="text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded-full">✓ Landlord ref sent</span>
+                  )}
+                  {t.tenant_notified && (
+                    <span className="text-[11px] font-medium bg-blue-50 text-blue-700 border border-blue-200 px-1.5 py-0.5 rounded-full">✓ Tenant notified</span>
+                  )}
+                </div>
+              )}
+
               <div className="mt-3 text-right">
-                <span className="text-[11px] text-slate-400 hover:text-black font-medium">View report →</span>
+                <span className="text-[13px] text-slate-400 hover:text-black font-medium">View report →</span>
               </div>
             </div>
           );

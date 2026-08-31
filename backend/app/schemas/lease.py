@@ -62,6 +62,9 @@ class TenantOut(BaseModel):
     interested_unit_id: str | None = None
     personal_income_annual: float | None = None
     household_income_annual: float | None = None
+    employer_ref_sent: bool = False
+    landlord_ref_sent: bool = False
+    tenant_notified: bool = False
 
     model_config = {"from_attributes": True}
 

@@ -18,3 +18,4 @@ class LeaseTemplate(Base, TimestampMixin):
     original_name: Mapped[str] = mapped_column(String(512), nullable=False)
     file_path: Mapped[str] = mapped_column(String(512), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_active: Mapped[bool] = mapped_column(nullable=False, default=False)

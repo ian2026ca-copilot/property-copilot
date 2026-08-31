@@ -20,6 +20,9 @@ interface TenantRow {
   lease: LeaseOut | null;
   nextPayment: PaymentOut | null;
   docCount: number;
+  employerRefSent: boolean;
+  landlordRefSent: boolean;
+  tenantNotified: boolean;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -50,7 +53,7 @@ const PAYMENT_STATUS_LABEL: Record<string, { label: string; color: string }> = {
 function StatusBadge({ map, status }: { map: Record<string, { label: string; color: string }>; status: string }) {
   const s = map[status] ?? { label: status, color: "bg-slate-100 text-slate-500" };
   return (
-    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${s.color}`}>
+    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[12px] font-medium ${s.color}`}>
       {s.label}
     </span>
   );
@@ -136,7 +139,7 @@ function AddTenantModal({
             <div key={row.id} className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg border border-slate-100 hover:bg-slate-50">
               <div className="min-w-0">
                 <p className="text-xs font-medium text-slate-900 truncate">{row.name}</p>
-                <p className="text-[10px] text-slate-400 truncate">{row.email}</p>
+                <p className="text-[12px] text-slate-400 truncate">{row.email}</p>
               </div>
               <button
                 disabled={adding === row.id}
@@ -170,11 +173,11 @@ function TenantCard({
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="text-xs font-semibold text-slate-900 truncate">{row.name}</p>
-          <p className="text-[10px] text-slate-400 truncate">{row.email}</p>
-          {row.phone && <p className="text-[10px] text-slate-400">{row.phone}</p>}
+          <p className="text-[12px] text-slate-400 truncate">{row.email}</p>
+          {row.phone && <p className="text-[12px] text-slate-400">{row.phone}</p>}
         </div>
         <div className="flex items-center gap-1 shrink-0">
-          <span className={`text-[9px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-full ${
+          <span className={`text-[13px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-full ${
             row.kind === "renew" ? "bg-violet-100 text-violet-700" : "bg-sky-100 text-sky-700"
           }`}>
             {row.kind === "renew" ? "Renew" : "New"}
@@ -191,23 +194,36 @@ function TenantCard({
 
       {/* Screening */}
       <div className="space-y-1">
-        <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wide">Screening</p>
+        <p className="text-[12px] font-medium text-slate-400 uppercase tracking-wide">Screening</p>
         <StatusBadge map={SCREENING_LABEL} status={row.screeningStatus} />
+        {(row.employerRefSent || row.landlordRefSent || row.tenantNotified) && (
+          <div className="flex flex-wrap gap-1 pt-0.5">
+            {row.employerRefSent && (
+              <span className="text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded-full">✓ Employer ref sent</span>
+            )}
+            {row.landlordRefSent && (
+              <span className="text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded-full">✓ Landlord ref sent</span>
+            )}
+            {row.tenantNotified && (
+              <span className="text-[11px] font-medium bg-blue-50 text-blue-700 border border-blue-200 px-1.5 py-0.5 rounded-full">✓ Tenant notified</span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Lease */}
       {(stage === "lease" || stage === "payment" || stage === "done") && (
         <div className="space-y-1">
-          <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wide">Lease</p>
+          <p className="text-[12px] font-medium text-slate-400 uppercase tracking-wide">Lease</p>
           {row.lease ? (
             <div className="flex items-center gap-1.5 flex-wrap">
               <StatusBadge map={LEASE_STATUS_LABEL} status={row.lease.status} />
               {row.lease.signature_status && (
-                <span className="text-[10px] text-slate-400">sig: {row.lease.signature_status.toLowerCase()}</span>
+                <span className="text-[12px] text-slate-400">sig: {row.lease.signature_status.toLowerCase()}</span>
               )}
             </div>
           ) : (
-            <span className="text-[10px] text-slate-400">No lease yet</span>
+            <span className="text-[12px] text-slate-400">No lease yet</span>
           )}
         </div>
       )}
@@ -215,10 +231,10 @@ function TenantCard({
       {/* Payment */}
       {(stage === "payment" || stage === "done") && row.nextPayment && (
         <div className="space-y-1">
-          <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wide">Next payment</p>
+          <p className="text-[12px] font-medium text-slate-400 uppercase tracking-wide">Next payment</p>
           <div className="flex items-center gap-1.5 flex-wrap">
             <StatusBadge map={PAYMENT_STATUS_LABEL} status={row.nextPayment.status} />
-            <span className="text-[10px] text-slate-500">
+            <span className="text-[12px] text-slate-500">
               ${row.nextPayment.amount.toLocaleString()} · due {row.nextPayment.due_date}
             </span>
           </div>
@@ -227,16 +243,16 @@ function TenantCard({
 
       {/* Links */}
       <div className="flex items-center gap-1.5 pt-0.5 flex-wrap">
-        <Link href="/screening" className="text-[10px] font-medium text-violet-600 hover:underline">Screening</Link>
-        {row.lease && <Link href="/leases" className="text-[10px] font-medium text-violet-600 hover:underline">· Lease</Link>}
-        {row.nextPayment && <Link href="/payments" className="text-[10px] font-medium text-violet-600 hover:underline">· Payments</Link>}
+        <Link href="/screening" className="text-[12px] font-medium text-violet-600 hover:underline">Screening</Link>
+        {row.lease && <Link href="/leases" className="text-[12px] font-medium text-violet-600 hover:underline">· Lease</Link>}
+        {row.nextPayment && <Link href="/payments" className="text-[12px] font-medium text-violet-600 hover:underline">· Payments</Link>}
       </div>
 
       {/* AI auto-send */}
       {stage === "screening" && (
         <button
           onClick={() => onAIReview(row)}
-          className="w-full mt-1 px-2 py-1.5 text-[11px] font-medium border border-violet-200 text-violet-700 rounded-lg hover:bg-violet-50 transition-colors text-center"
+          className="w-full mt-1 px-2 py-1.5 text-[13px] font-medium border border-violet-200 text-violet-700 rounded-lg hover:bg-violet-50 transition-colors text-center"
         >
           ✨ AI auto-send
         </button>
@@ -262,7 +278,7 @@ function ConfirmRemoveDialog({
         <div>
           <h2 className="text-sm font-semibold text-slate-900">Remove from workflow?</h2>
           <p className="text-xs text-slate-500 mt-1">
-            <span className="font-medium text-slate-700">{row.name}</span> will be removed from the screening workflow. Their screening status will be reset to "Not started". You can add them back at any time.
+            <span className="font-medium text-slate-700">{row.name}</span> will be hidden from the workflow board. Use "Show hidden" to restore them at any time.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -286,6 +302,8 @@ function ConfirmRemoveDialog({
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
+const HIDDEN_KEY = "workflow_hidden_ids";
+
 export default function WorkflowPage() {
   const [allRows, setAllRows] = useState<TenantRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -293,8 +311,18 @@ export default function WorkflowPage() {
   const [filter, setFilter] = useState<"all" | "new" | "renew">("all");
   const [aiReviewTenant, setAiReviewTenant] = useState<TenantRow | null>(null);
   const [batchReviewTenants, setBatchReviewTenants] = useState<TenantRow[] | null>(null);
-  const [showAddModal, setShowAddModal] = useState(false);
   const [removingTenant, setRemovingTenant] = useState<TenantRow | null>(null);
+  const [hiddenIds, setHiddenIds] = useState<Set<string>>(() => {
+    try {
+      const saved = localStorage.getItem(HIDDEN_KEY);
+      return saved ? new Set(JSON.parse(saved)) : new Set();
+    } catch { return new Set(); }
+  });
+
+  function saveHidden(next: Set<string>) {
+    setHiddenIds(next);
+    localStorage.setItem(HIDDEN_KEY, JSON.stringify([...next]));
+  }
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -332,6 +360,9 @@ export default function WorkflowPage() {
           lease,
           nextPayment: lease ? (paymentByLease.get(lease.id) ?? null) : null,
           docCount: t.documents.length,
+          employerRefSent: t.employer_ref_sent,
+          landlordRefSent: t.landlord_ref_sent,
+          tenantNotified: t.tenant_notified,
         };
       });
 
@@ -345,29 +376,21 @@ export default function WorkflowPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Tenants in workflow = any status other than NOT_STARTED
-  const inWorkflow = allRows.filter(r => r.screeningStatus !== "NOT_STARTED");
-  // Tenants available to add = NOT_STARTED
-  const candidates = allRows.filter(r => r.screeningStatus === "NOT_STARTED");
-
-  async function handleAdd(row: TenantRow) {
-    await tenantsApi.updateScreening(row.id, { application_status: "IN_REVIEW" });
-    setAllRows(prev =>
-      prev.map(r => r.id === row.id ? { ...r, screeningStatus: "IN_REVIEW" } : r)
-    );
-  }
-
-  async function handleRemoveConfirmed() {
+  // All tenants show in workflow; hidden ones are tracked in localStorage
+  function handleRemoveConfirmed() {
     if (!removingTenant) return;
-    const id = removingTenant.id;
+    const next = new Set(hiddenIds);
+    next.add(removingTenant.id);
+    saveHidden(next);
     setRemovingTenant(null);
-    await tenantsApi.updateScreening(id, { application_status: "NOT_STARTED" });
-    setAllRows(prev =>
-      prev.map(r => r.id === id ? { ...r, screeningStatus: "NOT_STARTED" } : r)
-    );
   }
 
-  const visible = inWorkflow.filter(r => filter === "all" || r.kind === filter);
+  function restoreAll() {
+    saveHidden(new Set());
+  }
+
+  const hiddenCount = [...hiddenIds].filter(id => allRows.some(r => r.id === id)).length;
+  const visible = allRows.filter(r => !hiddenIds.has(r.id) && (filter === "all" || r.kind === filter));
   const byStage = (key: StageKey) => visible.filter(r => stageOf(r) === key);
 
   return (
@@ -394,15 +417,6 @@ export default function WorkflowPage() {
         />
       )}
 
-
-      {/* Add modal */}
-      {showAddModal && (
-        <AddTenantModal
-          candidates={candidates}
-          onAdd={handleAdd}
-          onClose={() => setShowAddModal(false)}
-        />
-      )}
 
       {/* Confirm remove */}
       {removingTenant && (
@@ -434,16 +448,15 @@ export default function WorkflowPage() {
               </button>
             ))}
           </div>
-          {/* Add tenant */}
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium bg-black text-white rounded-lg hover:bg-slate-800 transition-colors"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-            </svg>
-            Add tenant
-          </button>
+          {/* Restore hidden */}
+          {hiddenCount > 0 && (
+            <button
+              onClick={restoreAll}
+              className="px-3 py-2 text-xs font-medium text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+            >
+              Show {hiddenCount} hidden
+            </button>
+          )}
         </div>
       </div>
 
@@ -463,15 +476,15 @@ export default function WorkflowPage() {
                 <div className="mb-3">
                   <div className="flex items-center gap-2 mb-0.5">
                     <h2 className="text-xs font-semibold text-slate-900">{stage.label}</h2>
-                    <span className="bg-slate-200 text-slate-600 rounded-full px-1.5 py-0.5 text-[10px] font-medium">
+                    <span className="bg-slate-200 text-slate-600 rounded-full px-1.5 py-0.5 text-[12px] font-medium">
                       {cards.length}
                     </span>
                   </div>
-                  <p className="text-[10px] text-slate-400">{stage.description}</p>
+                  <p className="text-[12px] text-slate-400">{stage.description}</p>
                   {stage.key === "screening" && cards.length > 0 && (
                     <button
                       onClick={() => setBatchReviewTenants(cards)}
-                      className="mt-2 w-full px-2 py-1.5 text-[11px] font-medium border border-violet-200 text-violet-700 rounded-lg hover:bg-violet-50 transition-colors"
+                      className="mt-2 w-full px-2 py-1.5 text-[13px] font-medium border border-violet-200 text-violet-700 rounded-lg hover:bg-violet-50 transition-colors"
                     >
                       ✨ AI auto-send all ({cards.length})
                     </button>
@@ -480,7 +493,7 @@ export default function WorkflowPage() {
                 <div className="space-y-2">
                   {cards.length === 0 && (
                     <div className="border border-dashed border-slate-200 rounded-xl p-4 text-center">
-                      <p className="text-[11px] text-slate-400">No tenants here</p>
+                      <p className="text-[13px] text-slate-400">No tenants here</p>
                     </div>
                   )}
                   {cards.map(row => (

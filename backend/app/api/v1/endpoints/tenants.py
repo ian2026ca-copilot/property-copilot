@@ -6,6 +6,7 @@ from datetime import date, datetime, timedelta, timezone
 from email.utils import make_msgid
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, UploadFile, File, Query
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 from sqlalchemy.orm import selectinload, joinedload
@@ -17,6 +18,7 @@ from app.core.security import hash_password
 from app.core.email import send_reference_letter_email, send_registration_link_email
 from app.core.sms import send_sms
 from app.core.file_validation import validate_upload, IMAGES_ONLY, DOCS_AND_IMAGES
+from app.core.reference_email_checker import check_org_inbox
 from app.api.deps import get_current_user, require_min_role
 from app.models.user import User, OrganizationMember, UserRole, TenantDocument
 from app.models.profiles import TenantProfile
@@ -26,6 +28,7 @@ from app.models.organization import Organization
 from app.models.reference_check import ReferenceCheckRequest
 from app.models.password_reset import PasswordResetToken
 from app.models.invite_template import InviteTemplate
+from app.models.reference_template import ReferenceTemplate
 from app.models.tenant_application import (
     TenantAddressHistory, TenantEmployment, TenantIncomeSource,
     TenantOccupant, TenantCosigner, TenantPet, TenantVehicle, TenantScreeningNote,
@@ -89,7 +92,65 @@ async def _upsert_tenant_profile(db: AsyncSession, user_id, **fields) -> TenantP
     return profile
 
 
-def _tenant_to_out(user: User, docs: list[TenantDocument] | None = None) -> TenantOut:
+def _apply_template_replacements(text: str, replacements: dict) -> str:
+    """Replace both {curly} and [bracket] style placeholders (case-insensitive for brackets)."""
+    for k, v in replacements.items():
+        text = text.replace(k, v)
+    ref_name = replacements.get("{reference_name}", "")
+    tenant_name = replacements.get("{tenant_name}", replacements.get("{applicant_name}", ""))
+    bracket_map = {
+        # tenant
+        "tenant name": tenant_name,
+        "applicant name": tenant_name,
+        "tenant's name": tenant_name,
+        # reference / landlord / employer
+        "reference name": ref_name,
+        "employer name": ref_name,
+        "employer reference name": ref_name,
+        "landlord name": ref_name,
+        "landlord reference name": ref_name,
+        "previous landlord name": ref_name,
+        "landlord's name": ref_name,
+        # employment
+        "company": replacements.get("{company}", ""),
+        "company name": replacements.get("{company}", ""),
+        "position": replacements.get("{position}", ""),
+        "job title": replacements.get("{position}", ""),
+        "employment length": replacements.get("{employment_length}", ""),
+        # address / tenancy
+        "address": replacements.get("{address}", ""),
+        "street address": replacements.get("{street_address}", replacements.get("{address}", "")),
+        "city": replacements.get("{city}", ""),
+        "monthly rent": replacements.get("{monthly_rent}", ""),
+        "rent amount": replacements.get("{monthly_rent}", ""),
+        "move in date": replacements.get("{move_in_date}", ""),
+        "move out date": replacements.get("{move_out_date}", ""),
+        # org / owner
+        "organization name": replacements.get("{org_name}", ""),
+        "org name": replacements.get("{org_name}", ""),
+        "property management company": replacements.get("{org_name}", ""),
+        "owner name": replacements.get("{owner_name}", ""),
+        "landlord contact name": replacements.get("{owner_name}", ""),
+        "owner email": replacements.get("{owner_email}", ""),
+        "landlord email": replacements.get("{owner_email}", ""),
+        "owner phone": replacements.get("{owner_phone}", ""),
+        "landlord phone": replacements.get("{owner_phone}", ""),
+    }
+    import re
+    def _replace_bracket(m: re.Match) -> str:
+        key = m.group(1).strip().lower()
+        return bracket_map.get(key, m.group(0))
+    text = re.sub(r'\[([^\]]+)\]', _replace_bracket, text)
+    return text
+
+
+def _tenant_to_out(
+    user: User,
+    docs: list[TenantDocument] | None = None,
+    employer_ref_sent: bool = False,
+    landlord_ref_sent: bool = False,
+    tenant_notified: bool = False,
+) -> TenantOut:
     profile = user.tenant_profile
     return TenantOut(
         id=user.id,
@@ -110,6 +171,9 @@ def _tenant_to_out(user: User, docs: list[TenantDocument] | None = None) -> Tena
         interested_unit_id=str(profile.interested_unit_id) if profile and profile.interested_unit_id else None,
         personal_income_annual=profile.personal_income_annual if profile else None,
         household_income_annual=profile.household_income_annual if profile else None,
+        employer_ref_sent=employer_ref_sent,
+        landlord_ref_sent=landlord_ref_sent,
+        tenant_notified=tenant_notified,
     )
 
 
@@ -505,7 +569,37 @@ async def list_persons(
         .order_by(User.full_name)
     )
     users = result.scalars().all()
-    return [_tenant_to_out(u, u.tenant_documents) for u in users]
+    user_ids = [u.id for u in users]
+
+    # Bulk-fetch outreach notes for all tenants in one query
+    notes_result = await db.execute(
+        select(TenantScreeningNote.user_id, TenantScreeningNote.note)
+        .where(
+            TenantScreeningNote.organization_id == member.organization_id,
+            TenantScreeningNote.user_id.in_(user_ids),
+            TenantScreeningNote.kind == "NOTE",
+        )
+    )
+    outreach: dict[str, dict[str, bool]] = {}
+    for uid, note in notes_result.all():
+        uid_str = str(uid)
+        flags = outreach.setdefault(uid_str, {"employer": False, "landlord": False, "tenant": False})
+        if "(employer reference)" in note:
+            flags["employer"] = True
+        if "(landlord reference)" in note:
+            flags["landlord"] = True
+        if "requesting missing application info" in note:
+            flags["tenant"] = True
+
+    return [
+        _tenant_to_out(
+            u, u.tenant_documents,
+            employer_ref_sent=outreach.get(str(u.id), {}).get("employer", False),
+            landlord_ref_sent=outreach.get(str(u.id), {}).get("landlord", False),
+            tenant_notified=outreach.get(str(u.id), {}).get("tenant", False),
+        )
+        for u in users
+    ]
 
 
 @router.get("/person/{tenant_user_id}", response_model=TenantOut)
@@ -734,7 +828,7 @@ async def send_registration_link(
 # ── Invite templates ────────────────────────────────────────────────────────
 
 def _invite_template_to_out(t: InviteTemplate) -> InviteTemplateOut:
-    return InviteTemplateOut(id=str(t.id), name=t.name, body=t.body, created_at=t.created_at.isoformat())
+    return InviteTemplateOut(id=str(t.id), name=t.name, body=t.body, is_active=bool(t.is_active), created_at=t.created_at.isoformat())
 
 
 @router.get("/invite-templates", response_model=list[InviteTemplateOut])
@@ -809,6 +903,179 @@ async def delete_invite_template(
         raise HTTPException(status_code=404, detail="Template not found")
     await db.delete(t)
     await db.commit()
+
+
+@router.post("/invite-templates/{template_id}/activate", response_model=list[InviteTemplateOut])
+async def activate_invite_template(
+    template_id: str,
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
+    db: AsyncSession = Depends(get_db),
+):
+    _, member = current
+    result = await db.execute(
+        select(InviteTemplate).where(InviteTemplate.id == template_id, InviteTemplate.organization_id == member.organization_id)
+    )
+    t = result.scalar_one_or_none()
+    if not t:
+        raise HTTPException(status_code=404, detail="Template not found")
+    all_result = await db.execute(
+        select(InviteTemplate).where(InviteTemplate.organization_id == member.organization_id)
+    )
+    for tmpl in all_result.scalars().all():
+        tmpl.is_active = (tmpl.id == t.id)
+    await db.commit()
+    updated = await db.execute(
+        select(InviteTemplate).where(InviteTemplate.organization_id == member.organization_id).order_by(InviteTemplate.created_at.desc())
+    )
+    return [_invite_template_to_out(x) for x in updated.scalars().all()]
+
+
+# ─── Reference templates ──────────────────────────────────────────────────────
+
+class ReferenceTemplateOut(BaseModel):
+    id: str
+    kind: str
+    name: str
+    subject: str
+    body: str
+    is_active: bool
+    created_at: str
+
+class ReferenceTemplateCreate(BaseModel):
+    kind: str
+    name: str
+    subject: str = ""
+    body: str
+
+class ReferenceTemplateUpdate(BaseModel):
+    name: str | None = None
+    subject: str | None = None
+    body: str | None = None
+
+
+def _ref_tmpl_to_out(t: ReferenceTemplate) -> ReferenceTemplateOut:
+    return ReferenceTemplateOut(
+        id=str(t.id), kind=t.kind, name=t.name,
+        subject=t.subject or "", body=t.body,
+        is_active=bool(t.is_active),
+        created_at=t.created_at.isoformat() if t.created_at else "",
+    )
+
+
+@router.get("/reference-templates", response_model=list[ReferenceTemplateOut])
+async def list_reference_templates(
+    kind: str | None = None,
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
+    db: AsyncSession = Depends(get_db),
+):
+    _, member = current
+    q = select(ReferenceTemplate).where(ReferenceTemplate.organization_id == member.organization_id)
+    if kind:
+        q = q.where(ReferenceTemplate.kind == kind)
+    result = await db.execute(q.order_by(ReferenceTemplate.created_at.desc()))
+    return [_ref_tmpl_to_out(t) for t in result.scalars().all()]
+
+
+@router.post("/reference-templates", response_model=ReferenceTemplateOut, status_code=status.HTTP_201_CREATED)
+async def create_reference_template(
+    body: ReferenceTemplateCreate,
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
+    db: AsyncSession = Depends(get_db),
+):
+    _, member = current
+    if body.kind not in ("employer", "landlord"):
+        raise HTTPException(status_code=400, detail="kind must be 'employer' or 'landlord'")
+    t = ReferenceTemplate(
+        organization_id=member.organization_id,
+        kind=body.kind, name=body.name.strip(),
+        subject=body.subject.strip(), body=body.body.strip(),
+    )
+    db.add(t)
+    await db.commit()
+    await db.refresh(t)
+    return _ref_tmpl_to_out(t)
+
+
+@router.patch("/reference-templates/{template_id}", response_model=ReferenceTemplateOut)
+async def update_reference_template(
+    template_id: str,
+    body: ReferenceTemplateUpdate,
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
+    db: AsyncSession = Depends(get_db),
+):
+    _, member = current
+    result = await db.execute(
+        select(ReferenceTemplate).where(
+            ReferenceTemplate.id == template_id,
+            ReferenceTemplate.organization_id == member.organization_id,
+        )
+    )
+    t = result.scalar_one_or_none()
+    if not t:
+        raise HTTPException(status_code=404, detail="Template not found")
+    if body.name is not None:
+        t.name = body.name.strip()
+    if body.subject is not None:
+        t.subject = body.subject.strip()
+    if body.body is not None:
+        t.body = body.body.strip()
+    await db.commit()
+    await db.refresh(t)
+    return _ref_tmpl_to_out(t)
+
+
+@router.delete("/reference-templates/{template_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_reference_template(
+    template_id: str,
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
+    db: AsyncSession = Depends(get_db),
+):
+    _, member = current
+    result = await db.execute(
+        select(ReferenceTemplate).where(
+            ReferenceTemplate.id == template_id,
+            ReferenceTemplate.organization_id == member.organization_id,
+        )
+    )
+    t = result.scalar_one_or_none()
+    if not t:
+        raise HTTPException(status_code=404, detail="Template not found")
+    await db.delete(t)
+    await db.commit()
+
+
+@router.post("/reference-templates/{template_id}/activate", response_model=list[ReferenceTemplateOut])
+async def activate_reference_template(
+    template_id: str,
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
+    db: AsyncSession = Depends(get_db),
+):
+    _, member = current
+    result = await db.execute(
+        select(ReferenceTemplate).where(
+            ReferenceTemplate.id == template_id,
+            ReferenceTemplate.organization_id == member.organization_id,
+        )
+    )
+    t = result.scalar_one_or_none()
+    if not t:
+        raise HTTPException(status_code=404, detail="Template not found")
+    all_result = await db.execute(
+        select(ReferenceTemplate).where(
+            ReferenceTemplate.organization_id == member.organization_id,
+            ReferenceTemplate.kind == t.kind,
+        )
+    )
+    for tmpl in all_result.scalars().all():
+        tmpl.is_active = (tmpl.id == t.id)
+    await db.commit()
+    updated = await db.execute(
+        select(ReferenceTemplate).where(
+            ReferenceTemplate.organization_id == member.organization_id,
+            ReferenceTemplate.kind == t.kind,
+        ).order_by(ReferenceTemplate.created_at.desc())
+    )
+    return [_ref_tmpl_to_out(x) for x in updated.scalars().all()]
 
 
 @router.get("/person/{tenant_user_id}/application", response_model=TenantApplicationOut)
@@ -1131,6 +1398,32 @@ async def generate_reference_letter(
     reference_name = employment.employer_reference_name or "there"
     subject = f"Reference check for {applicant_name}"
 
+    # Use active employer reference template if one exists
+    tmpl_res = await db.execute(
+        select(ReferenceTemplate).where(
+            ReferenceTemplate.organization_id == member.organization_id,
+            ReferenceTemplate.kind == "employer",
+            ReferenceTemplate.is_active == True,
+        )
+    )
+    active_tmpl = tmpl_res.scalar_one_or_none()
+    if active_tmpl:
+        replacements = {
+            "{tenant_name}": applicant_name,
+            "{applicant_name}": applicant_name,
+            "{reference_name}": reference_name,
+            "{company}": employment.company or "",
+            "{position}": employment.position or "",
+            "{employment_length}": employment.employment_length or "",
+            "{org_name}": org_name,
+            "{owner_name}": owner_name,
+            "{owner_email}": owner_email,
+            "{owner_phone}": owner_phone,
+        }
+        letter_body = _apply_template_replacements(active_tmpl.body, replacements)
+        tmpl_subject = _apply_template_replacements(active_tmpl.subject or subject, replacements)
+        return EmployerReferenceLetterOut(subject=tmpl_subject, body=letter_body)
+
     owner_contact_parts = [owner_name, owner_email]
     if owner_phone:
         owner_contact_parts.append(owner_phone)
@@ -1326,6 +1619,36 @@ async def generate_landlord_reference_letter(
     reference_name = address.landlord_name or "there"
     subject = f"Reference check for {applicant_name}"
 
+    # Use active landlord reference template if one exists
+    tmpl_res = await db.execute(
+        select(ReferenceTemplate).where(
+            ReferenceTemplate.organization_id == member.organization_id,
+            ReferenceTemplate.kind == "landlord",
+            ReferenceTemplate.is_active == True,
+        )
+    )
+    active_tmpl = tmpl_res.scalar_one_or_none()
+    if active_tmpl:
+        address_str = ", ".join(filter(None, [address.street_address, address.city])) if address.street_address else ""
+        replacements = {
+            "{tenant_name}": applicant_name,
+            "{applicant_name}": applicant_name,
+            "{reference_name}": reference_name,
+            "{address}": address_str,
+            "{street_address}": address.street_address or "",
+            "{city}": address.city or "",
+            "{monthly_rent}": f"${address.monthly_rent:,.0f}" if address.monthly_rent else "",
+            "{move_in_date}": str(address.move_in_date) if address.move_in_date else "",
+            "{move_out_date}": str(address.move_out_date) if address.move_out_date else "",
+            "{org_name}": org_name,
+            "{owner_name}": owner_name,
+            "{owner_email}": owner_email,
+            "{owner_phone}": owner_phone,
+        }
+        letter_body = _apply_template_replacements(active_tmpl.body, replacements)
+        tmpl_subject = _apply_template_replacements(active_tmpl.subject or subject, replacements)
+        return EmployerReferenceLetterOut(subject=tmpl_subject, body=letter_body)
+
     context_parts = [
         f"Applicant name: {applicant_name}",
         f"Landlord reference name: {reference_name}",
@@ -1504,6 +1827,91 @@ async def update_reference_email_config(
         password_set=bool(org.reference_email_app_password),
         check_enabled=org.reference_email_check_enabled,
     )
+
+
+@router.post("/reference-email/test-connection")
+async def test_reference_email_connection(
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Test the saved IMAP credentials by opening a connection and logging in."""
+    import imaplib
+    _, member = current
+    org_res = await db.execute(select(Organization).where(Organization.id == member.organization_id))
+    org = org_res.scalar_one_or_none()
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    if not org.reference_email_imap_host:
+        raise HTTPException(status_code=400, detail="No IMAP host configured")
+    if not org.reference_email_app_password:
+        raise HTTPException(status_code=400, detail="No app password saved")
+    # Derive username from reply email or reference_reply_email field; fall back to owner email
+    _, member_user = current
+    user_res = await db.execute(select(User).where(User.id == member_user.user_id))
+    owner = user_res.scalar_one_or_none()
+    username = (org.reference_reply_email if hasattr(org, "reference_reply_email") and org.reference_reply_email else None) or (owner.email if owner else None)
+    if not username:
+        raise HTTPException(status_code=400, detail="Cannot determine IMAP username (no email on file)")
+    host = org.reference_email_imap_host
+    port = org.reference_email_imap_port or 993
+    password = org.reference_email_app_password
+    try:
+        import asyncio
+        def _connect():
+            mail = imaplib.IMAP4_SSL(host, port)
+            mail.login(username, password)
+            mail.logout()
+        await asyncio.get_event_loop().run_in_executor(None, _connect)
+    except imaplib.IMAP4.error as e:
+        raise HTTPException(status_code=400, detail=f"IMAP login failed: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Connection failed: {e}")
+    return {"ok": True, "message": f"Connected to {host}:{port} successfully"}
+
+
+@router.post("/reference-email/check-now")
+async def check_reference_emails_now(
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Manually trigger an IMAP inbox check for reference-reply emails right now.
+    Analyzes any matching replies with AI and logs them as screening notes.
+    Returns how many new responses were found and processed."""
+    _, member = current
+    org_res = await db.execute(select(Organization).where(Organization.id == member.organization_id))
+    org = org_res.scalar_one_or_none()
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    if not org.reference_email_imap_host:
+        raise HTTPException(status_code=400, detail="No IMAP host configured — set it up in Settings → Screening")
+    if not org.reference_email_app_password:
+        raise HTTPException(status_code=400, detail="No app password saved — set it up in Settings → Screening")
+    if not org.reference_reply_email:
+        raise HTTPException(status_code=400, detail="No reply-to email configured — set it up in Settings → Screening")
+    try:
+        # Count existing notes before the check to report how many new ones were added
+        from sqlalchemy import func
+        from app.models.tenant_application import TenantScreeningNote
+        count_before_res = await db.execute(
+            select(func.count()).select_from(TenantScreeningNote).where(
+                TenantScreeningNote.organization_id == member.organization_id,
+                TenantScreeningNote.author_name == "AI reference check",
+            )
+        )
+        count_before = count_before_res.scalar() or 0
+        await check_org_inbox(org, db)
+        count_after_res = await db.execute(
+            select(func.count()).select_from(TenantScreeningNote).where(
+                TenantScreeningNote.organization_id == member.organization_id,
+                TenantScreeningNote.author_name == "AI reference check",
+            )
+        )
+        count_after = count_after_res.scalar() or 0
+        new_count = count_after - count_before
+        return {"ok": True, "new_responses": new_count,
+                "message": f"Found {new_count} new reference response{'s' if new_count != 1 else ''}"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Email check failed: {str(e)}")
 
 
 @router.put("/person/{tenant_user_id}", response_model=TenantOut)

@@ -201,6 +201,7 @@ class InviteTemplateOut(BaseModel):
     id: str
     name: str
     body: str
+    is_active: bool = False
     created_at: str
 
 

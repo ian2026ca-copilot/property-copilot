@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
-import { profileApi, campaignsApi, leasesApi, tenantsApi, billingApi, type MarketingSiteOut, type DocuSignConfigOut, type ReferenceEmailConfigOut, type BillingStatusOut, type LeaseTemplateOut, type InviteTemplateOut } from "@/lib/api";
+import { profileApi, campaignsApi, leasesApi, tenantsApi, billingApi, type MarketingSiteOut, type DocuSignConfigOut, type ReferenceEmailConfigOut, type BillingStatusOut, type LeaseTemplateOut, type InviteTemplateOut, type ReferenceTemplateOut } from "@/lib/api";
 import { MOCK_MODE } from "@/lib/useApiData";
 import { LeaseTemplatesModal } from "@/components/LeaseTemplatesModal";
 
@@ -130,7 +130,7 @@ function ProfileTab() {
           <div>
             <label className="block text-xs font-medium text-slate-700 mb-1">Email</label>
             <p className="text-sm text-slate-500 border border-slate-100 bg-slate-50 rounded-lg px-3 py-2">{user?.email}</p>
-            <p className="text-[11px] text-slate-400 mt-1">Email cannot be changed</p>
+            <p className="text-[13px] text-slate-400 mt-1">Email cannot be changed</p>
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-700 mb-1">Full name</label>
@@ -150,7 +150,7 @@ function ProfileTab() {
               placeholder="+15550001234"
               className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black"
             />
-            <p className="text-[11px] text-slate-400 mt-1">International format, e.g. +15550001234</p>
+            <p className="text-[13px] text-slate-400 mt-1">International format, e.g. +15550001234</p>
           </div>
           {error && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
           {success && <p className="text-xs text-emerald-600 bg-emerald-50 rounded-lg px-3 py-2">Profile updated successfully</p>}
@@ -190,13 +190,13 @@ function ProfileTab() {
         ) : (
           <p className="text-sm text-slate-500">{user?.org_name}</p>
         )}
-        <p className="text-[11px] text-slate-400 mt-3">Role: {user?.role}</p>
+        <p className="text-[13px] text-slate-400 mt-3">Role: {user?.role}</p>
       </div>
 
       {user?.role === "OWNER" && (
         <div className="bg-white rounded-xl border border-slate-200 p-6">
           <h3 className="text-sm font-semibold text-slate-900 mb-1">Tenant &amp; vendor sign-up page</h3>
-          <p className="text-[11px] text-slate-400 mb-3">
+          <p className="text-[13px] text-slate-400 mb-3">
             Share this link so tenants and vendors can create their own account under {user?.org_name}.
           </p>
           <div className="flex items-center gap-2 mb-4">
@@ -225,7 +225,7 @@ function ProfileTab() {
                 className="flex-1 min-w-0 text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 outline-none focus:border-black"
               />
             </div>
-            <p className="text-[11px] text-slate-400">
+            <p className="text-[13px] text-slate-400">
               Lowercase letters, numbers, and hyphens only. Changing this will break any links you've already shared.
             </p>
             {slugError && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{slugError}</p>}
@@ -323,11 +323,11 @@ function MarketingTab() {
               {editingSiteId === site.id ? (
                 <div className="flex items-end gap-2">
                   <div className="flex-1">
-                    <label className="block text-[11px] font-medium text-slate-500 mb-0.5">Site name</label>
+                    <label className="block text-[13px] font-medium text-slate-500 mb-0.5">Site name</label>
                     <input value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))} className={inp} />
                   </div>
                   <div className="flex-1">
-                    <label className="block text-[11px] font-medium text-slate-500 mb-0.5">URL</label>
+                    <label className="block text-[13px] font-medium text-slate-500 mb-0.5">URL</label>
                     <input value={editForm.url} onChange={e => setEditForm(f => ({ ...f, url: e.target.value }))} className={inp} />
                   </div>
                   <button type="button" onClick={() => handleSaveEditSite(site.id)}
@@ -407,6 +407,8 @@ function ScreeningTab() {
   const [savingImap, setSavingImap] = useState(false);
   const [imapSuccess, setImapSuccess] = useState(false);
   const [imapError, setImapError] = useState("");
+  const [testingImap, setTestingImap] = useState(false);
+  const [testImapResult, setTestImapResult] = useState<{ ok: boolean; message: string } | null>(null);
 
   useEffect(() => {
     setCriminalEnabled(user?.screening_criminal_record_enabled ?? false);
@@ -483,6 +485,16 @@ function ScreeningTab() {
     } catch (e: unknown) {
       setImapError(e instanceof Error ? e.message : "Save failed");
     } finally { setSavingImap(false); }
+  }
+
+  async function handleTestImap() {
+    setTestingImap(true); setTestImapResult(null);
+    try {
+      const res = await tenantsApi.testImapConnection();
+      setTestImapResult(res);
+    } catch (e: unknown) {
+      setTestImapResult({ ok: false, message: e instanceof Error ? e.message : "Connection failed" });
+    } finally { setTestingImap(false); }
   }
 
   async function handleClearImapPassword() {
@@ -584,7 +596,7 @@ function ScreeningTab() {
 
       <form onSubmit={handleSaveImap} className="bg-white rounded-xl border border-slate-200 p-6 space-y-4">
         <div>
-          <h3 className="text-sm font-semibold text-slate-900">Automatic reference-reply checking</h3>
+          <h3 className="text-sm font-semibold text-slate-900">Automatic reference-reply checking email</h3>
           <p className="text-xs text-slate-400 mt-0.5">
             Connect the inbox above via IMAP and the app will check it periodically, match replies back to the
             reference request that was sent, and post an AI-summarized note on the applicant automatically —
@@ -625,15 +637,26 @@ function ScreeningTab() {
                 placeholder={imapConfig?.password_set ? "•••••••• (unchanged)" : "16-character app password"}
                 className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black"
               />
-              <p className="text-[11px] text-slate-400 mt-1">
+              <p className="text-[13px] text-slate-400 mt-1">
                 Not your regular password — generate a dedicated App Password from your Google Account
                 (Security → 2-Step Verification → App passwords) so this app never sees your real login.
               </p>
               {imapConfig?.password_set && (
-                <button type="button" onClick={handleClearImapPassword} disabled={savingImap}
-                  className="text-[11px] text-red-600 hover:text-red-700 font-medium mt-1 disabled:opacity-50">
-                  Remove saved password
-                </button>
+                <div className="flex items-center gap-3 mt-1 flex-wrap">
+                  <button type="button" onClick={handleClearImapPassword} disabled={savingImap}
+                    className="text-[13px] text-red-600 hover:text-red-700 font-medium disabled:opacity-50">
+                    Remove saved password
+                  </button>
+                  <button type="button" onClick={handleTestImap} disabled={testingImap || savingImap}
+                    className="text-[13px] text-violet-600 hover:text-violet-800 font-medium border border-violet-200 px-2.5 py-1 rounded-lg hover:bg-violet-50 transition-colors disabled:opacity-50">
+                    {testingImap ? "Testing…" : "Test connection"}
+                  </button>
+                </div>
+              )}
+              {testImapResult && (
+                <p className={`text-[13px] mt-1 ${testImapResult.ok ? "text-emerald-600" : "text-red-600"}`}>
+                  {testImapResult.ok ? "✓ " : "✗ "}{testImapResult.message}
+                </p>
               )}
             </div>
 
@@ -645,7 +668,7 @@ function ScreeningTab() {
                 className="mt-0.5"
               />
               <span>
-                <span className="block text-sm font-medium text-slate-900">Enable automatic reply checking</span>
+                <span className="block text-sm font-medium text-slate-900">Enable automatic check email</span>
                 <span className="block text-xs text-slate-400 mt-0.5">
                   Off by default. Turn on once the fields above are saved.
                 </span>
@@ -797,7 +820,7 @@ function DocuSignTab() {
                     <span className="font-medium">{status.account.account_name ?? "Unknown"}</span>
                     {status.account.account_id ? ` · ${status.account.account_id}` : ""}
                   </p>
-                  <p className="text-[11px] text-slate-400">
+                  <p className="text-[13px] text-slate-400">
                     {status.account.is_sandbox ? "Sandbox (demo) environment" : "Production environment"}
                   </p>
                 </div>
@@ -874,7 +897,7 @@ function DocuSignTab() {
           <input value={form.integration_key} onChange={(e) => setForm((f) => ({ ...f, integration_key: e.target.value }))}
             placeholder="e.g. a3327593-a611-4bb1-aada-3687c8a66cb4"
             className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black" />
-          <p className="text-[11px] text-slate-400 mt-1">
+          <p className="text-[13px] text-slate-400 mt-1">
             In the DocuSign Admin console, go to <span className="font-medium">Apps and Keys</span> and click
             <span className="font-medium"> Add App and Integration Key</span>. The key it generates (a GUID) is this value.
           </p>
@@ -885,7 +908,7 @@ function DocuSignTab() {
           <input value={form.account_id} onChange={(e) => setForm((f) => ({ ...f, account_id: e.target.value }))}
             placeholder="Your DocuSign API Account ID"
             className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black" />
-          <p className="text-[11px] text-slate-400 mt-1">
+          <p className="text-[13px] text-slate-400 mt-1">
             Shown at the top of the same <span className="font-medium">Apps and Keys</span> page, next to your
             account name (also visible under your DocuSign profile menu → Settings).
           </p>
@@ -896,7 +919,7 @@ function DocuSignTab() {
           <input value={form.user_id} onChange={(e) => setForm((f) => ({ ...f, user_id: e.target.value }))}
             placeholder="The GUID of the DocuSign user the integration impersonates"
             className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black" />
-          <p className="text-[11px] text-slate-400 mt-1">
+          <p className="text-[13px] text-slate-400 mt-1">
             The GUID of the DocuSign user your integration signs in as — find it under
             <span className="font-medium"> Apps and Keys → your user's name</span>, or your profile's
             <span className="font-medium"> API Username</span> field. This is who needs to click "Allow" during Connect.
@@ -910,14 +933,14 @@ function DocuSignTab() {
           <textarea value={form.private_key} onChange={(e) => setForm((f) => ({ ...f, private_key: e.target.value }))} rows={5}
             placeholder={config?.private_key_set ? "•••••••• (unchanged)" : "-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----"}
             className="w-full text-xs font-mono border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black resize-none" />
-          <p className="text-[11px] text-slate-400 mt-1">
+          <p className="text-[13px] text-slate-400 mt-1">
             On your integration key's row in <span className="font-medium">Apps and Keys</span>, choose
             <span className="font-medium"> Actions → Generate RSA</span>. DocuSign shows the private key only once —
             copy the whole block, including the BEGIN/END lines, right away.
           </p>
           {config?.private_key_set && (
             <button type="button" onClick={handleClearKey} disabled={saving}
-              className="text-[11px] text-red-600 hover:text-red-700 font-medium mt-1 disabled:opacity-50">
+              className="text-[13px] text-red-600 hover:text-red-700 font-medium mt-1 disabled:opacity-50">
               Remove saved key
             </button>
           )}
@@ -960,6 +983,7 @@ function InviteTemplateTab() {
   const [templates, setTemplates] = useState<InviteTemplateOut[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [activatingInvite, setActivatingInvite] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState("");
@@ -1004,6 +1028,16 @@ function InviteTemplateTab() {
     } finally { setSaving(false); }
   }
 
+  async function handleActivateInvite(id: string) {
+    setActivatingInvite(id); setError("");
+    try {
+      const updated = await tenantsApi.activateInviteTemplate(id);
+      setTemplates(updated);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to set active");
+    } finally { setActivatingInvite(null); }
+  }
+
   async function handleDelete(id: string, templateName: string) {
     if (!confirm(`Delete template "${templateName}"?`)) return;
     setDeleting(id); setError("");
@@ -1034,10 +1068,19 @@ function InviteTemplateTab() {
         ) : templates.length > 0 && (
           <ul className="space-y-2">
             {templates.map(t => (
-              <li key={t.id} className={`p-3 border rounded-xl transition-colors ${editingId === t.id ? "border-black" : "border-slate-200 hover:border-slate-300"}`}>
+              <li key={t.id} className={`p-3 border rounded-xl transition-colors ${editingId === t.id ? "border-black" : t.is_active ? "border-violet-300 bg-violet-50/50" : "border-slate-200 hover:border-slate-300"}`}>
                 <div className="flex items-start justify-between gap-2">
-                  <p className="text-sm font-medium text-slate-900">{t.name}</p>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <p className="text-sm font-medium text-slate-900 truncate">{t.name}</p>
+                    {t.is_active && <span className="shrink-0 text-[11px] font-medium bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded-full">Active</span>}
+                  </div>
                   <div className="flex items-center gap-1 shrink-0">
+                    {!t.is_active && (
+                      <button onClick={() => handleActivateInvite(t.id)} disabled={activatingInvite === t.id}
+                        className="text-[12px] text-violet-600 hover:text-violet-800 px-2 py-1 rounded-lg hover:bg-violet-50 transition-colors disabled:opacity-40">
+                        {activatingInvite === t.id ? "…" : "Set active"}
+                      </button>
+                    )}
                     <button onClick={() => openEditForm(t)}
                       className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors">
                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1077,7 +1120,7 @@ function InviteTemplateTab() {
                 placeholder={DEFAULT_INVITE_TEMPLATE}
                 className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black resize-none font-mono"
               />
-              <p className="text-[11px] text-slate-400 mt-1.5">
+              <p className="text-[13px] text-slate-400 mt-1.5">
                 Placeholders: <code className="bg-slate-100 px-1 rounded">{"{tenant_name}"}</code>{" "}
                 <code className="bg-slate-100 px-1 rounded">{"{org_name}"}</code>{" "}
                 <code className="bg-slate-100 px-1 rounded">{"{email}"}</code>{" "}
@@ -1115,6 +1158,7 @@ function LeaseTemplateTab() {
   const [templates, setTemplates] = useState<LeaseTemplateOut[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [activatingLease, setActivatingLease] = useState<string | null>(null);
   const [error, setError] = useState("");
 
   function loadTemplates() {
@@ -1123,6 +1167,16 @@ function LeaseTemplateTab() {
   }
 
   useEffect(() => { loadTemplates(); }, []);
+
+  async function handleActivateLease(id: string) {
+    setActivatingLease(id); setError("");
+    try {
+      const updated = await leasesApi.activateTemplate(id);
+      setTemplates(updated);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to set active");
+    } finally { setActivatingLease(null); }
+  }
 
   async function handleDelete(id: string, name: string) {
     if (!confirm(`Delete template "${name}"?`)) return;
@@ -1153,27 +1207,38 @@ function LeaseTemplateTab() {
         ) : templates.length > 0 && (
           <ul className="space-y-2">
             {templates.map(t => (
-              <li key={t.id} className="flex items-start gap-3 p-3 border border-slate-200 rounded-xl hover:border-slate-300 transition-colors">
+              <li key={t.id} className={`flex items-start gap-3 p-3 border rounded-xl transition-colors ${t.is_active ? "border-violet-300 bg-violet-50/50" : "border-slate-200 hover:border-slate-300"}`}>
                 <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center shrink-0 text-slate-500">
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
                   </svg>
                 </div>
                 <div className="flex-1 min-w-0">
-                  <a href={t.url} target="_blank" rel="noopener noreferrer"
-                    className="text-sm font-medium text-slate-900 hover:text-blue-600 hover:underline block truncate">
-                    {t.name}
-                  </a>
+                  <div className="flex items-center gap-2">
+                    <a href={t.url} target="_blank" rel="noopener noreferrer"
+                      className="text-sm font-medium text-slate-900 hover:text-blue-600 hover:underline truncate">
+                      {t.name}
+                    </a>
+                    {t.is_active && <span className="shrink-0 text-[11px] font-medium bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded-full">Active</span>}
+                  </div>
                   {t.description && <p className="text-xs text-slate-500 mt-0.5 truncate">{t.description}</p>}
                 </div>
-                <button onClick={() => handleDelete(t.id, t.name)} disabled={deleting === t.id}
-                  className="p-1.5 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-500 transition-colors shrink-0 disabled:opacity-50">
-                  {deleting === t.id ? <span className="text-xs">…</span> : (
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                    </svg>
+                <div className="flex items-center gap-1 shrink-0">
+                  {!t.is_active && (
+                    <button onClick={() => handleActivateLease(t.id)} disabled={activatingLease === t.id}
+                      className="text-[12px] text-violet-600 hover:text-violet-800 px-2 py-1 rounded-lg hover:bg-violet-50 transition-colors disabled:opacity-40">
+                      {activatingLease === t.id ? "…" : "Set active"}
+                    </button>
                   )}
-                </button>
+                  <button onClick={() => handleDelete(t.id, t.name)} disabled={deleting === t.id}
+                    className="p-1.5 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-500 transition-colors disabled:opacity-50">
+                    {deleting === t.id ? <span className="text-xs">…</span> : (
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    )}
+                  </button>
+                </div>
               </li>
             ))}
           </ul>
@@ -1338,28 +1403,265 @@ function BillingTab({ showWelcome }: { showWelcome: boolean }) {
   );
 }
 
+// ─── Reference Template Tab (shared for employer & landlord) ─────────────────
+
+const DEFAULT_LANDLORD_TEMPLATE = {
+  name: "Standard Landlord Reference Check",
+  subject: "Rental Reference Request for [Tenant Name]",
+  body: `Dear [Landlord Name],
+
+I am writing on behalf of [Tenant Name], who has applied to rent a property with our organization and has listed you as a previous landlord reference.
+
+We would greatly appreciate your assistance in verifying the following:
+
+1. Tenancy dates: From ________ to ________
+2. Monthly rent amount: $________
+3. Did the tenant pay rent on time? Yes / No / Sometimes
+4. Did the tenant keep the property in good condition? Yes / No
+5. Were there any noise complaints or disputes? Yes / No
+6. Did the tenant comply with the lease terms? Yes / No
+7. Would you rent to this tenant again? Yes / No
+8. Any additional comments:
+
+________________________________________
+
+All responses will be kept strictly confidential and used solely for tenancy evaluation purposes.
+
+Please reply to this email at your earliest convenience. If you have any questions, do not hesitate to contact us.
+
+Thank you for your time.
+
+Sincerely,
+[Owner Name]
+[Organization Name]
+[Owner Email] | [Owner Phone]`,
+};
+
+const DEFAULT_EMPLOYER_TEMPLATE = {
+  name: "Standard Employer Reference Check",
+  subject: "Employment Reference Request for [Tenant Name]",
+  body: `Dear [Employer Name],
+
+I am writing on behalf of [Tenant Name], who has applied to rent a property with our organization and has listed you as an employment reference.
+
+We would greatly appreciate your assistance in verifying the following:
+
+1. Employment dates: From ________ to ________
+2. Job title / position: ________
+3. Is the employment current? Yes / No
+4. Annual salary or hourly rate: $________
+5. Is their income stable and regular? Yes / No
+6. Any additional comments:
+
+________________________________________
+
+All responses will be kept strictly confidential and used solely for tenancy evaluation purposes.
+
+Please reply to this email at your earliest convenience.
+
+Thank you for your time.
+
+Sincerely,
+[Owner Name]
+[Organization Name]
+[Owner Email] | [Owner Phone]`,
+};
+
+function ReferenceTemplateTab({ kind }: { kind: "employer" | "landlord" }) {
+  const [templates, setTemplates] = useState<ReferenceTemplateOut[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [formOpen, setFormOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [name, setName] = useState("");
+  const [subject, setSubject] = useState("");
+  const [body, setBody] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [activating, setActivating] = useState<string | null>(null);
+  const [error, setError] = useState("");
+
+  const defaultTemplate = kind === "landlord" ? DEFAULT_LANDLORD_TEMPLATE : DEFAULT_EMPLOYER_TEMPLATE;
+
+  function load() {
+    setLoading(true);
+    tenantsApi.listReferenceTemplates(kind).then(setTemplates).catch(() => {}).finally(() => setLoading(false));
+  }
+
+  useEffect(() => { load(); }, [kind]);
+
+  function openCreate() {
+    setFormOpen(true); setEditingId(null); setName(""); setSubject(""); setBody(""); setError("");
+  }
+  function openEdit(t: ReferenceTemplateOut) {
+    setFormOpen(true); setEditingId(t.id); setName(t.name); setSubject(t.subject); setBody(t.body); setError("");
+  }
+  function closeForm() {
+    setFormOpen(false); setEditingId(null); setName(""); setSubject(""); setBody(""); setError("");
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!name.trim() || !body.trim()) { setError("Name and message body are required."); return; }
+    setSaving(true); setError("");
+    try {
+      if (editingId) {
+        const t = await tenantsApi.updateReferenceTemplate(editingId, name.trim(), subject.trim(), body.trim());
+        setTemplates(prev => prev.map(x => x.id === editingId ? t : x));
+      } else {
+        const t = await tenantsApi.createReferenceTemplate(kind, name.trim(), subject.trim(), body.trim());
+        setTemplates(prev => [t, ...prev]);
+      }
+      closeForm();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Save failed");
+    } finally { setSaving(false); }
+  }
+
+  async function handleActivate(id: string) {
+    setActivating(id); setError("");
+    try {
+      const updated = await tenantsApi.activateReferenceTemplate(id);
+      setTemplates(updated);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to set active");
+    } finally { setActivating(null); }
+  }
+
+  async function handleDelete(id: string, tname: string) {
+    if (!confirm(`Delete template "${tname}"?`)) return;
+    setDeleting(id);
+    try {
+      await tenantsApi.deleteReferenceTemplate(id);
+      setTemplates(prev => prev.filter(t => t.id !== id));
+      if (editingId === id) closeForm();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Delete failed");
+    } finally { setDeleting(null); }
+  }
+
+  const kindLabel = kind === "employer" ? "Employer reference" : "Landlord reference";
+
+  return (
+    <div className="max-w-lg space-y-6">
+      <div className="bg-white rounded-xl border border-slate-200 p-6 space-y-4">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-900">{kindLabel} letter templates</h3>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Save reusable letter templates for {kindLabel.toLowerCase()} checks — AI will use these as a base when drafting reference letters.
+          </p>
+        </div>
+
+        {error && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
+
+        {loading ? (
+          <p className="text-xs text-slate-400 py-2">Loading…</p>
+        ) : templates.length > 0 && (
+          <ul className="space-y-2">
+            {templates.map(t => (
+              <li key={t.id} className={`p-3 border rounded-xl transition-colors ${editingId === t.id ? "border-black" : t.is_active ? "border-violet-300 bg-violet-50/50" : "border-slate-200 hover:border-slate-300"}`}>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="text-xs font-semibold text-slate-900 truncate">{t.name}</p>
+                      {t.is_active && (
+                        <span className="shrink-0 text-[11px] font-medium bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded-full">Active</span>
+                      )}
+                    </div>
+                    {t.subject && <p className="text-[12px] text-slate-500 truncate mt-0.5">Subject: {t.subject}</p>}
+                    <p className="text-[12px] text-slate-400 mt-0.5 line-clamp-2">{t.body}</p>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {!t.is_active && (
+                      <button onClick={() => handleActivate(t.id)} disabled={activating === t.id}
+                        className="text-[12px] text-violet-600 hover:text-violet-800 px-2 py-1 rounded-lg hover:bg-violet-50 transition-colors disabled:opacity-40">
+                        {activating === t.id ? "…" : "Set active"}
+                      </button>
+                    )}
+                    <button onClick={() => openEdit(t)} className="text-[12px] text-slate-500 hover:text-slate-800 px-2 py-1 rounded-lg hover:bg-slate-100 transition-colors">Edit</button>
+                    <button disabled={deleting === t.id} onClick={() => handleDelete(t.id, t.name)} className="text-[12px] text-red-500 hover:text-red-700 px-2 py-1 rounded-lg hover:bg-red-50 transition-colors disabled:opacity-40">
+                      {deleting === t.id ? "…" : "Delete"}
+                    </button>
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {!formOpen ? (
+          <div className="flex gap-2">
+            <button onClick={openCreate} className="flex-1 py-2 text-xs font-medium border border-dashed border-slate-300 text-slate-500 rounded-xl hover:border-slate-400 hover:text-slate-700 transition-colors">
+              + New template
+            </button>
+            <button type="button"
+              onClick={() => { setFormOpen(true); setEditingId(null); setName(defaultTemplate.name); setSubject(defaultTemplate.subject); setBody(defaultTemplate.body); setError(""); }}
+              className="px-3 py-2 text-xs font-medium border border-violet-200 bg-violet-50 text-violet-700 rounded-xl hover:bg-violet-100 hover:border-violet-300 transition-colors">
+              Use standard template
+            </button>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="space-y-3 border border-slate-200 rounded-xl p-4">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs font-semibold text-slate-700">{editingId ? "Edit template" : "New template"}</p>
+              {!editingId && (
+                <button type="button"
+                  onClick={() => { setName(defaultTemplate.name); setSubject(defaultTemplate.subject); setBody(defaultTemplate.body); }}
+                  className="text-[12px] text-violet-700 hover:text-violet-900 font-medium">
+                  Use standard template
+                </button>
+              )}
+            </div>
+            <div>
+              <label className="text-[12px] text-slate-500 font-medium">Template name</label>
+              <input autoFocus value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Standard employer check"
+                className="w-full mt-1 text-xs border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black" />
+            </div>
+            <div>
+              <label className="text-[12px] text-slate-500 font-medium">Email subject</label>
+              <input value={subject} onChange={e => setSubject(e.target.value)} placeholder="e.g. Reference check request for [Tenant Name]"
+                className="w-full mt-1 text-xs border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black" />
+            </div>
+            <div>
+              <label className="text-[12px] text-slate-500 font-medium">Letter body</label>
+              <textarea rows={7} value={body} onChange={e => setBody(e.target.value)} placeholder="Dear [Name],&#10;&#10;We are writing to verify..."
+                className="w-full mt-1 text-xs border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black resize-none" />
+            </div>
+            {error && <p className="text-xs text-red-600">{error}</p>}
+            <div className="flex gap-2">
+              <button type="submit" disabled={saving} className="px-4 py-2 text-xs font-semibold bg-black text-white rounded-lg hover:bg-slate-800 disabled:opacity-50 transition-colors">
+                {saving ? "Saving…" : editingId ? "Save changes" : "Create template"}
+              </button>
+              <button type="button" onClick={closeForm} className="px-4 py-2 text-xs font-medium text-slate-600 hover:text-slate-800 transition-colors">Cancel</button>
+            </div>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
   const searchParams = useSearchParams();
-  const [tab, setTab] = useState<"profile" | "roles" | "marketing" | "screening" | "docusign" | "template" | "lease-template" | "billing">("profile");
+  const [tab, setTab] = useState<"profile" | "roles" | "marketing" | "screening" | "docusign" | "template" | "lease-template" | "employer-template" | "landlord-template" | "billing">("profile");
 
   useEffect(() => {
     const t = searchParams.get("tab");
-    if (t === "roles" || t === "marketing" || t === "profile" || t === "screening" || t === "docusign" || t === "template" || t === "lease-template" || t === "billing") setTab(t);
+    if (t === "roles" || t === "marketing" || t === "profile" || t === "screening" || t === "docusign" || t === "template" || t === "lease-template" || t === "employer-template" || t === "landlord-template" || t === "billing") setTab(t);
   }, [searchParams]);
 
   return (
     <div className="max-w-[960px] mx-auto px-6 py-6 space-y-6">
       {/* Header */}
       <div>
-        <p className="text-[11px] uppercase tracking-widest text-slate-400 font-medium">Account</p>
+        <p className="text-[13px] uppercase tracking-widest text-slate-400 font-medium">Account</p>
         <h1 className="text-xl font-bold text-slate-900 mt-0.5">Settings</h1>
       </div>
 
       {/* Tabs */}
       <div className="flex gap-1 border-b border-slate-200">
-        {(["profile", "roles", "marketing", "screening", "docusign", "template", "lease-template", "billing"] as const).map((t) => (
+        {(["profile", "roles", "marketing", "screening", "docusign", "template", "lease-template", "employer-template", "landlord-template", "billing"] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -1367,7 +1669,7 @@ export default function SettingsPage() {
               tab === t ? "border-black text-slate-900" : "border-transparent text-slate-500 hover:text-slate-700"
             }`}
           >
-            {t === "profile" ? "My profile" : t === "roles" ? "Role guide" : t === "marketing" ? "Marketing" : t === "screening" ? "Screening" : t === "docusign" ? "DocuSign" : t === "template" ? "Invite tenant template" : t === "lease-template" ? "Lease agreement template" : "Billing"}
+            {t === "profile" ? "My profile" : t === "roles" ? "Role guide" : t === "marketing" ? "Marketing" : t === "screening" ? "Screening" : t === "docusign" ? "DocuSign" : t === "template" ? "Invite template" : t === "lease-template" ? "Lease template" : t === "employer-template" ? "Employer ref template" : t === "landlord-template" ? "Landlord ref template" : "Billing"}
           </button>
         ))}
       </div>
@@ -1390,6 +1692,12 @@ export default function SettingsPage() {
       {/* Lease agreement template tab */}
       {tab === "lease-template" && <LeaseTemplateTab />}
 
+      {/* Employer reference template tab */}
+      {tab === "employer-template" && <ReferenceTemplateTab kind="employer" />}
+
+      {/* Landlord reference template tab */}
+      {tab === "landlord-template" && <ReferenceTemplateTab kind="landlord" />}
+
       {/* Billing tab */}
       {tab === "billing" && <BillingTab showWelcome={searchParams.get("welcome") === "1"} />}
 
@@ -1399,7 +1707,7 @@ export default function SettingsPage() {
           {(["OWNER", "TENANT", "VENDOR"] as const).map((r) => (
             <div key={r} className="bg-white rounded-xl border border-slate-200 p-5">
               <div className="flex items-center gap-3 mb-3">
-                <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full ${ROLE_STYLES[r]}`}>
+                <span className={`text-[13px] font-semibold px-2.5 py-1 rounded-full ${ROLE_STYLES[r]}`}>
                   {ROLE_LABELS[r]}
                 </span>
               </div>

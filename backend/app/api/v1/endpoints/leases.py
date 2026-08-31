@@ -14,6 +14,7 @@ from sqlalchemy.orm import selectinload
 from app.core.database import get_db
 from app.core.ai_client import generate_ai_text
 from app.core.file_validation import validate_upload, DOCS_AND_IMAGES
+from app.core.ai_rate_limit import check_ai_rate_limit
 from app.api.deps import get_current_user, require_min_role
 from app.models.user import User, OrganizationMember, UserRole, TenantDocument
 from app.models.profiles import TenantProfile
@@ -164,6 +165,7 @@ class LeaseTemplateOut(BaseModel):
     original_name: str
     description: Optional[str]
     url: str
+    is_active: bool = False
     created_at: str
 
     class Config:
@@ -291,6 +293,7 @@ async def list_lease_templates(
             original_name=t.original_name,
             description=t.description,
             url=_template_url(t.file_path),
+            is_active=bool(t.is_active),
             created_at=t.created_at.isoformat(),
         )
         for t in templates
@@ -334,6 +337,7 @@ async def upload_lease_template(
 
 @router.post("/templates/ai-generate", response_model=LeaseTemplateOut, status_code=201)
 async def ai_generate_lease_template(
+    _rl: None = Depends(check_ai_rate_limit),
     province: str = Form(...),
     lease_type: str = Form("Fixed-term"),
     property_type: str = Form("Residential Apartment"),
@@ -463,6 +467,43 @@ async def delete_lease_template(
         pass
     await db.delete(tmpl)
     await db.commit()
+
+
+@router.post("/templates/{template_id}/activate", response_model=list[LeaseTemplateOut])
+async def activate_lease_template(
+    template_id: str,
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
+    db: AsyncSession = Depends(get_db),
+):
+    _, member = current
+    result = await db.execute(
+        select(LeaseTemplate).where(
+            LeaseTemplate.id == template_id,
+            LeaseTemplate.organization_id == member.organization_id,
+        )
+    )
+    tmpl = result.scalar_one_or_none()
+    if not tmpl:
+        raise HTTPException(status_code=404, detail="Template not found")
+    all_result = await db.execute(
+        select(LeaseTemplate).where(LeaseTemplate.organization_id == member.organization_id)
+    )
+    for t in all_result.scalars().all():
+        t.is_active = (t.id == tmpl.id)
+    await db.commit()
+    updated = await db.execute(
+        select(LeaseTemplate)
+        .where(LeaseTemplate.organization_id == member.organization_id)
+        .order_by(LeaseTemplate.created_at.desc())
+    )
+    return [
+        LeaseTemplateOut(
+            id=str(t.id), name=t.name, original_name=t.original_name,
+            description=t.description, url=_template_url(t.file_path),
+            is_active=bool(t.is_active), created_at=t.created_at.isoformat(),
+        )
+        for t in updated.scalars().all()
+    ]
 
 
 @router.get("/{lease_id}", response_model=LeaseOut)
@@ -750,6 +791,7 @@ async def delete_lease_document(
 async def generate_lease_document(
     lease_id: str,
     body: dict,
+    _rl: None = Depends(check_ai_rate_limit),
     current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
     db: AsyncSession = Depends(get_db),
 ):

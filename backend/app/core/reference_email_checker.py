@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.ai_client import generate_ai_text
 from app.models.organization import Organization
 from app.models.reference_check import ReferenceCheckRequest
-from app.models.tenant_application import TenantScreeningNote
+from app.models.tenant_application import TenantScreeningNote, TenantEmployment, TenantAddressHistory
 
 _QUOTE_MARKERS = re.compile(r"^\s*(On .* wrote:|-{2,}\s*Original Message\s*-{2,})\s*$", re.IGNORECASE | re.MULTILINE)
 _MESSAGE_ID_RE = re.compile(r"<[^<>]+>")
@@ -70,17 +70,46 @@ def _analyze_reference_reply(reference_type: str, reply_text: str) -> dict:
         return fallback
 
 
-def _format_note(reference_type: str, contact_name: str | None, analysis: dict) -> str:
+def _format_note(reference_type: str, contact_name: str | None, contact_email: str | None,
+                 analysis: dict, extra: dict | None = None) -> str:
     label = "employer" if reference_type == "EMPLOYER" else "landlord"
     who = contact_name or f"the {label} reference"
 
     def _tri(value: bool | None) -> str:
         return "Yes" if value is True else "No" if value is False else "Unclear"
 
+    # Build contact detail lines
+    detail_lines = []
+    if contact_name:
+        detail_lines.append(f"Name: {contact_name}")
+    if contact_email:
+        detail_lines.append(f"Email: {contact_email}")
+    if extra:
+        if extra.get("phone"):
+            detail_lines.append(f"Phone: {extra['phone']}")
+        if reference_type == "EMPLOYER":
+            if extra.get("company"):
+                detail_lines.append(f"Company: {extra['company']}")
+            if extra.get("position"):
+                detail_lines.append(f"Position: {extra['position']}")
+            if extra.get("employment_length"):
+                detail_lines.append(f"Employment length: {extra['employment_length']}")
+        else:
+            if extra.get("street_address"):
+                addr = extra["street_address"]
+                if extra.get("city"):
+                    addr += f", {extra['city']}"
+                detail_lines.append(f"Address: {addr}")
+            if extra.get("monthly_rent"):
+                detail_lines.append(f"Monthly rent: ${extra['monthly_rent']:,.0f}")
+
+    contact_block = "\n".join(detail_lines)
+
     red_flags = analysis.get("red_flags") or []
     return (
         f"Reference reply received from {who} ({label} reference):\n"
-        f"{analysis.get('summary', '')}\n\n"
+        + (f"{contact_block}\n\n" if contact_block else "")
+        + f"{analysis.get('summary', '')}\n\n"
         f"Confirmed: {_tri(analysis.get('confirmed'))} · "
         f"Good standing / would rent again: {_tri(analysis.get('would_rerent_or_good_standing'))} · "
         f"Red flags: {', '.join(red_flags) if red_flags else 'None'}"
@@ -140,12 +169,45 @@ async def check_org_inbox(org: Organization, db: AsyncSession) -> None:
         reply_text = _strip_quoted_reply(_extract_plain_text(msg))
         analysis = _analyze_reference_reply(tracking.reference_type, reply_text)
 
+        # Look up full contact details from employment or address history
+        extra: dict | None = None
+        if tracking.reference_type == "EMPLOYER":
+            emp_res = await db.execute(
+                select(TenantEmployment).where(
+                    TenantEmployment.user_id == tracking.tenant_user_id,
+                    TenantEmployment.employer_reference_email == tracking.contact_email,
+                )
+            )
+            emp = emp_res.scalars().first()
+            if emp:
+                extra = {
+                    "phone": emp.employer_reference_phone,
+                    "company": emp.company,
+                    "position": emp.position,
+                    "employment_length": emp.employment_length,
+                }
+        else:
+            addr_res = await db.execute(
+                select(TenantAddressHistory).where(
+                    TenantAddressHistory.user_id == tracking.tenant_user_id,
+                    TenantAddressHistory.landlord_email == tracking.contact_email,
+                )
+            )
+            addr = addr_res.scalars().first()
+            if addr:
+                extra = {
+                    "phone": addr.landlord_phone,
+                    "street_address": addr.street_address,
+                    "city": addr.city,
+                    "monthly_rent": addr.monthly_rent,
+                }
+
         db.add(TenantScreeningNote(
             user_id=tracking.tenant_user_id,
             organization_id=org.id,
             author_user_id=None,
             author_name="AI reference check",
-            note=_format_note(tracking.reference_type, tracking.contact_name, analysis),
+            note=_format_note(tracking.reference_type, tracking.contact_name, tracking.contact_email, analysis, extra),
             kind="NOTE",
         ))
         tracking.status = "ANALYZED"

@@ -138,6 +138,9 @@ export interface TenantOut {
   interested_unit_id: string | null;
   personal_income_annual: number | null;
   household_income_annual: number | null;
+  employer_ref_sent: boolean;
+  landlord_ref_sent: boolean;
+  tenant_notified: boolean;
 }
 
 export interface LeaseOut {
@@ -367,6 +370,7 @@ export interface LeaseTemplateOut {
   original_name: string;
   description: string | null;
   url: string;
+  is_active: boolean;
   created_at: string;
 }
 
@@ -393,6 +397,7 @@ export const leasesApi = {
       });
   },
   deleteTemplate: (id: string) => api.delete<void>(`/leases/templates/${id}`),
+  activateTemplate: (id: string) => api.post<LeaseTemplateOut[]>(`/leases/templates/${id}/activate`, {}),
   uploadTemplate: (name: string, description: string, file: File) => {
     const token = typeof document !== "undefined"
       ? (document.cookie.match(/(?:^|; )token=([^;]*)/) || [])[1]
@@ -564,6 +569,17 @@ export interface InviteTemplateOut {
   id: string;
   name: string;
   body: string;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface ReferenceTemplateOut {
+  id: string;
+  kind: string;
+  name: string;
+  subject: string;
+  body: string;
+  is_active: boolean;
   created_at: string;
 }
 
@@ -601,6 +617,8 @@ export const tenantsApi = {
     app_password?: string;
     check_enabled?: boolean;
   }) => api.patch<ReferenceEmailConfigOut>("/tenants/reference-email/config", body),
+  testImapConnection: () => api.post<{ ok: boolean; message: string }>("/tenants/reference-email/test-connection", {}),
+  checkReferenceEmailsNow: () => api.post<{ ok: boolean; new_responses: number; message: string }>("/tenants/reference-email/check-now", {}),
   aiExtract: (file: File) => upload<Record<string, string | null>>("/tenants/ai-extract", file),
   createPerson: (body: object) => api.post<TenantOut>("/tenants/person", body),
   updatePerson: (id: string, body: object) => api.put<TenantOut>(`/tenants/person/${id}`, body),
@@ -615,6 +633,15 @@ export const tenantsApi = {
   updateInviteTemplate: (id: string, name: string, body: string) =>
     api.patch<InviteTemplateOut>(`/tenants/invite-templates/${id}`, { name, body }),
   deleteInviteTemplate: (id: string) => api.delete<void>(`/tenants/invite-templates/${id}`),
+  activateInviteTemplate: (id: string) => api.post<InviteTemplateOut[]>(`/tenants/invite-templates/${id}/activate`, {}),
+  listReferenceTemplates: (kind?: "employer" | "landlord") =>
+    api.get<ReferenceTemplateOut[]>(`/tenants/reference-templates${kind ? `?kind=${kind}` : ""}`),
+  createReferenceTemplate: (kind: "employer" | "landlord", name: string, subject: string, body: string) =>
+    api.post<ReferenceTemplateOut>("/tenants/reference-templates", { kind, name, subject, body }),
+  updateReferenceTemplate: (id: string, name: string, subject: string, body: string) =>
+    api.patch<ReferenceTemplateOut>(`/tenants/reference-templates/${id}`, { name, subject, body }),
+  deleteReferenceTemplate: (id: string) => api.delete<void>(`/tenants/reference-templates/${id}`),
+  activateReferenceTemplate: (id: string) => api.post<ReferenceTemplateOut[]>(`/tenants/reference-templates/${id}/activate`, {}),
   listDocuments: (tenantUserId: string) =>
     api.get<TenantDocumentOut[]>(`/tenants/${tenantUserId}/documents`),
   deleteDocument: (tenantUserId: string, docId: string) =>

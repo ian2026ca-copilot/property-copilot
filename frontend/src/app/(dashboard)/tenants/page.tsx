@@ -34,6 +34,7 @@ const MOCK_PERSONS: PersonRow[] = [
     avatar_url: null, documents: [],
     application_status: "NOT_STARTED", interested_unit_id: null,
     personal_income_annual: null, household_income_annual: null,
+    employer_ref_sent: false, landlord_ref_sent: false, tenant_notified: false,
     street_address: null, city: null, province: null, postal_code: null, country: null,
     leases: [{
       id: "l1", unit_id: "u1", tenant_user_id: "tu1", start_date: "2026-02-01",
@@ -54,6 +55,7 @@ const MOCK_PERSONS: PersonRow[] = [
     avatar_url: null, documents: [],
     application_status: "NOT_STARTED", interested_unit_id: null,
     personal_income_annual: null, household_income_annual: null,
+    employer_ref_sent: false, landlord_ref_sent: false, tenant_notified: false,
     street_address: null, city: null, province: null, postal_code: null, country: null,
     leases: [{
       id: "l2", unit_id: "u3", tenant_user_id: "tu2", start_date: "2025-09-01",
@@ -315,7 +317,7 @@ function AIAddPersonModal({ onClose, onAdded }: { onClose: () => void; onAdded: 
               </div>
 
               <div className="pt-1 border-t border-slate-100">
-                <p className="text-[11px] uppercase tracking-wider font-medium text-slate-400 mb-3">Address</p>
+                <p className="text-[13px] uppercase tracking-wider font-medium text-slate-400 mb-3">Address</p>
                 <div className="space-y-3">
                   <div>
                     <label className="block text-xs font-medium text-slate-500 mb-1">Street address</label>
@@ -354,7 +356,7 @@ function AIAddPersonModal({ onClose, onAdded }: { onClose: () => void; onAdded: 
               {/* Identity documents — locked until saved */}
               <div className="pt-1 border-t border-slate-100">
                 <div className="opacity-40 pointer-events-none select-none">
-                  <p className="text-[11px] uppercase tracking-wider font-medium text-slate-400 mb-3">Identity Documents</p>
+                  <p className="text-[13px] uppercase tracking-wider font-medium text-slate-400 mb-3">Identity Documents</p>
                   {["ID Document", "Reference Letter"].map(label => (
                     <div key={label} className="border border-slate-200 rounded-xl overflow-hidden mb-2">
                       <div className="flex items-center justify-between px-4 py-3 bg-slate-50 border-b border-slate-100">
@@ -556,7 +558,7 @@ function AddPersonModal({ onClose, onAdded }: AddPersonModalProps) {
               <InlineDocSection tenantId={saved.id} initialDocs={[]} />
             ) : (
               <div className="opacity-40 pointer-events-none select-none">
-                <p className="text-[11px] uppercase tracking-wider font-medium text-slate-400 mb-3">Identity Documents</p>
+                <p className="text-[13px] uppercase tracking-wider font-medium text-slate-400 mb-3">Identity Documents</p>
                 {["ID Document", "Reference Letter"].map(label => (
                   <div key={label} className="border border-slate-200 rounded-xl overflow-hidden mb-2">
                     <div className="flex items-center justify-between px-4 py-3 bg-slate-50 border-b border-slate-100">
@@ -579,7 +581,7 @@ function AddPersonModal({ onClose, onAdded }: AddPersonModalProps) {
           {inviteDraft !== null && !inviteResult && (
             <div className="border border-violet-100 bg-violet-50/50 rounded-lg p-3 space-y-2.5">
               <div className="flex items-center justify-between gap-2">
-                <p className="text-[11px] uppercase tracking-wider font-medium text-violet-700">
+                <p className="text-[13px] uppercase tracking-wider font-medium text-violet-700">
                   Invite draft — review before sending
                 </p>
                 {inviteTemplates.length > 0 && (
@@ -710,7 +712,7 @@ function InlineDocSection({ tenantId, initialDocs, onDocsChanged }: {
 
   return (
     <div className="pt-1 border-t border-slate-100 space-y-3">
-      <p className="text-[11px] uppercase tracking-wider font-medium text-slate-400">Identity Documents</p>
+      <p className="text-[13px] uppercase tracking-wider font-medium text-slate-400">Identity Documents</p>
       {docError && <p className="text-red-600 text-xs bg-red-50 px-3 py-2 rounded-lg">{docError}</p>}
       {DOC_TYPES.map(docType => {
         const typeDocs = docs.filter(d => d.doc_type === docType);
@@ -1346,7 +1348,7 @@ function LeaseHistoryRow({
       <td colSpan={7} className="px-6 py-0 bg-slate-50 border-b border-slate-100">
         <div className="py-3">
           <div className="flex items-center justify-between mb-2">
-            <p className="text-[11px] uppercase tracking-wider font-medium text-slate-400">Lease history ({person.leases.length})</p>
+            <p className="text-[13px] uppercase tracking-wider font-medium text-slate-400">Lease history ({person.leases.length})</p>
             <button onClick={() => onCreateLease(person)}
               className="text-xs text-black font-medium hover:underline">+ Create lease agreement →</button>
           </div>
@@ -1356,21 +1358,21 @@ function LeaseHistoryRow({
               const expiring = l.status === "ACTIVE" && days <= 90 && days > 0;
               return (
                 <div key={l.id} className="flex items-center gap-3 bg-white border border-slate-100 rounded-lg px-3 py-2 text-xs group/lease hover:border-slate-200 transition-colors">
-                  <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-medium shrink-0 ${STATUS_STYLES[l.status] ?? ""}`}>
+                  <span className={`inline-flex px-2 py-0.5 rounded-full text-[12px] font-medium shrink-0 ${STATUS_STYLES[l.status] ?? ""}`}>
                     {STATUS_LABEL[l.status] ?? l.status}
                   </span>
                   <span className="font-medium text-slate-700">{l.property_name} — Unit {l.unit_number}</span>
                   <span className="text-slate-400">{l.start_date} → <span className={expiring ? "text-amber-600 font-medium" : ""}>{l.end_date}</span></span>
                   <span className="text-slate-500">{fmt$(l.monthly_rent)}/mo</span>
-                  <span className="text-slate-400 text-[10px] capitalize">{l.lease_type === "MONTH_TO_MONTH" ? "M-to-M" : "Fixed"}</span>
+                  <span className="text-slate-400 text-[12px] capitalize">{l.lease_type === "MONTH_TO_MONTH" ? "M-to-M" : "Fixed"}</span>
                   <div className="ml-auto flex items-center gap-2">
                     {l.document_url && (
                       <a href={l.document_url} target="_blank" rel="noopener noreferrer"
-                        className="text-blue-600 hover:underline text-[10px]">PDF</a>
+                        className="text-blue-600 hover:underline text-[12px]">PDF</a>
                     )}
                     <button
                       onClick={() => onEditLease(l)}
-                      className="opacity-0 group-hover/lease:opacity-100 transition-opacity text-[10px] px-2 py-1 border border-slate-200 rounded-md hover:bg-slate-50 text-slate-600 font-medium">
+                      className="opacity-0 group-hover/lease:opacity-100 transition-opacity text-[12px] px-2 py-1 border border-slate-200 rounded-md hover:bg-slate-50 text-slate-600 font-medium">
                       Edit
                     </button>
                   </div>
@@ -1462,7 +1464,7 @@ function SendRegistrationLinkModal({ person, onClose }: { person: TenantOut; onC
         ) : (
           <div className="p-6 space-y-4">
             <div className="flex items-center justify-between gap-2">
-              <p className="text-[11px] uppercase tracking-wider font-medium text-violet-700">
+              <p className="text-[13px] uppercase tracking-wider font-medium text-violet-700">
                 Invite draft — review before sending
               </p>
               {inviteTemplates.length > 0 && (
@@ -1640,7 +1642,7 @@ export default function TenantsPage() {
       {/* Header */}
       <div className="flex items-end justify-between">
         <div>
-          <p className="text-[11px] uppercase tracking-widest text-slate-400 font-medium">People</p>
+          <p className="text-[13px] uppercase tracking-widest text-slate-400 font-medium">People</p>
           <h1 className="text-xl font-bold text-slate-900 mt-0.5">Tenants</h1>
         </div>
         <div className="flex gap-2">
@@ -1689,7 +1691,7 @@ export default function TenantsPage() {
             <tr className="border-b border-slate-100">
               <th className="w-8 px-4 py-3" />
               {["Tenant", "Contact", "Current lease", "Rent", "Lease history", ""].map(h => (
-                <th key={h} className="text-left text-[11px] font-medium text-slate-400 uppercase tracking-wider px-4 py-3">{h}</th>
+                <th key={h} className="text-left text-[13px] font-medium text-slate-400 uppercase tracking-wider px-4 py-3">{h}</th>
               ))}
             </tr>
           </thead>
@@ -1727,7 +1729,7 @@ export default function TenantsPage() {
                         <Avatar name={p.full_name} url={p.avatar_url} size={8} />
                         <div>
                           <p className="text-xs font-semibold text-slate-900">{p.full_name}</p>
-                          <p className="text-[11px] text-slate-400">{p.date_of_birth ? `DOB ${p.date_of_birth}` : "—"}</p>
+                          <p className="text-[13px] text-slate-400">{p.date_of_birth ? `DOB ${p.date_of_birth}` : "—"}</p>
                         </div>
                       </div>
                     </td>
@@ -1735,9 +1737,9 @@ export default function TenantsPage() {
                     {/* Contact */}
                     <td className="px-4 py-3">
                       <p className="text-xs text-slate-700">{p.email}</p>
-                      <p className="text-[11px] text-slate-400">{p.phone || "—"}</p>
+                      <p className="text-[13px] text-slate-400">{p.phone || "—"}</p>
                       {(p.city || p.province || p.country) && (
-                        <p className="text-[11px] text-slate-400 mt-0.5 truncate max-w-[180px]">
+                        <p className="text-[13px] text-slate-400 mt-0.5 truncate max-w-[180px]">
                           {[p.street_address, p.city, p.province, p.postal_code, p.country].filter(Boolean).join(", ")}
                         </p>
                       )}
@@ -1748,12 +1750,12 @@ export default function TenantsPage() {
                       {cl ? (
                         <div>
                           <div className="flex items-center gap-1.5 mb-0.5">
-                            <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-medium ${STATUS_STYLES[cl.status] ?? ""}`}>
+                            <span className={`inline-flex px-2 py-0.5 rounded-full text-[12px] font-medium ${STATUS_STYLES[cl.status] ?? ""}`}>
                               {STATUS_LABEL[cl.status] ?? cl.status}
                             </span>
                           </div>
                           <p className="text-xs font-medium text-slate-900">{cl.property_name} — Unit {cl.unit_number}</p>
-                          <p className={`text-[11px] ${days !== null && days <= 30 ? "text-red-500 font-medium" : days !== null && days <= 90 ? "text-amber-600" : "text-slate-400"}`}>
+                          <p className={`text-[13px] ${days !== null && days <= 30 ? "text-red-500 font-medium" : days !== null && days <= 90 ? "text-amber-600" : "text-slate-400"}`}>
                             {cl.end_date}{days !== null && days > 0 ? ` (${days}d left)` : days !== null && days <= 0 ? " (expired)" : ""}
                           </p>
                         </div>
