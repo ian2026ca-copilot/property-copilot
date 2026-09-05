@@ -154,7 +154,7 @@ export function buildRentalApplicationPayload(s: RentalApplicationState) {
         monthly_rent: a.monthly_rent ? parseFloat(a.monthly_rent) : null,
       })),
     employment_history: s.employments
-      .filter(emp => emp.company || emp.position)
+      .filter(emp => emp.company || emp.position || emp.employer_reference_first_name || emp.employer_reference_last_name || emp.employer_reference_name || emp.employer_reference_email)
       .map(emp => ({ ...emp })),
     income_sources: s.incomeSources
       .filter(src => src.source_name && src.amount_annual)

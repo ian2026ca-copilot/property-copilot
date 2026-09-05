@@ -10,6 +10,7 @@ import { LeaseTemplatesModal } from "@/components/LeaseTemplatesModal";
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
 type LeaseStatus = "ACTIVE" | "PENDING" | "EXPIRED" | "TERMINATED";
+type SigStatus = "new" | "sent" | "delivered" | "tenant_signed" | "completed" | "declined" | "voided";
 type LeaseType = "FIXED" | "MONTH_TO_MONTH";
 
 interface LeaseRow extends LeaseOut {
@@ -31,6 +32,37 @@ const STATUS_LABEL: Record<string, string> = {
   EXPIRED: "Expired",
   TERMINATED: "Terminated",
 };
+
+const SIG_STYLES: Record<string, string> = {
+  no_lease:       "bg-slate-50 text-slate-400",
+  ready_to_send:  "bg-violet-100 text-violet-700",
+  sent:           "bg-blue-100 text-blue-700",
+  delivered:      "bg-blue-100 text-blue-700",
+  tenant_signed:  "bg-amber-100 text-amber-700",
+  completed:      "bg-emerald-100 text-emerald-700",
+  declined:       "bg-red-100 text-red-600",
+  voided:         "bg-slate-100 text-slate-400",
+};
+
+const SIG_LABEL: Record<string, string> = {
+  no_lease:       "Agreement needed",
+  ready_to_send:  "Need to send for signature",
+  sent:           "Pending signature",
+  delivered:      "Pending signature",
+  tenant_signed:  "Tenant signed",
+  completed:      "Fully signed",
+  declined:       "Declined",
+  voided:         "Voided",
+};
+
+function sigKey(l: { signature_status: string | null; document_url: string | null }): string {
+  const sig = l.signature_status ?? "no_lease";
+  if ((sig === "new" || sig === "no_lease") && l.document_url) return "ready_to_send";
+  if (sig === "new") return "no_lease";
+  return sig;
+}
+
+const ALL_SIG_STATUSES: SigStatus[] = ["no_lease" as SigStatus, "ready_to_send" as SigStatus, "sent", "tenant_signed", "completed", "declined", "voided"];
 
 function fmt$(n: number) {
   return `$${n.toLocaleString()}`;
@@ -364,22 +396,27 @@ interface CreateLeaseModalProps {
   landlordSuggestions: string[];
   presetTenantId?: string;
   presetUnitId?: string;
+  presetStartDate?: string;
+  presetEndDate?: string;
+  presetMonthlyRent?: string;
+  presetSecurityDeposit?: string;
   aiMode?: boolean;
   onClose: () => void;
   onSave: (lease: LeaseOut) => void;
 }
 
-function CreateLeaseModal({ units, persons, landlordSuggestions, presetTenantId, presetUnitId, aiMode, onClose, onSave }: CreateLeaseModalProps) {
+function CreateLeaseModal({ units, persons, landlordSuggestions, presetTenantId, presetUnitId, presetStartDate, presetEndDate, presetMonthlyRent, presetSecurityDeposit, aiMode, onClose, onSave }: CreateLeaseModalProps) {
+  const { user } = useAuth();
   const [form, setForm] = useState({
     tenant_user_id: presetTenantId ?? "",
     unit_id: presetUnitId ?? "",
-    start_date: "",
-    end_date: "",
-    monthly_rent: "",
-    security_deposit: "",
+    start_date: presetStartDate ?? "",
+    end_date: presetEndDate ?? "",
+    monthly_rent: presetMonthlyRent ?? "",
+    security_deposit: presetSecurityDeposit ?? "",
     lease_type: "FIXED" as LeaseType,
-    landlord_name: "",
-    landlord_email: "",
+    landlord_name: user?.full_name ?? "",
+    landlord_email: user?.email ?? "",
     notes: "",
   });
   const [coTenantIds, setCoTenantIds] = useState<string[]>([]);
@@ -1495,6 +1532,7 @@ const SIGNATURE_STATUS_LABEL: Record<string, string> = {
 };
 
 function SignatureCell({ lease, onUpdated }: SignatureCellProps) {
+  const { user } = useAuth();
   const [sending, setSending] = useState(false);
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState("");
@@ -1502,6 +1540,13 @@ function SignatureCell({ lease, onUpdated }: SignatureCellProps) {
   async function handleSend() {
     setSending(true); setError("");
     try {
+      if (!lease.landlord_email && user?.email) {
+        const patched = await leasesApi.update(lease.id, {
+          landlord_name: lease.landlord_name || user.full_name || user.email,
+          landlord_email: user.email,
+        });
+        onUpdated(patched);
+      }
       const updated = await leasesApi.sendForSignature(lease.id);
       onUpdated(updated);
     } catch (err: any) {
@@ -1553,11 +1598,16 @@ function SignatureCell({ lease, onUpdated }: SignatureCellProps) {
 
 // ─── Page ──────────────────────────────────────────────────────────────────────
 
-const ALL_STATUSES: LeaseStatus[] = ["ACTIVE", "PENDING", "EXPIRED", "TERMINATED"];
 
 export default function LeasesPage() {
   const searchParams = useSearchParams();
   const presetTenantId = searchParams.get("tenant") ?? undefined;
+  const presetLeaseId = searchParams.get("leaseId") ?? undefined;
+  const presetUnitIdParam = searchParams.get("unitId") ?? undefined;
+  const presetStartDateParam = searchParams.get("startDate") ?? undefined;
+  const presetEndDateParam = searchParams.get("endDate") ?? undefined;
+  const presetMonthlyRentParam = searchParams.get("monthlyRent") ?? undefined;
+  const presetSecurityDepositParam = searchParams.get("securityDeposit") ?? undefined;
 
   const [leases, setLeases] = useState<LeaseRow[]>([]);
   const [units, setUnits] = useState<UnitOut[]>([]);
@@ -1565,7 +1615,7 @@ export default function LeasesPage() {
   const [pageTemplates, setPageTemplates] = useState<LeaseTemplateOut[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<LeaseStatus | "ALL">("ALL");
+  const [statusFilter, setStatusFilter] = useState<SigStatus | "ALL">("ALL");
   const [expandedTenants, setExpandedTenants] = useState<Set<string>>(new Set());
 
   function toggleTenant(key: string) {
@@ -1584,8 +1634,23 @@ export default function LeasesPage() {
     | { type: "delete"; lease: LeaseRow }
     | { type: "templates" };
 
-  const [modal, setModal] = useState<Modal | null>(presetTenantId ? { type: "create" } : null);
+  const [modal, setModal] = useState<Modal | null>(presetTenantId && !presetLeaseId ? { type: "create" } : null);
   const [terminateLoading, setTerminateLoading] = useState(false);
+  const [checkingSignatures, setCheckingSignatures] = useState(false);
+
+  async function handleCheckAllSignatures() {
+    const pending = leases.filter(l => l.docusign_envelope_id && l.signature_status !== "completed");
+    if (!pending.length) return;
+    setCheckingSignatures(true);
+    try {
+      const updated = await Promise.allSettled(pending.map(l => leasesApi.checkSignatureStatus(l.id)));
+      updated.forEach((r, i) => {
+        if (r.status === "fulfilled") handleSave(r.value);
+      });
+    } finally {
+      setCheckingSignatures(false);
+    }
+  }
 
   const load = useCallback(async () => {
     if (MOCK_MODE) { setLoading(false); return; }
@@ -1596,10 +1661,15 @@ export default function LeasesPage() {
         tenantsApi.listPersons(),
         leasesApi.listTemplates(),
       ]);
-      setLeases(ls.map(fromApi));
+      const rows = ls.map(fromApi);
+      setLeases(rows);
       setUnits(us);
       setPersons(ps);
       setPageTemplates(ts);
+      if (presetLeaseId) {
+        const target = rows.find(l => l.id === presetLeaseId);
+        if (target) setModal({ type: "edit", lease: target });
+      }
     } finally {
       setLoading(false);
     }
@@ -1609,7 +1679,8 @@ export default function LeasesPage() {
 
   // Filtering
   const filtered = leases.filter(l => {
-    if (statusFilter !== "ALL" && l.status !== statusFilter) return false;
+    const sig = sigKey(l);
+    if (statusFilter !== "ALL" && sig !== statusFilter) return false;
     if (search) {
       const q = search.toLowerCase();
       return (
@@ -1623,7 +1694,9 @@ export default function LeasesPage() {
   });
 
   const counts: Record<string, number> = { ALL: leases.length };
-  ALL_STATUSES.forEach(s => { counts[s] = leases.filter(l => l.status === s).length; });
+  ALL_SIG_STATUSES.forEach(s => {
+    counts[s] = leases.filter(l => sigKey(l) === s).length;
+  });
 
   // Group by tenant, most-recently-started lease first within each group.
   const tenantGroups = (() => {
@@ -1689,6 +1762,13 @@ export default function LeasesPage() {
           <h1 className="text-xl font-bold text-slate-900 mt-0.5">Leases</h1>
         </div>
         <div className="flex gap-2">
+          <button onClick={handleCheckAllSignatures} disabled={checkingSignatures}
+            className="px-4 py-2 bg-white border border-slate-200 text-slate-700 text-sm font-medium rounded-xl hover:bg-slate-50 transition-colors flex items-center gap-1.5 disabled:opacity-50">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+            </svg>
+            {checkingSignatures ? "Checking…" : "Check all signatures"}
+          </button>
           <button onClick={() => setModal({ type: "templates" })}
             className="px-4 py-2 bg-white border border-slate-200 text-slate-700 text-sm font-medium rounded-xl hover:bg-slate-50 transition-colors flex items-center gap-1.5">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1712,12 +1792,12 @@ export default function LeasesPage() {
 
       {/* Status tabs + search */}
       <div className="flex flex-wrap items-center gap-2">
-        {(["ALL", ...ALL_STATUSES] as const).map(s => (
+        {(["ALL", ...ALL_SIG_STATUSES] as const).map(s => (
           <button key={s} onClick={() => setStatusFilter(s)}
             className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
               statusFilter === s ? "bg-black text-white" : "bg-white border border-slate-200 text-slate-600 hover:border-slate-300"
             }`}>
-            {s === "ALL" ? "All" : STATUS_LABEL[s]} {counts[s] > 0 && <span className="ml-0.5 opacity-60">({counts[s]})</span>}
+            {s === "ALL" ? "All" : SIG_LABEL[s]} {counts[s] > 0 && <span className="ml-0.5 opacity-60">({counts[s]})</span>}
           </button>
         ))}
         <div className="ml-auto">
@@ -1805,8 +1885,8 @@ export default function LeasesPage() {
                     <td className="px-4 py-3 text-xs text-slate-700 font-medium">{fmt$(l.monthly_rent)}</td>
                     <td className="px-4 py-3 text-xs text-slate-500">{fmt$(l.security_deposit)}</td>
                     <td className="px-4 py-3">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[13px] font-medium ${STATUS_STYLES[l.status] ?? "bg-slate-100 text-slate-500"}`}>
-                        {STATUS_LABEL[l.status] ?? l.status}
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[13px] font-medium ${SIG_STYLES[sigKey(l)] ?? "bg-slate-100 text-slate-500"}`}>
+                        {SIG_LABEL[sigKey(l)] ?? l.signature_status}
                       </span>
                     </td>
                     <td className="px-4 py-3">
@@ -1873,6 +1953,11 @@ export default function LeasesPage() {
           persons={persons}
           landlordSuggestions={[...new Set(leases.map(l => l.landlord_name).filter(Boolean) as string[])]}
           presetTenantId={presetTenantId}
+          presetUnitId={presetUnitIdParam}
+          presetStartDate={presetStartDateParam}
+          presetEndDate={presetEndDateParam}
+          presetMonthlyRent={presetMonthlyRentParam}
+          presetSecurityDeposit={presetSecurityDepositParam}
           onClose={() => setModal(null)}
           onSave={handleSave}
         />

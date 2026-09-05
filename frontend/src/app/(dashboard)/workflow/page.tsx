@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
-import { tenantsApi, leasesApi, paymentsApi, type TenantOut, type LeaseOut, type PaymentOut } from "@/lib/api";
+import { tenantsApi, leasesApi, paymentsApi, unitsApi, type TenantOut, type LeaseOut, type PaymentOut } from "@/lib/api";
 import AIReviewPanel from "@/components/workflow/AIReviewPanel";
 import BatchAIReviewPanel from "@/components/workflow/BatchAIReviewPanel";
 
@@ -23,6 +23,9 @@ interface TenantRow {
   employerRefSent: boolean;
   landlordRefSent: boolean;
   tenantNotified: boolean;
+  interestedUnitId: string | null;
+  unitMonthlyRent: number | null;
+  unitSecurityDeposit: number | null;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -35,13 +38,6 @@ const SCREENING_LABEL: Record<string, { label: string; color: string }> = {
   DECLINED:            { label: "Declined",            color: "bg-red-100 text-red-700" },
 };
 
-const LEASE_STATUS_LABEL: Record<string, { label: string; color: string }> = {
-  ACTIVE:    { label: "Active",    color: "bg-green-100 text-green-700" },
-  PENDING:   { label: "Pending",   color: "bg-blue-100 text-blue-700" },
-  EXPIRED:   { label: "Expired",   color: "bg-slate-100 text-slate-500" },
-  RENEWED:   { label: "Renewed",   color: "bg-violet-100 text-violet-700" },
-  CANCELLED: { label: "Cancelled", color: "bg-red-100 text-red-700" },
-};
 
 const PAYMENT_STATUS_LABEL: Record<string, { label: string; color: string }> = {
   PAID:    { label: "Paid",    color: "bg-green-100 text-green-700" },
@@ -71,11 +67,22 @@ const STAGES: { key: StageKey; label: string; description: string }[] = [
 ];
 
 function stageOf(row: TenantRow): StageKey {
+  // Renewal with active lease → payment tracking
   if (row.kind === "renew" && row.lease?.status === "ACTIVE") return "payment";
-  if (row.screeningStatus === "DECLINED") return "screening";
+  // Not approved → always screening (regardless of lease)
   if (row.screeningStatus !== "APPROVED") return "screening";
+  // Approved: no lease → ready to create one
   if (!row.lease) return "lease";
-  if (row.lease.status === "PENDING") return "lease";
+  // If a DocuSign envelope is active, require it to be fully signed before moving to payment
+  if (row.lease.docusign_envelope_id) {
+    if (row.lease.signature_status === "completed") {
+      if (row.nextPayment && row.nextPayment.status !== "PAID") return "payment";
+      return "done";
+    }
+    // Envelope exists but not completed → stay in lease (pending signature)
+    return "lease";
+  }
+  // No signature flow — use lease status directly
   if (row.lease.status === "ACTIVE") {
     if (row.nextPayment && row.nextPayment.status !== "PAID") return "payment";
     return "done";
@@ -215,14 +222,37 @@ function TenantCard({
       {(stage === "lease" || stage === "payment" || stage === "done") && (
         <div className="space-y-1">
           <p className="text-[12px] font-medium text-slate-400 uppercase tracking-wide">Lease</p>
-          {row.lease ? (
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <StatusBadge map={LEASE_STATUS_LABEL} status={row.lease.status} />
-              {row.lease.signature_status && (
-                <span className="text-[12px] text-slate-400">sig: {row.lease.signature_status.toLowerCase()}</span>
-              )}
-            </div>
-          ) : (
+          {row.lease ? (() => {
+            const sigStyles: Record<string, string> = {
+              no_lease:      "bg-slate-50 text-slate-400",
+              ready_to_send: "bg-violet-100 text-violet-700",
+              sent:          "bg-blue-100 text-blue-700",
+              delivered:     "bg-blue-100 text-blue-700",
+              tenant_signed: "bg-amber-100 text-amber-700",
+              completed:     "bg-emerald-100 text-emerald-700",
+              declined:      "bg-red-100 text-red-600",
+              voided:        "bg-slate-100 text-slate-400",
+            };
+            const sigLabels: Record<string, string> = {
+              no_lease:      "Agreement needed",
+              ready_to_send: "Need to send for signature",
+              sent:          "Pending signature",
+              delivered:     "Pending signature",
+              tenant_signed: "Tenant signed — awaiting landlord",
+              completed:     "Fully signed",
+              declined:      "Declined",
+              voided:        "Voided",
+            };
+            const rawSig = row.lease.signature_status ?? "no_lease";
+            const sig = (rawSig === "new" || rawSig === "no_lease") && row.lease.document_url
+              ? "ready_to_send"
+              : rawSig === "new" ? "no_lease" : rawSig;
+            const style = sigStyles[sig] ?? "bg-slate-100 text-slate-500";
+            const label = sigLabels[sig] ?? sig;
+            return (
+              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[12px] font-medium ${style}`}>{label}</span>
+            );
+          })() : (
             <span className="text-[12px] text-slate-400">No lease yet</span>
           )}
         </div>
@@ -243,8 +273,11 @@ function TenantCard({
 
       {/* Links */}
       <div className="flex items-center gap-1.5 pt-0.5 flex-wrap">
-        <Link href="/screening" className="text-[12px] font-medium text-violet-600 hover:underline">Screening</Link>
-        {row.lease && <Link href="/leases" className="text-[12px] font-medium text-violet-600 hover:underline">· Lease</Link>}
+        <Link href={`/screening?tenantId=${row.id}`} className="text-[12px] font-medium text-violet-600 hover:underline">Screening</Link>
+        {row.lease
+          ? <Link href={`/leases?leaseId=${row.lease.id}`} className="text-[12px] font-medium text-violet-600 hover:underline">· Lease</Link>
+          : <Link href={`/leases?tenant=${row.id}${row.interestedUnitId ? `&unitId=${row.interestedUnitId}` : ""}${row.unitMonthlyRent ? `&monthlyRent=${row.unitMonthlyRent}` : ""}`} className="text-[12px] font-medium text-violet-600 hover:underline">· Create Lease</Link>
+        }
         {row.nextPayment && <Link href="/payments" className="text-[12px] font-medium text-violet-600 hover:underline">· Payments</Link>}
       </div>
 
@@ -328,11 +361,13 @@ export default function WorkflowPage() {
     setLoading(true);
     setError("");
     try {
-      const [persons, leases, payments] = await Promise.all([
+      const [persons, leases, payments, units] = await Promise.all([
         tenantsApi.listPersons(),
         leasesApi.list(),
         paymentsApi.list(),
+        unitsApi.listAll(),
       ]);
+      const unitRentById = new Map(units.map(u => [u.id, u.monthly_rent]));
 
       const leaseByTenant = new Map<string, LeaseOut>();
       for (const l of leases) {
@@ -363,6 +398,9 @@ export default function WorkflowPage() {
           employerRefSent: t.employer_ref_sent,
           landlordRefSent: t.landlord_ref_sent,
           tenantNotified: t.tenant_notified,
+          interestedUnitId: t.interested_unit_id ?? null,
+          unitMonthlyRent: t.interested_unit_id ? (unitRentById.get(t.interested_unit_id) ?? null) : null,
+          unitSecurityDeposit: null,
         };
       });
 
@@ -375,6 +413,13 @@ export default function WorkflowPage() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  // Reload when user switches back to this tab (e.g. after changing status on screening page)
+  useEffect(() => {
+    function onVisible() { if (document.visibilityState === "visible") load(); }
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [load]);
 
   // All tenants show in workflow; hidden ones are tracked in localStorage
   function handleRemoveConfirmed() {

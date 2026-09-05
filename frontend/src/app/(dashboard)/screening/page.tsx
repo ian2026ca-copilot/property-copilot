@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { MOCK_MODE } from "@/lib/useApiData";
 import {
@@ -768,6 +769,7 @@ function ApplicantDrawer({
 
 export default function ScreeningPage() {
   const { user } = useAuth();
+  const searchParams = useSearchParams();
   const [tenants, setTenants] = useState<TenantOut[]>([]);
   const [units, setUnits] = useState<UnitDetailOut[]>([]);
   const [loading, setLoading] = useState(!MOCK_MODE);
@@ -779,7 +781,12 @@ export default function ScreeningPage() {
   useEffect(() => {
     if (MOCK_MODE) { setLoading(false); return; }
     Promise.all([tenantsApi.listPersons(), unitsApi.listAll()])
-      .then(([ppl, us]) => { setTenants(ppl); setUnits(us); })
+      .then(([ppl, us]) => {
+        setTenants(ppl);
+        setUnits(us);
+        const tid = searchParams.get("tenantId");
+        if (tid) setSelected(ppl.find((t) => t.id === tid) ?? null);
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);

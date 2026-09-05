@@ -574,6 +574,8 @@ function ProfileTab() {
             company: e.company ?? "", position: e.position ?? "", employment_length: e.employment_length ?? "",
             company_website: e.company_website ?? "", company_linkedin_url: e.company_linkedin_url ?? "",
             additional_notes: e.additional_notes ?? "",
+            employer_reference_first_name: e.employer_reference_first_name ?? "", employer_reference_middle_name: e.employer_reference_middle_name ?? "",
+            employer_reference_last_name: e.employer_reference_last_name ?? "",
             employer_reference_name: e.employer_reference_name ?? "", employer_reference_phone: e.employer_reference_phone ?? "",
             employer_reference_email: e.employer_reference_email ?? "",
           })));

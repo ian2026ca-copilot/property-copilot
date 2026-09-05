@@ -227,6 +227,7 @@ async def _create_lease_record(org_id, body: LeaseCreate, db: AsyncSession) -> L
         landlord_name=body.landlord_name or None,
         notes=body.notes,
         status=_compute_status_from_dates(body.start_date, body.end_date),
+        signature_status="new",
     )
     db.add(lease)
     await db.flush()
@@ -690,6 +691,7 @@ async def renew_lease(
         landlord_name=body.landlord_name if body.landlord_name is not None else old.landlord_name,
         notes=body.notes if body.notes is not None else old.notes,
         status=_compute_status_from_dates(body.start_date, body.end_date),
+        signature_status="new",
     )
     db.add(new_lease)
     await db.flush()
