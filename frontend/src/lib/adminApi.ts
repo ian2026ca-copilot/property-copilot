@@ -144,6 +144,24 @@ export interface AITestOut {
   message: string;
 }
 
+export interface SMTPSettingsOut {
+  host: string | null;
+  port: number;
+  user: string | null;
+  from_email: string | null;
+  enabled: boolean;
+  password_set: boolean;
+}
+
+export interface SMTPSettingsIn {
+  host?: string | null;
+  port?: number | null;
+  user?: string | null;
+  password?: string | null;
+  from_email?: string | null;
+  enabled?: boolean | null;
+}
+
 export const adminAuthApi = {
   login: (email: string, password: string) =>
     adminRequest.post<{ access_token: string; token_type: string }>("/admin/login", { email, password }),
@@ -166,4 +184,7 @@ export const adminApi = {
   getAiSettings: () => adminRequest.get<AISettingsOut>("/admin/ai-settings"),
   updateAiSettings: (body: AISettingsIn) => adminRequest.patch<AISettingsOut>("/admin/ai-settings", body),
   testAiProvider: (body: AITestIn) => adminRequest.post<AITestOut>("/admin/ai-settings/test", body),
+  getSmtpSettings: () => adminRequest.get<SMTPSettingsOut>("/admin/smtp-settings"),
+  updateSmtpSettings: (body: SMTPSettingsIn) => adminRequest.patch<SMTPSettingsOut>("/admin/smtp-settings", body),
+  testSmtp: () => adminRequest.post<{ ok: boolean; message: string }>("/admin/smtp-settings/test", {}),
 };

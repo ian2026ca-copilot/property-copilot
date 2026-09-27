@@ -2,10 +2,13 @@
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { tenantsApi, leasesApi, type TenantOut, type LeaseOut, type TenantDocumentOut, type TenantRegistrationLinkOut, type InviteTemplateOut } from "@/lib/api";
+import Link from "next/link";
+import { tenantsApi, leasesApi, type TenantOut, type LeaseOut, type TenantDocumentOut, type TenantRegistrationLinkOut, type InviteTemplateOut, type TenantApplicationOut } from "@/lib/api";
 import { MOCK_MODE } from "@/lib/useApiData";
+import { useAuth } from "@/context/AuthContext";
 import {
   useRentalApplicationState, buildRentalApplicationPayload, RentalApplicationSections,
+  type AddressEntry, type EmploymentEntry, emptyAddress, emptyEmployment,
 } from "@/components/rental-application/RentalApplicationFields";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -34,19 +37,19 @@ const MOCK_PERSONS: PersonRow[] = [
     avatar_url: null, documents: [],
     application_status: "NOT_STARTED", interested_unit_id: null,
     personal_income_annual: null, household_income_annual: null,
-    employer_ref_sent: false, landlord_ref_sent: false, tenant_notified: false,
+    employer_ref_sent: false, landlord_ref_sent: false, tenant_notified: false, employer_ref_analyzed: false, landlord_ref_analyzed: false, employer_ref_summary: null, landlord_ref_summary: null,
     street_address: null, city: null, province: null, postal_code: null, country: null,
     leases: [{
       id: "l1", unit_id: "u1", tenant_user_id: "tu1", start_date: "2026-02-01",
       end_date: "2027-01-31", monthly_rent: 2400, security_deposit: 2400,
       status: "ACTIVE", lease_type: "FIXED", document_url: null,
-      notes: null, tenant: null, co_tenants: [], landlord_name: null, landlord_email: null, docusign_envelope_id: null, signature_status: null, unit_number: "101", property_name: "Sunset Towers",
+      notes: null, tenant: null, co_tenants: [], landlord_name: null, landlord_email: null, landlord_phone: null, docusign_envelope_id: null, signature_status: null, unit_number: "101", property_name: "Sunset Towers",
     }],
     currentLease: {
       id: "l1", unit_id: "u1", tenant_user_id: "tu1", start_date: "2026-02-01",
       end_date: "2027-01-31", monthly_rent: 2400, security_deposit: 2400,
       status: "ACTIVE", lease_type: "FIXED", document_url: null,
-      notes: null, tenant: null, co_tenants: [], landlord_name: null, landlord_email: null, docusign_envelope_id: null, signature_status: null, unit_number: "101", property_name: "Sunset Towers",
+      notes: null, tenant: null, co_tenants: [], landlord_name: null, landlord_email: null, landlord_phone: null, docusign_envelope_id: null, signature_status: null, unit_number: "101", property_name: "Sunset Towers",
     },
   },
   {
@@ -55,13 +58,13 @@ const MOCK_PERSONS: PersonRow[] = [
     avatar_url: null, documents: [],
     application_status: "NOT_STARTED", interested_unit_id: null,
     personal_income_annual: null, household_income_annual: null,
-    employer_ref_sent: false, landlord_ref_sent: false, tenant_notified: false,
+    employer_ref_sent: false, landlord_ref_sent: false, tenant_notified: false, employer_ref_analyzed: false, landlord_ref_analyzed: false, employer_ref_summary: null, landlord_ref_summary: null,
     street_address: null, city: null, province: null, postal_code: null, country: null,
     leases: [{
       id: "l2", unit_id: "u3", tenant_user_id: "tu2", start_date: "2025-09-01",
       end_date: "2026-08-31", monthly_rent: 2750, security_deposit: 2750,
       status: "EXPIRED", lease_type: "FIXED", document_url: null,
-      notes: null, tenant: null, co_tenants: [], landlord_name: null, landlord_email: null, docusign_envelope_id: null, signature_status: null, unit_number: "103", property_name: "Sunset Towers",
+      notes: null, tenant: null, co_tenants: [], landlord_name: null, landlord_email: null, landlord_phone: null, docusign_envelope_id: null, signature_status: null, unit_number: "103", property_name: "Sunset Towers",
     }],
     currentLease: null,
   },
@@ -395,6 +398,7 @@ interface AddPersonModalProps {
 }
 
 function AddPersonModal({ onClose, onAdded }: AddPersonModalProps) {
+  const { user } = useAuth();
   const [form, setForm] = useState({
     first_name: "", last_name: "", middle_name: "", email: "", phone: "", date_of_birth: "",
     drivers_licence: "",
@@ -403,6 +407,7 @@ function AddPersonModal({ onClose, onAdded }: AddPersonModalProps) {
   const [saved, setSaved] = useState<TenantOut | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [emailWarning, setEmailWarning] = useState("");
   const [draftingInvite, setDraftingInvite] = useState(false);
   const [inviteDraft, setInviteDraft] = useState<string | null>(null);
   const [inviteRegisterLink, setInviteRegisterLink] = useState<string | null>(null);
@@ -419,6 +424,22 @@ function AddPersonModal({ onClose, onAdded }: AddPersonModalProps) {
 
   function set(k: string, v: string) {
     setForm(f => ({ ...f, [k]: v }));
+    if (k === "email") setEmailWarning("");
+  }
+
+  async function checkEmail(email: string) {
+    if (!email) return;
+    if (user?.email && email.toLowerCase() === user.email.toLowerCase()) {
+      setEmailWarning("This is the owner's email address. Please use a different email for the tenant.");
+      return;
+    }
+    try {
+      const existing = await tenantsApi.listPersons();
+      const match = existing.find(t => t.email.toLowerCase() === email.toLowerCase());
+      if (match) {
+        setEmailWarning(`This email is already used by tenant "${match.full_name}".`);
+      }
+    } catch { /* ignore */ }
   }
 
   function createPersonPayload() {
@@ -438,6 +459,10 @@ function AddPersonModal({ onClose, onAdded }: AddPersonModalProps) {
     e.preventDefault();
     if (!form.first_name || !form.last_name || !form.email) {
       setError("First name, last name, and email are required.");
+      return;
+    }
+    if (emailWarning) {
+      setError("Please fix the email issue before continuing.");
       return;
     }
     setSaving(true);
@@ -539,7 +564,8 @@ function AddPersonModal({ onClose, onAdded }: AddPersonModalProps) {
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-500 mb-1">Email *</label>
-              <input type="email" value={form.email} onChange={e => set("email", e.target.value)} disabled={!!saved} className={`${input} disabled:opacity-60`} />
+              <input type="email" value={form.email} onChange={e => set("email", e.target.value)} onBlur={e => checkEmail(e.target.value)} disabled={!!saved} className={`${input} disabled:opacity-60 ${emailWarning ? "border-amber-400" : ""}`} />
+              {emailWarning && <p className="text-xs text-amber-700 mt-1">{emailWarning}</p>}
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-500 mb-1">Phone</label>
@@ -1528,6 +1554,347 @@ const DOC_TYPE_LABELS: Record<string, string> = {
 
 const DOC_TYPES = ["id_document", "reference_letter"] as const;
 
+// ─── More-info drawer ─────────────────────────────────────────────────────────
+
+function missingIssues(
+  app: TenantApplicationOut,
+  appState: ReturnType<typeof useRentalApplicationState>,
+  docCount: number,
+): string[] {
+  const issues: string[] = [];
+  const hasIncome = !!(appState.personalIncome || appState.householdIncome);
+  if (!hasIncome) issues.push("Income (personal or household)");
+  if (appState.employments.length === 0 || appState.employments.every(e => !e.company && !e.position)) issues.push("Employment history");
+  else if (appState.employments.some(e => !e.employer_reference_name)) issues.push("Employer reference name on some entries");
+  if (appState.addresses.length === 0 || appState.addresses.every(a => !a.street_address)) issues.push("Address history");
+  else if (appState.addresses.some(a => !a.landlord_name)) issues.push("Landlord name on some addresses");
+  if (docCount === 0) issues.push("ID document (tenant must upload from portal)");
+  return issues;
+}
+
+function MoreInfoDrawer({ person, onClose, onSaved }: { person: PersonRow; onClose: () => void; onSaved: () => void }) {
+  const appState = useRentalApplicationState();
+  const [loadingApp, setLoadingApp] = useState(true);
+  const [loadErr, setLoadErr] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saveErr, setSaveErr] = useState("");
+  const [saved, setSaved] = useState(false);
+  const [changingStatus, setChangingStatus] = useState(false);
+  const [app, setApp] = useState<TenantApplicationOut | null>(null);
+  const [showNotify, setShowNotify] = useState(false);
+  const [notifyChannel, setNotifyChannel] = useState<"EMAIL" | "SMS">("EMAIL");
+  const [notifySubject, setNotifySubject] = useState("Action required: complete your rental application");
+  const [notifyBody, setNotifyBody] = useState("");
+  const [notifying, setNotifying] = useState(false);
+  const [notifyErr, setNotifyErr] = useState("");
+  const [notifySent, setNotifySent] = useState(false);
+
+  const [firstName, setFirstName] = useState(person.first_name || "");
+  const [lastName, setLastName] = useState(person.last_name || "");
+  const [phone, setPhone] = useState(person.phone || "");
+
+  useEffect(() => {
+    tenantsApi.getApplication(person.id)
+      .then(a => {
+        setApp(a);
+        appState.setPersonalIncome(a.personal_income_annual ? String(a.personal_income_annual) : "");
+        appState.setHouseholdIncome(a.household_income_annual ? String(a.household_income_annual) : "");
+        appState.setPersonalMessage(a.personal_message || "");
+        appState.setScreening({
+          smoke_vape: a.smoke_vape ?? null,
+          given_notice_to_landlord: a.given_notice_to_landlord ?? null,
+          refused_rent: a.refused_rent ?? null,
+          evicted: a.evicted ?? null,
+          criminal_record: a.criminal_record ?? null,
+        });
+        appState.setAddresses(
+          a.address_history.length > 0
+            ? a.address_history.map(addr => ({
+                is_current: addr.is_current,
+                residential_status: addr.residential_status || "Rent",
+                street_address: addr.street_address || "",
+                city: addr.city || "",
+                postal_code: addr.postal_code || "",
+                country: addr.country || "",
+                province: addr.province || "",
+                move_in_date: addr.move_in_date || "",
+                move_out_date: addr.move_out_date || "",
+                monthly_rent: addr.monthly_rent != null ? String(addr.monthly_rent) : "",
+                reason_for_moving: addr.reason_for_moving || "",
+                landlord_first_name: "",
+                landlord_middle_name: "",
+                landlord_last_name: "",
+                landlord_name: addr.landlord_name || "",
+                landlord_phone: addr.landlord_phone || "",
+                landlord_email: addr.landlord_email || "",
+              } as AddressEntry))
+            : [emptyAddress(true)]
+        );
+        appState.setEmployments(
+          a.employment_history.length > 0
+            ? a.employment_history.map(emp => ({
+                is_current: emp.is_current,
+                employment_type: emp.employment_type || "Full time employment",
+                company: emp.company || "",
+                position: emp.position || "",
+                employment_length: emp.employment_length || "",
+                company_website: "",
+                company_linkedin_url: "",
+                additional_notes: "",
+                employer_reference_first_name: emp.employer_reference_first_name || "",
+                employer_reference_middle_name: emp.employer_reference_middle_name || "",
+                employer_reference_last_name: emp.employer_reference_last_name || "",
+                employer_reference_name: emp.employer_reference_name || "",
+                employer_reference_phone: emp.employer_reference_phone || "",
+                employer_reference_email: emp.employer_reference_email || "",
+              } as EmploymentEntry))
+            : [emptyEmployment(true)]
+        );
+        // Build default notify message
+        const missingList: string[] = [];
+        if (!a.personal_income_annual && !a.household_income_annual) missingList.push("- Income information");
+        if (!a.employment_history.length || a.employment_history.every(e => !e.company)) missingList.push("- Employment history");
+        if (!a.address_history.length || a.address_history.every(x => !x.street_address)) missingList.push("- Address history");
+        if (!person.documents?.length) missingList.push("- ID document (upload via your portal)");
+        const base = `Hi ${person.first_name || person.full_name},\n\nWe're reviewing your rental application and need some additional information to proceed:\n\n${missingList.join("\n") || "- Please review your application for any missing details"}\n\nPlease log in to your portal to update your application.\n\nThank you`;
+        setNotifyBody(base);
+      })
+      .catch(() => setLoadErr("Failed to load application details"))
+      .finally(() => setLoadingApp(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [person.id]);
+
+  async function handleNotify() {
+    setNotifying(true); setNotifyErr(""); setNotifySent(false);
+    try {
+      await tenantsApi.notifyMissingInfo(person.id, notifyChannel, notifySubject, notifyBody);
+      setNotifySent(true);
+      setShowNotify(false);
+    } catch (e: unknown) {
+      setNotifyErr(e instanceof Error ? e.message : "Failed to send notification");
+    } finally {
+      setNotifying(false);
+    }
+  }
+
+  async function handleStatusChange(status: string) {
+    setChangingStatus(true); setSaveErr("");
+    try {
+      await tenantsApi.updateScreening(person.id, { application_status: status });
+      onSaved();
+      onClose();
+    } catch (e: unknown) {
+      setSaveErr(e instanceof Error ? e.message : "Status update failed");
+      setChangingStatus(false);
+    }
+  }
+
+  async function handleSave() {
+    setSaving(true); setSaveErr(""); setSaved(false);
+    try {
+      const payload = buildRentalApplicationPayload(appState);
+      await tenantsApi.updatePerson(person.id, {
+        first_name: firstName.trim() || undefined,
+        last_name: lastName.trim() || undefined,
+        phone: phone.trim() || undefined,
+        ...payload,
+      });
+      setSaved(true);
+      onSaved();
+    } catch (e: unknown) {
+      setSaveErr(e instanceof Error ? e.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const docCount = person.documents?.length ?? 0;
+  const issues = app ? missingIssues(app, appState, docCount) : [];
+  const hasIncome = !!(appState.personalIncome || appState.householdIncome);
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end">
+      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
+      <div className="relative z-10 w-full max-w-lg bg-white h-full overflow-y-auto shadow-2xl flex flex-col">
+
+        {/* Header */}
+        <div className="sticky top-0 bg-white border-b border-slate-100 px-5 py-4 flex items-start justify-between z-10">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-semibold uppercase tracking-wider bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">More info requested</span>
+            </div>
+            <h2 className="text-sm font-bold text-slate-900 mt-1">{person.full_name}</h2>
+            <p className="text-xs text-slate-400">{person.email}</p>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none mt-1">×</button>
+        </div>
+
+        <div className="flex-1 px-5 py-4 space-y-5">
+          {loadingApp && <p className="text-sm text-slate-400 text-center py-10">Loading…</p>}
+          {loadErr && <p className="text-sm text-red-500 text-center py-6">{loadErr}</p>}
+
+          {!loadingApp && !loadErr && (
+            <>
+              {issues.length > 0 && (
+                <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3">
+                  <p className="text-xs font-semibold text-amber-800 mb-1.5">⚠ Missing or incomplete — please fill in below</p>
+                  <ul className="list-disc list-inside space-y-0.5">
+                    {issues.map(i => <li key={i} className="text-xs text-amber-700">{i}</li>)}
+                  </ul>
+                </div>
+              )}
+              {issues.length === 0 && (
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5">
+                  <p className="text-xs font-semibold text-emerald-700">✓ All required fields are filled in</p>
+                </div>
+              )}
+
+              {/* Notify tenant */}
+              <div className="rounded-xl border border-slate-200 overflow-hidden">
+                <div className="px-4 py-3 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+                  <p className="text-xs font-semibold text-slate-700">Notify tenant</p>
+                  <button
+                    onClick={() => { setShowNotify(v => !v); setNotifyErr(""); setNotifySent(false); }}
+                    className="text-xs font-medium text-blue-600 hover:text-blue-800 transition-colors"
+                  >
+                    {showNotify ? "Cancel" : "✉ Compose message"}
+                  </button>
+                </div>
+                {notifySent && (
+                  <div className="px-4 py-2.5 bg-emerald-50 border-b border-emerald-100">
+                    <p className="text-xs font-semibold text-emerald-700">✓ Notification sent to tenant</p>
+                  </div>
+                )}
+                {showNotify && (
+                  <div className="p-4 space-y-3">
+                    <div className="flex gap-2">
+                      {(["EMAIL", "SMS"] as const).map(ch => (
+                        <button
+                          key={ch}
+                          onClick={() => setNotifyChannel(ch)}
+                          className={`px-3 py-1 text-xs font-medium rounded-lg border transition-colors ${notifyChannel === ch ? "bg-black text-white border-black" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}
+                        >
+                          {ch === "EMAIL" ? "✉ Email" : "📱 SMS"}
+                        </button>
+                      ))}
+                    </div>
+                    {notifyChannel === "EMAIL" && (
+                      <div>
+                        <label className="block text-xs font-medium text-slate-500 mb-1">Subject</label>
+                        <input className="w-full text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 outline-none focus:border-black" value={notifySubject} onChange={e => setNotifySubject(e.target.value)} />
+                      </div>
+                    )}
+                    <div>
+                      <label className="block text-xs font-medium text-slate-500 mb-1">Message</label>
+                      <textarea
+                        rows={7}
+                        className="w-full text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 outline-none focus:border-black resize-none"
+                        value={notifyBody}
+                        onChange={e => setNotifyBody(e.target.value)}
+                      />
+                    </div>
+                    {notifyErr && <p className="text-xs text-red-600">{notifyErr}</p>}
+                    <button
+                      onClick={handleNotify}
+                      disabled={notifying || !notifyBody.trim()}
+                      className="w-full py-2 text-sm font-medium bg-black text-white rounded-lg hover:bg-slate-800 disabled:opacity-50 transition-colors"
+                    >
+                      {notifying ? "Sending…" : `Send ${notifyChannel === "EMAIL" ? "email" : "SMS"}`}
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Personal */}
+              <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                <div className="px-5 py-3 border-b border-slate-100 bg-slate-50">
+                  <p className="text-sm font-semibold text-slate-900">Personal details</p>
+                </div>
+                <div className="p-4 space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-slate-500 mb-1">First name</label>
+                      <input className="w-full text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 outline-none focus:border-black" value={firstName} onChange={e => setFirstName(e.target.value)} />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-500 mb-1">Last name</label>
+                      <input className="w-full text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 outline-none focus:border-black" value={lastName} onChange={e => setLastName(e.target.value)} />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">Phone</label>
+                    <input className="w-full text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 outline-none focus:border-black" value={phone} onChange={e => setPhone(e.target.value)} placeholder="+1 403 000 0000" />
+                  </div>
+                  <div className={`grid grid-cols-2 gap-3 rounded-lg p-3 ${!hasIncome ? "border border-amber-300 bg-amber-50" : "border border-slate-200"}`}>
+                    <div>
+                      <label className={`block text-xs font-medium mb-1 ${!hasIncome ? "text-amber-700" : "text-slate-500"}`}>Personal income / yr {!hasIncome && "⚠"}</label>
+                      <input type="number" min="0" className="w-full text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 outline-none focus:border-black bg-white" value={appState.personalIncome} onChange={e => appState.setPersonalIncome(e.target.value)} placeholder="e.g. 60000" />
+                    </div>
+                    <div>
+                      <label className={`block text-xs font-medium mb-1 ${!hasIncome ? "text-amber-700" : "text-slate-500"}`}>Household income / yr</label>
+                      <input type="number" min="0" className="w-full text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 outline-none focus:border-black bg-white" value={appState.householdIncome} onChange={e => appState.setHouseholdIncome(e.target.value)} placeholder="e.g. 90000" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Documents */}
+              <div className={`rounded-xl border px-4 py-3 ${docCount === 0 ? "border-amber-300 bg-amber-50" : "border-emerald-200 bg-emerald-50"}`}>
+                <p className={`text-xs font-semibold ${docCount === 0 ? "text-amber-800" : "text-emerald-700"}`}>
+                  {docCount === 0 ? "⚠ No ID document uploaded — tenant must upload via their portal" : `✓ ${docCount} document${docCount > 1 ? "s" : ""} uploaded`}
+                </p>
+              </div>
+
+              <RentalApplicationSections state={appState} askCriminalRecord askRentalHistory />
+            </>
+          )}
+        </div>
+
+        {/* Footer */}
+        {!loadingApp && !loadErr && (
+          <div className="sticky bottom-0 bg-white border-t border-slate-100 px-5 py-3 space-y-2">
+            {saveErr && <p className="text-xs text-red-600">{saveErr}</p>}
+            {saved && <p className="text-xs text-emerald-600">✓ Saved successfully</p>}
+
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => handleStatusChange("IN_REVIEW")}
+                disabled={changingStatus}
+                className="py-2 text-xs font-semibold border border-blue-300 text-blue-700 bg-blue-50 rounded-lg hover:bg-blue-100 disabled:opacity-50 transition-colors"
+              >
+                {changingStatus ? "Updating…" : "→ Mark as In Review"}
+              </button>
+              <button
+                onClick={() => handleStatusChange("APPROVED")}
+                disabled={changingStatus}
+                className="py-2 text-xs font-semibold border border-emerald-300 text-emerald-700 bg-emerald-50 rounded-lg hover:bg-emerald-100 disabled:opacity-50 transition-colors"
+              >
+                {changingStatus ? "Updating…" : "✓ Approve applicant"}
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="flex-1 py-2 text-sm font-medium bg-black text-white rounded-lg hover:bg-slate-800 disabled:opacity-50 transition-colors"
+              >
+                {saving ? "Saving…" : "Save changes"}
+              </button>
+              <Link
+                href={`/screening?tenantId=${person.id}`}
+                className="px-4 py-2 text-sm font-medium border border-slate-200 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors whitespace-nowrap"
+              >
+                Screening →
+              </Link>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Page ──────────────────────────────────────────────────────────────────────
 
 export default function TenantsPage() {
@@ -1544,6 +1911,7 @@ export default function TenantsPage() {
     | { type: "editLease"; lease: LeaseOut }
     | { type: "createLease"; person: PersonRow }
     | { type: "sendRegistrationLink"; person: PersonRow }
+    | { type: "moreInfo"; person: PersonRow }
 
   const [modal, setModal] = useState<Modal | null>(null);
 
@@ -1732,6 +2100,14 @@ export default function TenantsPage() {
                         <div>
                           <p className="text-xs font-semibold text-slate-900">{p.full_name}</p>
                           <p className="text-[13px] text-slate-400">{p.date_of_birth ? `DOB ${p.date_of_birth}` : "—"}</p>
+                          {p.application_status === "MORE_INFO_REQUESTED" && (
+                            <button
+                              onClick={e => { e.stopPropagation(); setModal({ type: "moreInfo", person: p }); }}
+                              className="mt-1 px-2 py-0.5 text-[12px] font-medium border border-amber-300 text-amber-700 bg-amber-50 rounded-md hover:bg-amber-100 transition-colors"
+                            >
+                              ⚠ View missing info
+                            </button>
+                          )}
                         </div>
                       </div>
                     </td>
@@ -1856,6 +2232,9 @@ export default function TenantsPage() {
       )}
       {modal?.type === "sendRegistrationLink" && (
         <SendRegistrationLinkModal person={modal.person} onClose={() => setModal(null)} />
+      )}
+      {modal?.type === "moreInfo" && (
+        <MoreInfoDrawer person={modal.person} onClose={() => setModal(null)} onSaved={load} />
       )}
     </div>
   );

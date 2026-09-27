@@ -65,6 +65,10 @@ class TenantOut(BaseModel):
     employer_ref_sent: bool = False
     landlord_ref_sent: bool = False
     tenant_notified: bool = False
+    employer_ref_analyzed: bool = False
+    landlord_ref_analyzed: bool = False
+    employer_ref_summary: dict | None = None
+    landlord_ref_summary: dict | None = None
 
     model_config = {"from_attributes": True}
 
@@ -98,6 +102,7 @@ class LeaseCreate(BaseModel):
     lease_type: LeaseType = LeaseType.FIXED
     landlord_name: str | None = None
     landlord_email: str | None = None
+    landlord_phone: str | None = None
     notes: str | None = None
 
 
@@ -117,6 +122,7 @@ class LeaseUpdate(BaseModel):
     status: LeaseStatus | None = None
     landlord_name: str | None = None
     landlord_email: str | None = None
+    landlord_phone: str | None = None
     notes: str | None = None
 
 
@@ -155,8 +161,10 @@ class LeaseOut(BaseModel):
     document_url: str | None = None
     landlord_name: str | None = None
     landlord_email: str | None = None
+    landlord_phone: str | None = None
     docusign_envelope_id: str | None = None
     signature_status: str | None = None
+    signature_warning: str | None = None
     notes: str | None
     tenant: TenantOut | None = None
     co_tenants: list[TenantOut] = []

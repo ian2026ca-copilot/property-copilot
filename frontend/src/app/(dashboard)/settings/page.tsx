@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
-import { profileApi, campaignsApi, leasesApi, tenantsApi, billingApi, type MarketingSiteOut, type DocuSignConfigOut, type ReferenceEmailConfigOut, type BillingStatusOut, type LeaseTemplateOut, type InviteTemplateOut, type ReferenceTemplateOut } from "@/lib/api";
+import { profileApi, campaignsApi, leasesApi, tenantsApi, billingApi, paymentsApi, leaseEmailApi, type MarketingSiteOut, type DocuSignConfigOut, type ReferenceEmailConfigOut, type BillingStatusOut, type LeaseTemplateOut, type InviteTemplateOut, type ReferenceTemplateOut, type OverdueTemplateOut, type LeaseEmailConfigOut } from "@/lib/api";
 import { MOCK_MODE } from "@/lib/useApiData";
 import { LeaseTemplatesModal } from "@/components/LeaseTemplatesModal";
 
@@ -1640,15 +1640,414 @@ function ReferenceTemplateTab({ kind }: { kind: "employer" | "landlord" }) {
   );
 }
 
+// ─── Overdue notice template tab ──────────────────────────────────────────────
+
+const DEFAULT_OVERDUE_SUBJECT = "Overdue rent payment — action required";
+const DEFAULT_OVERDUE_BODY = `Dear [Tenant Name],
+
+This is a formal notice that your rent payment of $[Amount] for the unit at [Address] was due on [Due Date] and remains outstanding.
+
+Please arrange payment immediately to avoid further action. If you have already made a payment or are experiencing a difficulty, please contact us as soon as possible.
+
+Sincerely,
+[Your Name]
+[Company Name]`;
+
+function LeaseTab() {
+  const [config, setConfig] = useState<LeaseEmailConfigOut | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  // Card 1 — from address
+  const [fromAddress, setFromAddress] = useState("");
+  const [savingFrom, setSavingFrom] = useState(false);
+  const [fromError, setFromError] = useState("");
+  const [fromSuccess, setFromSuccess] = useState(false);
+
+  // Card 2 — SMTP
+  const [smtpForm, setSmtpForm] = useState({ host: "", port: "587", user: "", password: "", enabled: false });
+  const [savingSmtp, setSavingSmtp] = useState(false);
+  const [smtpError, setSmtpError] = useState("");
+  const [smtpSuccess, setSmtpSuccess] = useState(false);
+  const [testingSmtp, setTestingSmtp] = useState(false);
+  const [testSmtpResult, setTestSmtpResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+  useEffect(() => {
+    leaseEmailApi.get().then((c) => {
+      setConfig(c);
+      setFromAddress(c.from_address ?? "");
+      setSmtpForm({ host: c.host ?? "", port: String(c.port ?? 993), user: c.user ?? "", password: "", enabled: c.enabled });
+    }).catch(() => {}).finally(() => setLoading(false));
+  }, []);
+
+  async function handleSaveFrom(e: React.FormEvent) {
+    e.preventDefault();
+    setSavingFrom(true); setFromError(""); setFromSuccess(false);
+    try {
+      const updated = await leaseEmailApi.update({ from_address: fromAddress.trim() || null });
+      setConfig(updated);
+      setFromSuccess(true);
+      setTimeout(() => setFromSuccess(false), 3000);
+    } catch (e: unknown) {
+      setFromError(e instanceof Error ? e.message : "Save failed");
+    } finally { setSavingFrom(false); }
+  }
+
+  async function handleSaveSmtp(e: React.FormEvent) {
+    e.preventDefault();
+    setSavingSmtp(true); setSmtpError(""); setSmtpSuccess(false);
+    try {
+      const body: Parameters<typeof leaseEmailApi.update>[0] = {
+        host: smtpForm.host || null,
+        port: Number(smtpForm.port) || 587,
+        user: smtpForm.user || null,
+        enabled: smtpForm.enabled,
+      };
+      if (smtpForm.password.trim()) body.password = smtpForm.password.trim();
+      const updated = await leaseEmailApi.update(body);
+      setConfig(updated);
+      setSmtpForm(f => ({ ...f, password: "" }));
+      setSmtpSuccess(true);
+      setTimeout(() => setSmtpSuccess(false), 3000);
+    } catch (e: unknown) {
+      setSmtpError(e instanceof Error ? e.message : "Save failed");
+    } finally { setSavingSmtp(false); }
+  }
+
+  async function handleClearPassword() {
+    setSavingSmtp(true); setSmtpError("");
+    try {
+      const updated = await leaseEmailApi.update({ password: "" });
+      setConfig(updated);
+      setSmtpSuccess(true);
+      setTimeout(() => setSmtpSuccess(false), 3000);
+    } catch (e: unknown) {
+      setSmtpError(e instanceof Error ? e.message : "Failed to remove password");
+    } finally { setSavingSmtp(false); }
+  }
+
+  async function handleCopyScreeningPassword() {
+    setSavingSmtp(true); setSmtpError("");
+    try {
+      const updated = await leaseEmailApi.copyScreeningPassword();
+      setConfig(updated);
+      setSmtpSuccess(true);
+      setTimeout(() => setSmtpSuccess(false), 3000);
+    } catch (e: unknown) {
+      setSmtpError(e instanceof Error ? e.message : "Failed to copy password");
+    } finally { setSavingSmtp(false); }
+  }
+
+  async function handleTestSmtp() {
+    setTestingSmtp(true); setTestSmtpResult(null);
+    try {
+      const res = await leaseEmailApi.test();
+      setTestSmtpResult(res);
+    } catch (e: unknown) {
+      setTestSmtpResult({ ok: false, message: e instanceof Error ? e.message : "Connection failed" });
+    } finally { setTestingSmtp(false); }
+  }
+
+  return (
+    <div className="max-w-lg space-y-6">
+      {/* Card 1 — lease from/reply address */}
+      <form onSubmit={handleSaveFrom} className="bg-white rounded-xl border border-slate-200 p-6 space-y-4">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-900">Lease reply email</h3>
+          <p className="text-xs text-slate-400 mt-0.5">
+            When you send a lease document to a tenant, this is the address shown as the sender and where
+            their replies land. Leave blank to use your account email.
+          </p>
+        </div>
+
+        {loading ? <p className="text-xs text-slate-400">Loading…</p> : (
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">From address</label>
+            <input
+              type="email"
+              value={fromAddress}
+              onChange={e => setFromAddress(e.target.value)}
+              placeholder="leases@yourcompany.com"
+              className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black"
+            />
+          </div>
+        )}
+
+        {fromError && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{fromError}</p>}
+        {fromSuccess && <p className="text-xs text-emerald-600 bg-emerald-50 rounded-lg px-3 py-2">From address saved</p>}
+        <button type="submit" disabled={savingFrom || loading}
+          className="px-4 py-2 text-sm bg-black text-white rounded-lg hover:bg-slate-800 font-medium disabled:opacity-50 transition-colors">
+          {savingFrom ? "Saving…" : "Save email"}
+        </button>
+      </form>
+
+      {/* Card 2 — SMTP config */}
+      <form onSubmit={handleSaveSmtp} className="bg-white rounded-xl border border-slate-200 p-6 space-y-4">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-900">Lease IMAP account</h3>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Connect the inbox via IMAP and the app will check it periodically for lease-related replies
+            and match them back to the lease automatically.
+          </p>
+          <a href="https://support.google.com/mail/answer/185833" target="_blank" rel="noopener noreferrer"
+            className="inline-block text-xs font-medium text-violet-700 hover:text-violet-900 mt-1.5">
+            How to generate a Gmail App Password →
+          </a>
+        </div>
+
+        {loading ? <p className="text-xs text-slate-400">Loading…</p> : (
+          <>
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">IMAP host</label>
+              <input value={smtpForm.host} onChange={e => setSmtpForm(f => ({ ...f, host: e.target.value }))}
+                placeholder="imap.gmail.com"
+                className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black" />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">IMAP port</label>
+              <input value={smtpForm.port} onChange={e => setSmtpForm(f => ({ ...f, port: e.target.value }))}
+                placeholder="993"
+                className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black" />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">
+                App password {config?.password_set && <span className="text-emerald-600 font-normal">(already on file — enter a new one to replace it)</span>}
+              </label>
+              <input
+                type="password"
+                value={smtpForm.password}
+                onChange={e => setSmtpForm(f => ({ ...f, password: e.target.value }))}
+                placeholder={config?.password_set ? "•••••••• (unchanged)" : "16-character app password"}
+                className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black"
+              />
+              <p className="text-[13px] text-slate-400 mt-1">
+                Not your regular password — generate a dedicated App Password from your Google Account
+                (Security → 2-Step Verification → App passwords) so this app never sees your real login.
+              </p>
+              <button type="button" onClick={handleCopyScreeningPassword} disabled={savingSmtp}
+                className="mt-1 text-[13px] text-violet-700 hover:text-violet-900 font-medium disabled:opacity-50">
+                Copy app password from screening →
+              </button>
+              <div className="flex items-center gap-3 mt-1 flex-wrap">
+                {config?.password_set && (
+                  <button type="button" onClick={handleClearPassword} disabled={savingSmtp}
+                    className="text-[13px] text-red-600 hover:text-red-700 font-medium disabled:opacity-50">
+                    Remove saved password
+                  </button>
+                )}
+                <button type="button" onClick={handleTestSmtp} disabled={testingSmtp || savingSmtp}
+                  className="text-[13px] text-violet-600 hover:text-violet-800 font-medium border border-violet-200 px-2.5 py-1 rounded-lg hover:bg-violet-50 transition-colors disabled:opacity-50">
+                  {testingSmtp ? "Testing…" : "Test connection"}
+                </button>
+              </div>
+              {testSmtpResult && (
+                <p className={`text-[13px] mt-1 ${testSmtpResult.ok ? "text-emerald-600" : "text-red-600"}`}>
+                  {testSmtpResult.ok ? "✓ " : "✗ "}{testSmtpResult.message}
+                </p>
+              )}
+            </div>
+
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input type="checkbox" checked={smtpForm.enabled} onChange={e => setSmtpForm(f => ({ ...f, enabled: e.target.checked }))} className="mt-0.5" />
+              <span>
+                <span className="block text-sm font-medium text-slate-900">Enable lease IMAP checking</span>
+                <span className="block text-xs text-slate-400 mt-0.5">Off by default. Turn on once the fields above are saved.</span>
+              </span>
+            </label>
+          </>
+        )}
+
+        {smtpError && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{smtpError}</p>}
+        {smtpSuccess && <p className="text-xs text-emerald-600 bg-emerald-50 rounded-lg px-3 py-2">Settings saved</p>}
+        <button type="submit" disabled={savingSmtp || loading}
+          className="px-4 py-2 text-sm bg-black text-white rounded-lg hover:bg-slate-800 font-medium disabled:opacity-50 transition-colors">
+          {savingSmtp ? "Saving…" : "Save settings"}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+function OverdueTemplateTab() {
+  const [templates, setTemplates] = useState<OverdueTemplateOut[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [activating, setActivating] = useState<string | null>(null);
+  const [formOpen, setFormOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [name, setName] = useState("");
+  const [subject, setSubject] = useState("");
+  const [body, setBody] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  function load() {
+    setLoading(true);
+    paymentsApi.listOverdueTemplates().then(setTemplates).catch(() => {}).finally(() => setLoading(false));
+  }
+  useEffect(() => { load(); }, []);
+
+  function openCreate() {
+    setFormOpen(true); setEditingId(null); setName(""); setSubject(""); setBody(""); setError("");
+  }
+  function openEdit(t: OverdueTemplateOut) {
+    setFormOpen(true); setEditingId(t.id); setName(t.name); setSubject(t.subject); setBody(t.body); setError("");
+  }
+  function closeForm() {
+    setFormOpen(false); setEditingId(null); setName(""); setSubject(""); setBody(""); setError("");
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!name.trim() || !body.trim()) { setError("Name and message body are required."); return; }
+    setSaving(true); setError("");
+    try {
+      if (editingId) {
+        const t = await paymentsApi.updateOverdueTemplate(editingId, { name: name.trim(), subject: subject.trim(), body: body.trim() });
+        setTemplates(prev => prev.map(x => x.id === editingId ? t : x));
+      } else {
+        const t = await paymentsApi.createOverdueTemplate({ name: name.trim(), subject: subject.trim(), body: body.trim() });
+        setTemplates(prev => [t, ...prev]);
+      }
+      closeForm();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Save failed");
+    } finally { setSaving(false); }
+  }
+
+  async function handleActivate(id: string) {
+    setActivating(id); setError("");
+    try {
+      const updated = await paymentsApi.activateOverdueTemplate(id);
+      setTemplates(updated);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to set active");
+    } finally { setActivating(null); }
+  }
+
+  async function handleDelete(id: string, tname: string) {
+    if (!confirm(`Delete template "${tname}"?`)) return;
+    setDeleting(id);
+    try {
+      await paymentsApi.deleteOverdueTemplate(id);
+      setTemplates(prev => prev.filter(t => t.id !== id));
+      if (editingId === id) closeForm();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Delete failed");
+    } finally { setDeleting(null); }
+  }
+
+  return (
+    <div className="max-w-lg space-y-6">
+      <div className="bg-white rounded-xl border border-slate-200 p-6 space-y-4">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-900">Overdue notice templates</h3>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Save reusable message templates for overdue rent notices. The active template is pre-loaded when you open the notice panel.
+          </p>
+        </div>
+
+        {error && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
+
+        {loading ? (
+          <p className="text-xs text-slate-400 py-2">Loading…</p>
+        ) : templates.length > 0 && (
+          <ul className="space-y-2">
+            {templates.map(t => (
+              <li key={t.id} className={`p-3 border rounded-xl transition-colors ${editingId === t.id ? "border-black" : t.is_active ? "border-violet-300 bg-violet-50/50" : "border-slate-200 hover:border-slate-300"}`}>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="text-xs font-semibold text-slate-900 truncate">{t.name}</p>
+                      {t.is_active && (
+                        <span className="shrink-0 text-[11px] font-medium bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded-full">Active</span>
+                      )}
+                    </div>
+                    {t.subject && <p className="text-[12px] text-slate-500 truncate mt-0.5">Subject: {t.subject}</p>}
+                    <p className="text-[12px] text-slate-400 mt-0.5 line-clamp-2">{t.body}</p>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {!t.is_active && (
+                      <button onClick={() => handleActivate(t.id)} disabled={activating === t.id}
+                        className="text-[12px] text-violet-600 hover:text-violet-800 px-2 py-1 rounded-lg hover:bg-violet-50 transition-colors disabled:opacity-40">
+                        {activating === t.id ? "…" : "Set active"}
+                      </button>
+                    )}
+                    <button onClick={() => openEdit(t)} className="text-[12px] text-slate-500 hover:text-slate-800 px-2 py-1 rounded-lg hover:bg-slate-100 transition-colors">Edit</button>
+                    <button disabled={deleting === t.id} onClick={() => handleDelete(t.id, t.name)}
+                      className="text-[12px] text-red-500 hover:text-red-700 px-2 py-1 rounded-lg hover:bg-red-50 transition-colors disabled:opacity-40">
+                      {deleting === t.id ? "…" : "Delete"}
+                    </button>
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {!formOpen ? (
+          <div className="flex gap-2">
+            <button onClick={openCreate} className="flex-1 py-2 text-xs font-medium border border-dashed border-slate-300 text-slate-500 rounded-xl hover:border-slate-400 hover:text-slate-700 transition-colors">
+              + New template
+            </button>
+            <button type="button"
+              onClick={() => { setFormOpen(true); setEditingId(null); setName("Standard overdue notice"); setSubject(DEFAULT_OVERDUE_SUBJECT); setBody(DEFAULT_OVERDUE_BODY); setError(""); }}
+              className="px-3 py-2 text-xs font-medium border border-violet-200 bg-violet-50 text-violet-700 rounded-xl hover:bg-violet-100 hover:border-violet-300 transition-colors">
+              Use standard template
+            </button>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="space-y-3 border border-slate-200 rounded-xl p-4">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs font-semibold text-slate-700">{editingId ? "Edit template" : "New template"}</p>
+              {!editingId && (
+                <button type="button"
+                  onClick={() => { setName("Standard overdue notice"); setSubject(DEFAULT_OVERDUE_SUBJECT); setBody(DEFAULT_OVERDUE_BODY); }}
+                  className="text-[12px] text-violet-700 hover:text-violet-900 font-medium">
+                  Use standard template
+                </button>
+              )}
+            </div>
+            <div>
+              <label className="text-[12px] text-slate-500 font-medium">Template name</label>
+              <input autoFocus value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Standard overdue notice"
+                className="w-full mt-1 text-xs border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black" />
+            </div>
+            <div>
+              <label className="text-[12px] text-slate-500 font-medium">Email subject</label>
+              <input value={subject} onChange={e => setSubject(e.target.value)} placeholder="e.g. Overdue rent payment — action required"
+                className="w-full mt-1 text-xs border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black" />
+            </div>
+            <div>
+              <label className="text-[12px] text-slate-500 font-medium">Message body</label>
+              <textarea rows={8} value={body} onChange={e => setBody(e.target.value)}
+                placeholder="Dear [Tenant Name],&#10;&#10;Your rent payment of $[Amount] is overdue…"
+                className="w-full mt-1 text-xs border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black resize-none" />
+            </div>
+            {error && <p className="text-xs text-red-600">{error}</p>}
+            <div className="flex gap-2">
+              <button type="submit" disabled={saving} className="px-4 py-2 text-xs font-semibold bg-black text-white rounded-lg hover:bg-slate-800 disabled:opacity-50 transition-colors">
+                {saving ? "Saving…" : editingId ? "Save changes" : "Create template"}
+              </button>
+              <button type="button" onClick={closeForm} className="px-4 py-2 text-xs font-medium text-slate-600 hover:text-slate-800 transition-colors">Cancel</button>
+            </div>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
   const searchParams = useSearchParams();
-  const [tab, setTab] = useState<"profile" | "roles" | "marketing" | "screening" | "docusign" | "template" | "lease-template" | "employer-template" | "landlord-template" | "billing">("profile");
+  const [tab, setTab] = useState<"profile" | "roles" | "marketing" | "screening" | "lease" | "docusign" | "template" | "lease-template" | "employer-template" | "landlord-template" | "overdue-template" | "billing">("profile");
 
   useEffect(() => {
     const t = searchParams.get("tab");
-    if (t === "roles" || t === "marketing" || t === "profile" || t === "screening" || t === "docusign" || t === "template" || t === "lease-template" || t === "employer-template" || t === "landlord-template" || t === "billing") setTab(t);
+    if (t === "roles" || t === "marketing" || t === "profile" || t === "screening" || t === "lease" || t === "docusign" || t === "template" || t === "lease-template" || t === "employer-template" || t === "landlord-template" || t === "overdue-template" || t === "billing") setTab(t);
   }, [searchParams]);
 
   return (
@@ -1661,7 +2060,7 @@ export default function SettingsPage() {
 
       {/* Tabs */}
       <div className="flex gap-1 border-b border-slate-200">
-        {(["profile", "roles", "marketing", "screening", "docusign", "template", "lease-template", "employer-template", "landlord-template", "billing"] as const).map((t) => (
+        {(["profile", "roles", "marketing", "screening", "lease", "docusign", "template", "lease-template", "employer-template", "landlord-template", "overdue-template", "billing"] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -1669,7 +2068,7 @@ export default function SettingsPage() {
               tab === t ? "border-black text-slate-900" : "border-transparent text-slate-500 hover:text-slate-700"
             }`}
           >
-            {t === "profile" ? "My profile" : t === "roles" ? "Role guide" : t === "marketing" ? "Marketing" : t === "screening" ? "Screening" : t === "docusign" ? "DocuSign" : t === "template" ? "Invite template" : t === "lease-template" ? "Lease template" : t === "employer-template" ? "Employer ref template" : t === "landlord-template" ? "Landlord ref template" : "Billing"}
+            {t === "profile" ? "My profile" : t === "roles" ? "Role guide" : t === "marketing" ? "Marketing" : t === "screening" ? "Screening" : t === "lease" ? "Lease" : t === "docusign" ? "DocuSign" : t === "template" ? "Invite template" : t === "lease-template" ? "Lease template" : t === "employer-template" ? "Employer ref template" : t === "landlord-template" ? "Landlord ref template" : t === "overdue-template" ? "Overdue template" : "Billing"}
           </button>
         ))}
       </div>
@@ -1697,6 +2096,12 @@ export default function SettingsPage() {
 
       {/* Landlord reference template tab */}
       {tab === "landlord-template" && <ReferenceTemplateTab kind="landlord" />}
+
+      {/* Lease email configuration tab */}
+      {tab === "lease" && <LeaseTab />}
+
+      {/* Overdue notice template tab */}
+      {tab === "overdue-template" && <OverdueTemplateTab />}
 
       {/* Billing tab */}
       {tab === "billing" && <BillingTab showWelcome={searchParams.get("welcome") === "1"} />}

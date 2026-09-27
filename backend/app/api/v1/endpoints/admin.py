@@ -16,10 +16,12 @@ from app.models.user import User, OrganizationMember, UserRole
 from app.models.organization import Organization
 from app.models.property import Property, Unit
 from app.models.payment import Payment, PaymentStatus
+from app.models.platform_settings import PlatformSettings
 from app.schemas.auth import LoginRequest, TokenResponse
 from app.schemas.admin import (
     AdminUserOut, OwnerRowOut, CreateAdminIn, OwnerDetailOut, OwnerPropertyOut, OwnerTeamMemberOut,
     OwnerPaymentOut, ImpersonateOut, AISettingsOut, AISettingsIn, AITestIn, AITestOut,
+    SMTPSettingsOut, SMTPSettingsIn,
 )
 
 stripe.api_key = settings.STRIPE_SECRET_KEY
@@ -395,3 +397,79 @@ async def refund_latest_invoice(org_id: str, admin: User = Depends(get_current_a
     except stripe.error.StripeError as e:
         raise HTTPException(status_code=502, detail=f"Stripe error: {e.user_message or str(e)}")
     return {"refunded": True, "refund_id": refund.id}
+
+
+def _smtp_settings_out(row) -> SMTPSettingsOut:
+    return SMTPSettingsOut(
+        host=row.smtp_host,
+        port=row.smtp_port or 587,
+        user=row.smtp_user,
+        from_email=row.smtp_from_email,
+        enabled=bool(row.smtp_enabled),
+        password_set=bool(row.smtp_password),
+    )
+
+
+async def _get_platform_row(db: AsyncSession):
+    from sqlalchemy import select as _select
+    res = await db.execute(_select(PlatformSettings))
+    row = res.scalar_one_or_none()
+    if not row:
+        row = PlatformSettings()
+        db.add(row)
+        await db.flush()
+    return row
+
+
+@router.get("/smtp-settings", response_model=SMTPSettingsOut)
+async def get_smtp_settings(admin: User = Depends(get_current_admin), db: AsyncSession = Depends(get_db)):
+    row = await _get_platform_row(db)
+    return _smtp_settings_out(row)
+
+
+@router.patch("/smtp-settings", response_model=SMTPSettingsOut)
+async def update_smtp_settings(
+    body: SMTPSettingsIn, admin: User = Depends(get_current_admin), db: AsyncSession = Depends(get_db)
+):
+    row = await _get_platform_row(db)
+    if body.host is not None:
+        row.smtp_host = body.host.strip() or None
+    if body.port is not None:
+        row.smtp_port = body.port
+    if body.user is not None:
+        row.smtp_user = body.user.strip() or None
+    if body.password is not None:
+        row.smtp_password = body.password.strip() or None
+    if body.from_email is not None:
+        row.smtp_from_email = body.from_email.strip() or None
+    if body.enabled is not None:
+        row.smtp_enabled = body.enabled
+    await db.commit()
+    return _smtp_settings_out(row)
+
+
+@router.post("/smtp-settings/test")
+async def test_smtp_settings(admin: User = Depends(get_current_admin), db: AsyncSession = Depends(get_db)):
+    import smtplib, ssl as _ssl
+    row = await _get_platform_row(db)
+    host = row.smtp_host
+    port = row.smtp_port or 587
+    user = row.smtp_user or ""
+    password = row.smtp_password or ""
+    if not host:
+        raise HTTPException(status_code=400, detail="No SMTP host configured")
+    if not password:
+        raise HTTPException(status_code=400, detail="No password saved — save settings first")
+    try:
+        ctx = _ssl.create_default_context()
+        if port == 465:
+            with smtplib.SMTP_SSL(host, port, context=ctx, timeout=10) as s:
+                s.login(user, password)
+        else:
+            with smtplib.SMTP(host, port, timeout=10) as s:
+                s.ehlo(); s.starttls(context=ctx); s.ehlo(); s.login(user, password)
+        return {"ok": True, "message": f"Connected to {host}:{port} successfully"}
+    except smtplib.SMTPAuthenticationError:
+        return {"ok": False, "message": "Authentication failed — check username and app password"}
+    except Exception as exc:
+        return {"ok": False, "message": str(exc)}

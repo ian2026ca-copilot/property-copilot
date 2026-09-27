@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams } from "next/navigation";
-import { leasesApi, tenantsApi, type LeaseOut, type UnitOut, type TenantOut, type LeaseTemplateOut } from "@/lib/api";
+import { leasesApi, tenantsApi, profileApi, type LeaseOut, type UnitOut, type TenantOut, type LeaseTemplateOut } from "@/lib/api";
 import { MOCK_MODE } from "@/lib/useApiData";
 import { useAuth } from "@/context/AuthContext";
 import { LeaseTemplatesModal } from "@/components/LeaseTemplatesModal";
@@ -416,7 +416,8 @@ function CreateLeaseModal({ units, persons, landlordSuggestions, presetTenantId,
     security_deposit: presetSecurityDeposit ?? "",
     lease_type: "FIXED" as LeaseType,
     landlord_name: user?.full_name ?? "",
-    landlord_email: user?.email ?? "",
+    landlord_email: user?.reference_reply_email || user?.email || "",
+    landlord_phone: "",
     notes: "",
   });
   const [coTenantIds, setCoTenantIds] = useState<string[]>([]);
@@ -429,6 +430,18 @@ function CreateLeaseModal({ units, persons, landlordSuggestions, presetTenantId,
   const [generating, setGenerating] = useState(false);
 
   useEffect(() => {
+    profileApi.me().then(me => {
+      setForm(f => ({
+        ...f,
+        landlord_name: f.landlord_name || me.full_name || "",
+        landlord_email: f.landlord_email || me.reference_reply_email || me.email || "",
+        landlord_phone: f.landlord_phone || me.phone || "",
+      }));
+    }).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
     leasesApi.listTemplates().then(list => {
       setTemplates(list);
       if (aiMode && list.length > 0) {
@@ -438,7 +451,13 @@ function CreateLeaseModal({ units, persons, landlordSuggestions, presetTenantId,
     }).catch(() => {});
   }, [aiMode]);
 
-  function set(k: string, v: string) { setForm(f => ({ ...f, [k]: v })); }
+  function set(k: string, v: string) {
+    setForm(f => {
+      const next = { ...f, [k]: v };
+      if (k === "monthly_rent" && !f.security_deposit) next.security_deposit = v;
+      return next;
+    });
+  }
 
   function toggleCoTenant(id: string) {
     setCoTenantIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
@@ -471,6 +490,7 @@ function CreateLeaseModal({ units, persons, landlordSuggestions, presetTenantId,
         lease_type: form.lease_type,
         landlord_name: form.landlord_name || null,
         landlord_email: form.landlord_email || null,
+        landlord_phone: form.landlord_phone || null,
         notes: form.notes || null,
       });
 
@@ -645,15 +665,27 @@ function CreateLeaseModal({ units, persons, landlordSuggestions, presetTenantId,
             </datalist>
           </div>
 
-          <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">Landlord email</label>
-            <input
-              type="email"
-              value={form.landlord_email}
-              onChange={e => set("landlord_email", e.target.value)}
-              placeholder="landlord@example.com"
-              className={inp}
-            />
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">Landlord email</label>
+              <input
+                type="email"
+                value={form.landlord_email}
+                onChange={e => set("landlord_email", e.target.value)}
+                placeholder="landlord@example.com"
+                className={inp}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">Landlord phone</label>
+              <input
+                type="tel"
+                value={form.landlord_phone}
+                onChange={e => set("landlord_phone", e.target.value)}
+                placeholder="(555) 000-0000"
+                className={inp}
+              />
+            </div>
           </div>
 
           <div>
@@ -1535,7 +1567,9 @@ function SignatureCell({ lease, onUpdated }: SignatureCellProps) {
   const { user } = useAuth();
   const [sending, setSending] = useState(false);
   const [checking, setChecking] = useState(false);
+  const [resending, setResending] = useState(false);
   const [error, setError] = useState("");
+  const [warning, setWarning] = useState<string | null>(null);
 
   async function handleSend() {
     setSending(true); setError("");
@@ -1557,10 +1591,11 @@ function SignatureCell({ lease, onUpdated }: SignatureCellProps) {
   }
 
   async function handleCheckStatus() {
-    setChecking(true); setError("");
+    setChecking(true); setError(""); setWarning(null);
     try {
       const updated = await leasesApi.checkSignatureStatus(lease.id);
       onUpdated(updated);
+      if (updated.signature_warning) setWarning(updated.signature_warning);
     } catch (err: any) {
       setError(err.message ?? "Failed to check status");
     } finally {
@@ -1568,11 +1603,33 @@ function SignatureCell({ lease, onUpdated }: SignatureCellProps) {
     }
   }
 
+  async function handleResend() {
+    setResending(true); setError("");
+    try {
+      const updated = await leasesApi.resendSignature(lease.id);
+      onUpdated(updated);
+    } catch (err: any) {
+      setError(err.message ?? "Failed to resend");
+    } finally {
+      setResending(false);
+    }
+  }
+
   if (!lease.document_url) return null;
 
   return (
     <div className="mt-1 space-y-1">
-      {error && <p className="text-[12px] text-red-500 max-w-[140px]">{error}</p>}
+      {error && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-2.5 py-2 text-[12px] text-red-600 break-words">
+          <span className="font-semibold">DocuSign error: </span>{error}
+        </div>
+      )}
+      {warning && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2 text-[12px] text-amber-800 break-words space-y-0.5">
+          <p className="font-semibold">⚠ Signature warning</p>
+          {warning.split(" | ").map((w, i) => <p key={i}>{w}</p>)}
+        </div>
+      )}
       {lease.docusign_envelope_id ? (
         <div className="flex items-center gap-1">
           <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[12px] font-medium ${SIGNATURE_STATUS_STYLES[lease.signature_status ?? ""] ?? "bg-slate-100 text-slate-500"}`}>
@@ -1582,6 +1639,12 @@ function SignatureCell({ lease, onUpdated }: SignatureCellProps) {
             className="text-slate-400 hover:text-slate-700 text-xs shrink-0 p-0.5 rounded hover:bg-slate-100 disabled:opacity-50">
             {checking ? "…" : "↻"}
           </button>
+          {!["completed", "declined", "voided"].includes(lease.signature_status ?? "") && (
+            <button onClick={handleResend} title="Resend signature email" disabled={resending}
+              className="text-slate-400 hover:text-blue-600 text-[11px] shrink-0 px-1 py-0.5 rounded hover:bg-blue-50 disabled:opacity-50 border border-transparent hover:border-blue-200 transition-colors">
+              {resending ? "…" : "Resend"}
+            </button>
+          )}
         </div>
       ) : (
         <button onClick={handleSend} disabled={sending}
@@ -1637,19 +1700,25 @@ export default function LeasesPage() {
   const [modal, setModal] = useState<Modal | null>(presetTenantId && !presetLeaseId ? { type: "create" } : null);
   const [terminateLoading, setTerminateLoading] = useState(false);
   const [checkingSignatures, setCheckingSignatures] = useState(false);
+  const [sigCheckErrors, setSigCheckErrors] = useState<{ name: string; msg: string }[]>([]);
 
   async function handleCheckAllSignatures() {
     const pending = leases.filter(l => l.docusign_envelope_id && l.signature_status !== "completed");
     if (!pending.length) return;
     setCheckingSignatures(true);
-    try {
-      const updated = await Promise.allSettled(pending.map(l => leasesApi.checkSignatureStatus(l.id)));
-      updated.forEach((r, i) => {
-        if (r.status === "fulfilled") handleSave(r.value);
-      });
-    } finally {
-      setCheckingSignatures(false);
-    }
+    setSigCheckErrors([]);
+    const outcomes = await Promise.allSettled(pending.map(l => leasesApi.checkSignatureStatus(l.id)));
+    const errs: { name: string; msg: string }[] = [];
+    outcomes.forEach((r, i) => {
+      if (r.status === "fulfilled") {
+        handleSave(r.value);
+      } else {
+        const msg = r.reason instanceof Error ? r.reason.message : String(r.reason);
+        errs.push({ name: pending[i].tenant?.full_name ?? pending[i].id, msg });
+      }
+    });
+    setSigCheckErrors(errs);
+    setCheckingSignatures(false);
   }
 
   const load = useCallback(async () => {
@@ -1762,13 +1831,26 @@ export default function LeasesPage() {
           <h1 className="text-xl font-bold text-slate-900 mt-0.5">Leases</h1>
         </div>
         <div className="flex gap-2">
-          <button onClick={handleCheckAllSignatures} disabled={checkingSignatures}
-            className="px-4 py-2 bg-white border border-slate-200 text-slate-700 text-sm font-medium rounded-xl hover:bg-slate-50 transition-colors flex items-center gap-1.5 disabled:opacity-50">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-            </svg>
-            {checkingSignatures ? "Checking…" : "Check all signatures"}
-          </button>
+          <div className="flex flex-col items-end gap-1">
+            <button onClick={handleCheckAllSignatures} disabled={checkingSignatures}
+              className="px-4 py-2 bg-white border border-slate-200 text-slate-700 text-sm font-medium rounded-xl hover:bg-slate-50 transition-colors flex items-center gap-1.5 disabled:opacity-50">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+              </svg>
+              {checkingSignatures ? "Checking…" : "Check all signatures"}
+            </button>
+            {sigCheckErrors.length > 0 && (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12px] space-y-1 max-w-xs text-left">
+                <p className="font-semibold text-red-600">DocuSign errors</p>
+                {sigCheckErrors.map((e, i) => (
+                  <div key={i}>
+                    <span className="font-medium text-red-700">{e.name}: </span>
+                    <span className="text-red-500 break-words">{e.msg}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
           <button onClick={() => setModal({ type: "templates" })}
             className="px-4 py-2 bg-white border border-slate-200 text-slate-700 text-sm font-medium rounded-xl hover:bg-slate-50 transition-colors flex items-center gap-1.5">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

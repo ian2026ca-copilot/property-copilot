@@ -128,3 +128,21 @@ class AITestIn(BaseModel):
 class AITestOut(BaseModel):
     ok: bool
     message: str
+
+
+class SMTPSettingsOut(BaseModel):
+    host: str | None
+    port: int
+    user: str | None
+    from_email: str | None
+    enabled: bool
+    password_set: bool
+
+
+class SMTPSettingsIn(BaseModel):
+    host: str | None = None
+    port: int | None = None
+    user: str | None = None
+    password: str | None = None
+    from_email: str | None = None
+    enabled: bool | None = None

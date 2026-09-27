@@ -185,11 +185,13 @@ function NewRequestModal({ onClose }: { onClose: () => void }) {
 
 // ─── Tab panels ───────────────────────────────────────────────────────────────
 
-function HomeTab({ setTab, onPay, payments, paymentsLoading }: {
+function HomeTab({ setTab, onPay, payments, paymentsLoading, docs, docsLoading }: {
   setTab: (t: Tab) => void;
   onPay: () => void;
   payments: PaymentOut[];
   paymentsLoading: boolean;
+  docs: TenantDocumentOut[];
+  docsLoading: boolean;
 }) {
   const nextDue = payments
     .filter(p => p.status === "PENDING" || p.status === "OVERDUE")
@@ -256,6 +258,28 @@ function HomeTab({ setTab, onPay, payments, paymentsLoading }: {
           </button>
         ))}
       </div>
+
+      {/* Missing documents notice */}
+      {!docsLoading && docs.filter(d => d.doc_type === "id_document").length === 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex gap-3">
+          <span className="text-lg shrink-0">🪪</span>
+          <div>
+            <p className="text-xs font-semibold text-amber-900">ID document required</p>
+            <p className="text-xs text-amber-700 mt-0.5">Your landlord needs a copy of your government-issued ID to complete your application.</p>
+            <button onClick={() => setTab("documents")} className="text-[13px] text-amber-900 underline underline-offset-2 mt-1">Upload now →</button>
+          </div>
+        </div>
+      )}
+      {!docsLoading && docs.filter(d => d.doc_type === "reference_letter").length === 0 && (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex gap-3">
+          <span className="text-lg shrink-0">📄</span>
+          <div>
+            <p className="text-xs font-semibold text-blue-900">Reference letter missing</p>
+            <p className="text-xs text-blue-700 mt-0.5">A reference letter helps strengthen your application. Please upload one if you have it.</p>
+            <button onClick={() => setTab("documents")} className="text-[13px] text-blue-900 underline underline-offset-2 mt-1">Upload now →</button>
+          </div>
+        </div>
+      )}
 
       {/* Active maintenance notice */}
       <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex gap-3">
@@ -739,6 +763,8 @@ export default function PortalPage() {
   const [showNewRequest, setShowNewRequest] = useState(false);
   const [payments, setPayments] = useState<PaymentOut[]>([]);
   const [paymentsLoading, setPaymentsLoading] = useState(true);
+  const [docs, setDocs] = useState<TenantDocumentOut[]>([]);
+  const [docsLoading, setDocsLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -748,6 +774,16 @@ export default function PortalPage() {
       .finally(() => { if (!cancelled) setPaymentsLoading(false); });
     return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    tenantsApi.listDocuments(user.id)
+      .then(d => { if (!cancelled) setDocs(d); })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setDocsLoading(false); });
+    return () => { cancelled = true; };
+  }, [user]);
 
   return (
     <div className="max-w-lg mx-auto px-4 py-6">
@@ -775,7 +811,7 @@ export default function PortalPage() {
       </div>
 
       {/* Tab content */}
-      {tab === "home"        && <HomeTab setTab={setTab} onPay={() => setShowPay(true)} payments={payments} paymentsLoading={paymentsLoading} />}
+      {tab === "home"        && <HomeTab setTab={setTab} onPay={() => setShowPay(true)} payments={payments} paymentsLoading={paymentsLoading} docs={docs} docsLoading={docsLoading} />}
       {tab === "profile"     && <ProfileTab />}
       {tab === "payments"    && <PaymentsTab onPay={() => setShowPay(true)} payments={payments} loading={paymentsLoading} />}
       {tab === "maintenance" && <MaintenanceTab onNew={() => setShowNewRequest(true)} />}

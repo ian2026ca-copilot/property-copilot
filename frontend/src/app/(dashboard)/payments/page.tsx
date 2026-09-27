@@ -259,6 +259,14 @@ function EditPaymentModal({ payment, onClose, onSaved, onNotesChanged }: {
   const [noticeSubject, setNoticeSubject] = useState("");
   const [noticeMessage, setNoticeMessage] = useState("");
   const [noticeChannels, setNoticeChannels] = useState({ email: !!payment.tenantEmail, sms: !!payment.tenantPhone });
+  const [ownerEmail, setOwnerEmail] = useState("");
+  const [ownerPhone, setOwnerPhone] = useState("");
+  useEffect(() => {
+    if (user) {
+      setOwnerEmail(e => e || user.email || "");
+      setOwnerPhone(p => p || user.phone || "");
+    }
+  }, [user]);
   const [generatingNotice, setGeneratingNotice] = useState(false);
   const [sendingNotice, setSendingNotice] = useState(false);
   const [noticeError, setNoticeError] = useState("");
@@ -330,6 +338,8 @@ function EditPaymentModal({ payment, onClose, onSaved, onNotesChanged }: {
         subject: noticeSubject || "Overdue rent payment",
         message: noticeMessage,
         channels,
+        owner_email: ownerEmail.trim() || null,
+        owner_phone: ownerPhone.trim() || null,
       });
       setNotes(out.payment.notes);
       onNotesChanged?.(payment.id, out.payment.notes);
@@ -517,6 +527,26 @@ function EditPaymentModal({ payment, onClose, onSaved, onNotesChanged }: {
                       </div>
                     </div>
                   )}
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[13px] font-medium text-slate-600 mb-1">Your email</label>
+                      <input
+                        value={ownerEmail}
+                        onChange={e => setOwnerEmail(e.target.value)}
+                        placeholder="owner@example.com"
+                        className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black bg-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[13px] font-medium text-slate-600 mb-1">Your phone</label>
+                      <input
+                        value={ownerPhone}
+                        onChange={e => setOwnerPhone(e.target.value)}
+                        placeholder="+1 (555) 000-0000"
+                        className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black bg-white"
+                      />
+                    </div>
+                  </div>
                   <div className="flex items-center gap-4">
                     <label className={`flex items-center gap-1.5 text-xs ${payment.tenantEmail ? "text-slate-700" : "text-slate-300"}`}>
                       <input
@@ -549,31 +579,63 @@ function EditPaymentModal({ payment, onClose, onSaved, onNotesChanged }: {
               )}
             </div>
           )}
-          <div className="border-t border-slate-100 pt-3">
-            <p className="text-[13px] uppercase tracking-wider font-medium text-slate-400 mb-2">Notes ({notes.length})</p>
-            {notes.length > 0 && (
-              <div className="space-y-2 mb-2 max-h-44 overflow-y-auto pr-1">
-                {notes.map(n => (
-                  <div key={n.id} className="bg-slate-50 rounded-lg px-3 py-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-xs font-medium text-slate-700">{n.author_name}</p>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <p className="text-[13px] text-slate-400">{fmtNoteDt(n.created_at)}</p>
-                        {n.author_user_id === user?.id && (
-                          <button type="button" onClick={() => deleteNote(n.id)} className="text-[13px] text-slate-400 hover:text-red-500">Delete</button>
-                        )}
-                      </div>
-                    </div>
-                    <p className="text-sm text-slate-700 whitespace-pre-wrap mt-0.5">{n.note}</p>
+          <div className="border-t border-slate-100 pt-3 space-y-4">
+            {/* Notice send history */}
+            {(() => {
+              const noticeNotes = notes.filter(n => n.note.startsWith("Overdue notice sent"));
+              if (noticeNotes.length === 0) return null;
+              return (
+                <div>
+                  <p className="text-[13px] uppercase tracking-wider font-medium text-slate-400 mb-2">Notice history ({noticeNotes.length})</p>
+                  <div className="space-y-2 max-h-44 overflow-y-auto pr-1">
+                    {noticeNotes.map(n => {
+                      const lines = n.note.split("\n");
+                      const summary = lines[0];
+                      const detail = lines.slice(1).join("\n");
+                      return (
+                        <div key={n.id} className="bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-xs font-medium text-blue-700">📨 {summary}</p>
+                            <p className="text-[13px] text-slate-400 shrink-0">{fmtNoteDt(n.created_at)}</p>
+                          </div>
+                          {detail && (
+                            <p className="text-xs text-slate-600 whitespace-pre-wrap mt-1">{detail}</p>
+                          )}
+                          <p className="text-[13px] text-slate-400 mt-0.5">by {n.author_name}</p>
+                        </div>
+                      );
+                    })}
                   </div>
-                ))}
-              </div>
-            )}
-            <textarea value={newNote} onChange={e => setNewNote(e.target.value)} rows={2} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black resize-none" placeholder="Add a note…" />
-            <button type="button" onClick={addNote} disabled={addingNote || !newNote.trim()}
-              className="mt-1.5 w-full px-4 py-2 border border-slate-200 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
-              {addingNote ? "Adding…" : "Add note"}
-            </button>
+                </div>
+              );
+            })()}
+            {/* Regular notes */}
+            <div>
+              <p className="text-[13px] uppercase tracking-wider font-medium text-slate-400 mb-2">Notes ({notes.filter(n => !n.note.startsWith("Overdue notice sent")).length})</p>
+              {notes.filter(n => !n.note.startsWith("Overdue notice sent")).length > 0 && (
+                <div className="space-y-2 mb-2 max-h-44 overflow-y-auto pr-1">
+                  {notes.filter(n => !n.note.startsWith("Overdue notice sent")).map(n => (
+                    <div key={n.id} className="bg-slate-50 rounded-lg px-3 py-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-xs font-medium text-slate-700">{n.author_name}</p>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <p className="text-[13px] text-slate-400">{fmtNoteDt(n.created_at)}</p>
+                          {n.author_user_id === user?.id && (
+                            <button type="button" onClick={() => deleteNote(n.id)} className="text-[13px] text-slate-400 hover:text-red-500">Delete</button>
+                          )}
+                        </div>
+                      </div>
+                      <p className="text-sm text-slate-700 whitespace-pre-wrap mt-0.5">{n.note}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <textarea value={newNote} onChange={e => setNewNote(e.target.value)} rows={2} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black resize-none" placeholder="Add a note…" />
+              <button type="button" onClick={addNote} disabled={addingNote || !newNote.trim()}
+                className="mt-1.5 w-full px-4 py-2 border border-slate-200 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+                {addingNote ? "Adding…" : "Add note"}
+              </button>
+            </div>
           </div>
         </div>
         <div className="flex gap-3 px-6 py-4 border-t border-slate-100 sticky bottom-0 bg-white">
@@ -619,6 +681,7 @@ function lastNoticeSentAt(notes: PaymentNoteOut[]): string | null {
 function BatchNoticeModal({ payments, onClose, onDone }: {
   payments: PaymentRow[]; onClose: () => void; onDone: () => void;
 }) {
+  const { user } = useAuth();
   const overdue = useMemo(() => payments.filter(p => p.status === "OVERDUE"), [payments]);
   const [rows, setRows] = useState<BatchRow[]>(() => overdue.map(p => ({
     paymentId: p.id,
@@ -640,6 +703,14 @@ function BatchNoticeModal({ payments, onClose, onDone }: {
     sendMessage: null,
     lastNoticeSentAt: lastNoticeSentAt(p.notes),
   })));
+  const [ownerEmail, setOwnerEmail] = useState("");
+  const [ownerPhone, setOwnerPhone] = useState("");
+  useEffect(() => {
+    if (user) {
+      setOwnerEmail(e => e || user.email || "");
+      setOwnerPhone(p => p || user.phone || "");
+    }
+  }, [user]);
   const [generatingAll, setGeneratingAll] = useState(false);
   const [sendingAll, setSendingAll] = useState(false);
   const [done, setDone] = useState(false);
@@ -678,6 +749,8 @@ function BatchNoticeModal({ payments, onClose, onDone }: {
           subject: r.subject || "Overdue rent payment",
           message: r.message,
           channels,
+          owner_email: ownerEmail.trim() || null,
+          owner_phone: ownerPhone.trim() || null,
         });
         const sentVia = [out.email_sent && "email", out.sms_sent && "SMS"].filter(Boolean).join(" and ");
         updateRow(r.paymentId, {
@@ -707,12 +780,39 @@ function BatchNoticeModal({ payments, onClose, onDone }: {
           <button onClick={onClose} className="text-slate-400 hover:text-slate-700 text-lg leading-none">✕</button>
         </div>
 
+        <div className="px-6 py-3 border-b border-slate-100 bg-slate-50 grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-[13px] font-medium text-slate-600 mb-1">Your email (shown to tenants)</label>
+            <input
+              value={ownerEmail}
+              onChange={e => setOwnerEmail(e.target.value)}
+              placeholder="owner@example.com"
+              className="w-full text-sm border border-slate-200 rounded-lg px-3 py-1.5 outline-none focus:border-black bg-white"
+            />
+          </div>
+          <div>
+            <label className="block text-[13px] font-medium text-slate-600 mb-1">Your phone (shown to tenants)</label>
+            <input
+              value={ownerPhone}
+              onChange={e => setOwnerPhone(e.target.value)}
+              placeholder="+1 (555) 000-0000"
+              className="w-full text-sm border border-slate-200 rounded-lg px-3 py-1.5 outline-none focus:border-black bg-white"
+            />
+          </div>
+        </div>
+
         <div className="px-6 py-4 border-b border-slate-100 flex flex-wrap items-center gap-3 sticky top-[57px] bg-white z-10">
           <label className="flex items-center gap-1.5 text-xs text-slate-600">
             <input
               type="checkbox"
               checked={allSelected}
-              onChange={e => setRows(prev => prev.map(r => ({ ...r, selected: e.target.checked })))}
+              onChange={e => setRows(prev => prev.map(r => ({
+                ...r,
+                selected: e.target.checked,
+                channels: e.target.checked
+                  ? { email: !!r.tenantEmail, sms: !!r.tenantPhone }
+                  : { email: false, sms: false },
+              })))}
             />
             Select all
           </label>

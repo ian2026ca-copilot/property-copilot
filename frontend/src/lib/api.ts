@@ -141,6 +141,18 @@ export interface TenantOut {
   employer_ref_sent: boolean;
   landlord_ref_sent: boolean;
   tenant_notified: boolean;
+  employer_ref_analyzed: boolean;
+  landlord_ref_analyzed: boolean;
+  employer_ref_summary: RefSummary | null;
+  landlord_ref_summary: RefSummary | null;
+}
+
+export interface RefSummary {
+  summary?: string;
+  confirmed?: boolean | null;
+  would_rerent_or_good_standing?: boolean | null;
+  red_flags?: string[];
+  [key: string]: unknown;
 }
 
 export interface LeaseOut {
@@ -156,8 +168,10 @@ export interface LeaseOut {
   document_url: string | null;
   landlord_name: string | null;
   landlord_email: string | null;
+  landlord_phone: string | null;
   docusign_envelope_id: string | null;
   signature_status: string | null;
+  signature_warning?: string | null;
   notes: string | null;
   tenant: TenantOut | null;
   co_tenants: TenantOut[];
@@ -431,6 +445,7 @@ export const leasesApi = {
     notes?: string | null;
   }) => api.post<LeaseOut>(`/leases/${id}/renew`, body),
   sendForSignature: (id: string) => api.post<LeaseOut>(`/leases/${id}/send-for-signature`, {}),
+  resendSignature: (id: string) => api.post<LeaseOut>(`/leases/${id}/resend-signature`, {}),
   checkSignatureStatus: (id: string) => api.post<LeaseOut>(`/leases/${id}/signature-status`, {}),
   docusignStatus: () => api.get<{
     configured: boolean;
@@ -573,6 +588,15 @@ export interface InviteTemplateOut {
   created_at: string;
 }
 
+export interface OverdueTemplateOut {
+  id: string;
+  name: string;
+  subject: string;
+  body: string;
+  is_active: boolean;
+  created_at: string;
+}
+
 export interface ReferenceTemplateOut {
   id: string;
   kind: string;
@@ -618,7 +642,7 @@ export const tenantsApi = {
     check_enabled?: boolean;
   }) => api.patch<ReferenceEmailConfigOut>("/tenants/reference-email/config", body),
   testImapConnection: () => api.post<{ ok: boolean; message: string }>("/tenants/reference-email/test-connection", {}),
-  checkReferenceEmailsNow: () => api.post<{ ok: boolean; new_responses: number; message: string }>("/tenants/reference-email/check-now", {}),
+  checkReferenceEmailsNow: () => api.post<{ ok: boolean; new_responses: number; pending_count: number; already_analyzed: number; message: string }>("/tenants/reference-email/check-now", {}),
   aiExtract: (file: File) => upload<Record<string, string | null>>("/tenants/ai-extract", file),
   createPerson: (body: object) => api.post<TenantOut>("/tenants/person", body),
   updatePerson: (id: string, body: object) => api.put<TenantOut>(`/tenants/person/${id}`, body),
@@ -713,8 +737,38 @@ export const paymentsApi = {
   removeNote: (id: string, noteId: string) => api.delete<void>(`/payments/${id}/notes/${noteId}`),
   aiGenerateNotice: (id: string, extra_instructions?: string) =>
     api.post<PaymentNoticeAIGenerateOut>(`/payments/${id}/ai-generate-notice`, { extra_instructions: extra_instructions || null }),
-  sendNotice: (id: string, body: { subject: string; message: string; channels: string[] }) =>
+  sendNotice: (id: string, body: { subject: string; message: string; channels: string[]; owner_email?: string | null; owner_phone?: string | null }) =>
     api.post<PaymentNoticeSendOut>(`/payments/${id}/send-notice`, body),
+  listOverdueTemplates: () => api.get<OverdueTemplateOut[]>("/payments/overdue-templates"),
+  createOverdueTemplate: (body: { name: string; subject: string; body: string }) =>
+    api.post<OverdueTemplateOut>("/payments/overdue-templates", body),
+  updateOverdueTemplate: (id: string, body: { name: string; subject: string; body: string }) =>
+    api.patch<OverdueTemplateOut>(`/payments/overdue-templates/${id}`, body),
+  deleteOverdueTemplate: (id: string) => api.delete<void>(`/payments/overdue-templates/${id}`),
+  activateOverdueTemplate: (id: string) => api.post<OverdueTemplateOut[]>(`/payments/overdue-templates/${id}/activate`, {}),
+};
+
+export interface LeaseEmailConfigOut {
+  host: string | null;
+  port: number;
+  user: string | null;
+  from_address: string | null;
+  enabled: boolean;
+  password_set: boolean;
+}
+
+export const leaseEmailApi = {
+  get: () => api.get<LeaseEmailConfigOut>("/auth/lease-email-config"),
+  test: () => api.post<{ ok: boolean; message: string }>("/auth/lease-email-config/test", {}),
+  copyScreeningPassword: () => api.post<LeaseEmailConfigOut>("/auth/lease-email-config/copy-screening-password", {}),
+  update: (body: {
+    host?: string | null;
+    port?: number | null;
+    user?: string | null;
+    password?: string | null;
+    from_address?: string | null;
+    enabled?: boolean | null;
+  }) => api.patch<LeaseEmailConfigOut>("/auth/lease-email-config", body),
 };
 
 export interface MaintenanceAIGenerateOut {

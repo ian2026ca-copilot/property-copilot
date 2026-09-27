@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { adminApi, AISettingsOut, AISettingsIn, AIProvider, AITestOut } from "@/lib/adminApi";
+import { adminApi, AISettingsOut, AISettingsIn, AIProvider, AITestOut, SMTPSettingsOut } from "@/lib/adminApi";
 import { AdminUser } from "@/lib/adminAuth";
 
 type ApiKeyField = "openai_api_key" | "deepseek_api_key" | "gemini_api_key" | "grok_api_key";
@@ -351,8 +351,155 @@ function AdminsCard() {
   );
 }
 
+function SMTPCard() {
+  const [config, setConfig] = useState<SMTPSettingsOut | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [form, setForm] = useState({ host: "", port: "587", user: "", password: "", from_email: "", enabled: false });
+
+  useEffect(() => {
+    adminApi.getSmtpSettings().then((c) => {
+      setConfig(c);
+      setForm({ host: c.host ?? "", port: String(c.port ?? 587), user: c.user ?? "", password: "", from_email: c.from_email ?? "", enabled: c.enabled });
+    }).catch(() => {}).finally(() => setLoading(false));
+  }, []);
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true); setError(""); setSuccess("");
+    try {
+      const body: Parameters<typeof adminApi.updateSmtpSettings>[0] = {
+        host: form.host || null,
+        port: Number(form.port) || 587,
+        user: form.user || null,
+        from_email: form.from_email || null,
+        enabled: form.enabled,
+      };
+      if (form.password.trim()) body.password = form.password.trim();
+      const updated = await adminApi.updateSmtpSettings(body);
+      setConfig(updated);
+      setForm(f => ({ ...f, password: "" }));
+      setSuccess("Saved.");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to save");
+    } finally { setSaving(false); }
+  }
+
+  async function handleClearPassword() {
+    setSaving(true); setError("");
+    try {
+      const updated = await adminApi.updateSmtpSettings({ password: "" });
+      setConfig(updated);
+      setSuccess("Password removed.");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to remove password");
+    } finally { setSaving(false); }
+  }
+
+  async function handleTest() {
+    setTesting(true); setTestResult(null);
+    try {
+      setTestResult(await adminApi.testSmtp());
+    } catch (e: unknown) {
+      setTestResult({ ok: false, message: e instanceof Error ? e.message : "Connection failed" });
+    } finally { setTesting(false); }
+  }
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 p-6 space-y-5">
+      <div>
+        <h3 className="text-sm font-semibold text-slate-900">System SMTP account</h3>
+        <p className="text-xs text-slate-400 mt-0.5">
+          Platform-wide email account used for all outgoing emails (overdue notices, invites, welcome emails).
+          When enabled, this overrides the SMTP environment variables.
+        </p>
+        <a href="https://support.google.com/mail/answer/185833" target="_blank" rel="noopener noreferrer"
+          className="inline-block text-xs font-medium text-violet-700 hover:text-violet-900 mt-1.5">
+          How to generate a Gmail App Password →
+        </a>
+      </div>
+
+      {loading ? <p className="text-xs text-slate-400">Loading…</p> : (
+        <form onSubmit={handleSave} className="space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">SMTP host</label>
+            <input value={form.host} onChange={e => setForm(f => ({ ...f, host: e.target.value }))}
+              placeholder="smtp.gmail.com"
+              className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">SMTP port</label>
+            <input value={form.port} onChange={e => setForm(f => ({ ...f, port: e.target.value }))}
+              placeholder="587"
+              className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Username / email</label>
+            <input value={form.user} onChange={e => setForm(f => ({ ...f, user: e.target.value }))}
+              placeholder="you@gmail.com"
+              className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">
+              App password {config?.password_set && <span className="text-emerald-600 font-normal">(already on file — enter a new one to replace it)</span>}
+            </label>
+            <input type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
+              placeholder={config?.password_set ? "•••••••• (unchanged)" : "16-character app password"}
+              className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black" />
+            <p className="text-[13px] text-slate-400 mt-1">
+              Not your regular password — generate a dedicated App Password from your Google Account
+              (Security → 2-Step Verification → App passwords).
+            </p>
+            <div className="flex items-center gap-3 mt-1 flex-wrap">
+              {config?.password_set && (
+                <button type="button" onClick={handleClearPassword} disabled={saving}
+                  className="text-[13px] text-red-600 hover:text-red-700 font-medium disabled:opacity-50">
+                  Remove saved password
+                </button>
+              )}
+              <button type="button" onClick={handleTest} disabled={testing || saving}
+                className="text-[13px] text-violet-600 hover:text-violet-800 font-medium border border-violet-200 px-2.5 py-1 rounded-lg hover:bg-violet-50 transition-colors disabled:opacity-50">
+                {testing ? "Testing…" : "Test connection"}
+              </button>
+            </div>
+            {testResult && (
+              <p className={`text-[13px] mt-1 ${testResult.ok ? "text-emerald-600" : "text-red-600"}`}>
+                {testResult.ok ? "✓ " : "✗ "}{testResult.message}
+              </p>
+            )}
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">From address (displayed to recipients)</label>
+            <input value={form.from_email} onChange={e => setForm(f => ({ ...f, from_email: e.target.value }))}
+              placeholder="noreply@yourcompany.com"
+              className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-black" />
+          </div>
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input type="checkbox" checked={form.enabled} onChange={e => setForm(f => ({ ...f, enabled: e.target.checked }))} className="mt-0.5" />
+            <span>
+              <span className="block text-sm font-medium text-slate-900">Enable (override env vars)</span>
+              <span className="block text-xs text-slate-400 mt-0.5">When on, all outgoing emails use this account instead of the server environment variables.</span>
+            </span>
+          </label>
+          {error && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
+          {success && <p className="text-xs text-emerald-600 bg-emerald-50 rounded-lg px-3 py-2">{success}</p>}
+          <button type="submit" disabled={saving}
+            className="px-4 py-2 text-sm bg-black text-white rounded-lg hover:bg-slate-800 font-medium disabled:opacity-50">
+            {saving ? "Saving…" : "Save settings"}
+          </button>
+        </form>
+      )}
+    </div>
+  );
+}
+
 const SETTINGS_TABS = [
   { key: "api-provider", label: "API Provider" },
+  { key: "smtp", label: "SMTP Email" },
   { key: "new-admin", label: "New Admin" },
 ] as const;
 
@@ -386,6 +533,7 @@ export default function AdminSettingsPage() {
       </div>
 
       {tab === "api-provider" && <AIProvidersCard />}
+      {tab === "smtp" && <SMTPCard />}
       {tab === "new-admin" && <AdminsCard />}
     </div>
   );

@@ -18,9 +18,11 @@ from app.models.payment import Payment, PaymentStatus, PaymentType, PaymentNote
 from app.models.lease import Lease
 from app.models.property import Unit, Property
 from app.models.organization import Organization
+from app.models.overdue_template import OverdueTemplate
 from app.schemas.payment import (
     PaymentCreate, PaymentUpdate, PaymentOut, PaymentNoteOut, PaymentNoteCreate,
     PaymentNoticeAIGenerateIn, PaymentNoticeAIGenerateOut, PaymentNoticeSend, PaymentNoticeSendOut,
+    OverdueTemplateCreate, OverdueTemplateUpdate, OverdueTemplateOut,
 )
 
 router = APIRouter(prefix="/payments", tags=["payments"])
@@ -353,6 +355,9 @@ async def ai_generate_notice(
     tenant_name = tenant.display_name if tenant else "Tenant"
     days_overdue = max((date.today() - payment.due_date).days, 0)
 
+    owner_contact_parts = [c for c in [user.email, user.phone] if c]
+    owner_contact_line = ", ".join(owner_contact_parts) if owner_contact_parts else None
+
     context = (
         f"Tenant name: {tenant_name}\n"
         f"Unit: {unit.unit_number if unit else '—'}"
@@ -362,6 +367,12 @@ async def ai_generate_notice(
         f"Days overdue: {days_overdue}\n"
         f"Payment type: {TYPE_LABEL.get(payment.payment_type, str(payment.payment_type))}\n"
         f"Sent by: {signer_name}, {org_name}\n"
+        + (f"Owner contact: {owner_contact_line}\n" if owner_contact_line else "")
+    )
+
+    contact_instruction = (
+        f" Include owner contact information ({owner_contact_line}) on the line(s) after the name/org in the sign-off."
+        if owner_contact_line else ""
     )
 
     prompt = (
@@ -374,7 +385,7 @@ async def ai_generate_notice(
         "many days overdue it is, and requesting prompt payment or contact if there's an issue. Keep the tone "
         "professional and firm but not hostile.\n"
         f"- Close with a formal sign-off (e.g. \"Sincerely,\" or \"Regards,\") followed by \"{signer_name}\" and "
-        f"\"{org_name}\" each on their own line.\n"
+        f"\"{org_name}\" each on their own line.{contact_instruction}\n"
         "Plain text only — no markdown, no HTML, no placeholders like [Your Name].\n\n"
         "Return ONLY a JSON object with these exact keys:\n"
         "subject (a short, formal email subject line, under 80 characters),\n"
@@ -430,9 +441,12 @@ async def send_notice(
     sms_sent = False
     skipped: list[str] = []
 
+    owner_email = body.owner_email or user.email or None
+    owner_phone = body.owner_phone or user.phone or None
+
     if "email" in channels:
         if tenant.email:
-            background_tasks.add_task(send_overdue_notice_email, tenant.email, body.subject, body.message)
+            background_tasks.add_task(send_overdue_notice_email, tenant.email, body.subject, body.message, owner_email, owner_phone)
             email_sent = True
         else:
             skipped.append("email (no email on file)")
@@ -451,6 +465,9 @@ async def send_notice(
     note_text = f"Overdue notice sent via {' and '.join(sent_via)}"
     if skipped:
         note_text += f" (skipped: {', '.join(skipped)})"
+    contact_parts = [c for c in [owner_email, owner_phone] if c]
+    if contact_parts:
+        note_text += f"\nOwner contact: {', '.join(contact_parts)}"
     note_text += f"\nSubject: {body.subject}\nMessage: {body.message}"
 
     db.add(PaymentNote(
@@ -469,3 +486,116 @@ async def send_notice(
         skipped_channels=skipped,
         payment=_to_out(payment, lease),
     )
+
+
+# ─── Overdue notice templates ─────────────────────────────────────────────────
+
+def _overdue_template_to_out(t: OverdueTemplate) -> OverdueTemplateOut:
+    return OverdueTemplateOut(
+        id=str(t.id),
+        name=t.name,
+        subject=t.subject or "",
+        body=t.body,
+        is_active=bool(t.is_active),
+        created_at=t.created_at.isoformat(),
+    )
+
+
+@router.get("/overdue-templates", response_model=list[OverdueTemplateOut])
+async def list_overdue_templates(
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
+    db: AsyncSession = Depends(get_db),
+):
+    _, member = current
+    result = await db.execute(
+        select(OverdueTemplate)
+        .where(OverdueTemplate.organization_id == member.organization_id)
+        .order_by(OverdueTemplate.created_at.desc())
+    )
+    return [_overdue_template_to_out(t) for t in result.scalars().all()]
+
+
+@router.post("/overdue-templates", response_model=OverdueTemplateOut, status_code=status.HTTP_201_CREATED)
+async def create_overdue_template(
+    body: OverdueTemplateCreate,
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
+    db: AsyncSession = Depends(get_db),
+):
+    _, member = current
+    name = body.name.strip()
+    text = body.body.strip()
+    if not name or not text:
+        raise HTTPException(status_code=400, detail="Name and message are required")
+    t = OverdueTemplate(organization_id=member.organization_id, name=name, subject=body.subject.strip(), body=text)
+    db.add(t)
+    await db.commit()
+    await db.refresh(t)
+    return _overdue_template_to_out(t)
+
+
+@router.patch("/overdue-templates/{template_id}", response_model=OverdueTemplateOut)
+async def update_overdue_template(
+    template_id: str,
+    body: OverdueTemplateUpdate,
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
+    db: AsyncSession = Depends(get_db),
+):
+    _, member = current
+    name = body.name.strip()
+    text = body.body.strip()
+    if not name or not text:
+        raise HTTPException(status_code=400, detail="Name and message are required")
+    result = await db.execute(
+        select(OverdueTemplate).where(OverdueTemplate.id == template_id, OverdueTemplate.organization_id == member.organization_id)
+    )
+    t = result.scalar_one_or_none()
+    if not t:
+        raise HTTPException(status_code=404, detail="Template not found")
+    t.name = name
+    t.subject = body.subject.strip()
+    t.body = text
+    await db.commit()
+    await db.refresh(t)
+    return _overdue_template_to_out(t)
+
+
+@router.delete("/overdue-templates/{template_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_overdue_template(
+    template_id: str,
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
+    db: AsyncSession = Depends(get_db),
+):
+    _, member = current
+    result = await db.execute(
+        select(OverdueTemplate).where(OverdueTemplate.id == template_id, OverdueTemplate.organization_id == member.organization_id)
+    )
+    t = result.scalar_one_or_none()
+    if not t:
+        raise HTTPException(status_code=404, detail="Template not found")
+    await db.delete(t)
+    await db.commit()
+
+
+@router.post("/overdue-templates/{template_id}/activate", response_model=list[OverdueTemplateOut])
+async def activate_overdue_template(
+    template_id: str,
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
+    db: AsyncSession = Depends(get_db),
+):
+    _, member = current
+    result = await db.execute(
+        select(OverdueTemplate).where(OverdueTemplate.id == template_id, OverdueTemplate.organization_id == member.organization_id)
+    )
+    t = result.scalar_one_or_none()
+    if not t:
+        raise HTTPException(status_code=404, detail="Template not found")
+    all_result = await db.execute(
+        select(OverdueTemplate).where(OverdueTemplate.organization_id == member.organization_id)
+    )
+    for tmpl in all_result.scalars().all():
+        tmpl.is_active = (tmpl.id == t.id)
+    await db.commit()
+    updated = await db.execute(
+        select(OverdueTemplate).where(OverdueTemplate.organization_id == member.organization_id).order_by(OverdueTemplate.created_at.desc())
+    )
+    return [_overdue_template_to_out(x) for x in updated.scalars().all()]

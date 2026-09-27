@@ -7,8 +7,32 @@ import { MOCK_MODE } from "@/lib/useApiData";
 import {
   tenantsApi, unitsApi,
   type TenantOut, type TenantApplicationOut, type UnitDetailOut, type TenantAiScreenOut, type TenantScreeningNoteOut,
-  type EmployerReferenceLetterOut,
+  type EmployerReferenceLetterOut, type RefSummary,
 } from "@/lib/api";
+
+function refScore(summary: RefSummary): number {
+  let score = 100;
+  if (summary.confirmed === false) score -= 30;
+  else if (summary.confirmed == null) score -= 15;
+  if (summary.would_rerent_or_good_standing === false) score -= 30;
+  else if (summary.would_rerent_or_good_standing == null) score -= 15;
+  score -= (summary.red_flags?.length ?? 0) * 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+function MiniScoreRing({ score }: { score: number }) {
+  const r = 14, circ = 2 * Math.PI * r;
+  const color = score >= 70 ? "#16a34a" : score >= 40 ? "#d97706" : "#dc2626";
+  return (
+    <svg width="36" height="36" viewBox="0 0 36 36" className="shrink-0">
+      <circle cx="18" cy="18" r={r} fill="none" stroke="#e2e8f0" strokeWidth="3" />
+      <circle cx="18" cy="18" r={r} fill="none" stroke={color} strokeWidth="3"
+        strokeDasharray={`${(score / 100) * circ} ${circ}`} strokeLinecap="round"
+        transform="rotate(-90 18 18)" />
+      <text x="18" y="22" textAnchor="middle" fontSize="9" fontWeight="700" fill={color}>{score}</text>
+    </svg>
+  );
+}
 
 type AppStatus = "NOT_STARTED" | "IN_REVIEW" | "MORE_INFO_REQUESTED" | "APPROVED" | "DECLINED";
 
@@ -103,6 +127,8 @@ function ApplicantDrawer({
       </button>
     );
   }
+  const [uploadingDoc, setUploadingDoc] = useState<string | null>(null);
+  const [uploadDocError, setUploadDocError] = useState("");
   const [contactError, setContactError] = useState<Record<string, string>>({});
   const [letterDrafts, setLetterDrafts] = useState<Record<string, EmployerReferenceLetterOut>>({});
   const [generatingLetter, setGeneratingLetter] = useState<Record<string, boolean>>({});
@@ -154,6 +180,23 @@ function ApplicantDrawer({
 
   function refreshNotes() {
     return tenantsApi.listNotes(tenant.id).then(setNotes).catch(() => {});
+  }
+
+  function refreshDetail() {
+    return tenantsApi.getApplication(tenant.id).then(setDetail).catch(() => {});
+  }
+
+  async function handleUploadDoc(docType: "id_document" | "reference_letter", file: File) {
+    setUploadingDoc(docType);
+    setUploadDocError("");
+    try {
+      await tenantsApi.uploadDocument(tenant.id, docType, file);
+      await refreshDetail();
+    } catch (e: unknown) {
+      setUploadDocError(e instanceof Error ? e.message : "Upload failed");
+    } finally {
+      setUploadingDoc(null);
+    }
   }
 
   async function handleCheckEmails() {
@@ -287,6 +330,8 @@ function ApplicantDrawer({
   const employerRefSent = notes.some((n) => n.note.includes("(employer reference)"));
   const landlordRefSent = notes.some((n) => n.note.includes("(landlord reference)"));
   const tenantNotified = notes.some((n) => n.note.includes("requesting missing application info"));
+  const employerRefAnalyzed = notes.some((n) => n.note.includes("employer reference)") && n.note.includes("Reference reply received from"));
+  const landlordRefAnalyzed = notes.some((n) => n.note.includes("landlord reference)") && n.note.includes("Reference reply received from"));
 
   const status = asStatus(tenant.application_status);
   const docCount = tenant.documents.length;
@@ -315,16 +360,30 @@ function ApplicantDrawer({
           {(employerRefSent || landlordRefSent || tenantNotified) && (
             <div className="flex flex-wrap gap-1.5">
               {employerRefSent && (
-                <span className="flex items-center gap-1 text-[12px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full">
-                  <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
-                  Employer ref sent
-                </span>
+                employerRefAnalyzed && tenant.employer_ref_summary ? (
+                  <span className="flex items-center gap-1 text-[12px] font-medium border px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 border-violet-200">
+                    <MiniScoreRing score={refScore(tenant.employer_ref_summary)} />
+                    📬 Employer ref received
+                  </span>
+                ) : (
+                  <span className={`flex items-center gap-1 text-[12px] font-medium border px-2 py-0.5 rounded-full ${employerRefAnalyzed ? "bg-violet-100 text-violet-700 border-violet-200" : "bg-emerald-50 text-emerald-700 border-emerald-200"}`}>
+                    {employerRefAnalyzed ? "📬" : <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>}
+                    {employerRefAnalyzed ? "Employer ref received" : "Employer ref sent"}
+                  </span>
+                )
               )}
               {landlordRefSent && (
-                <span className="flex items-center gap-1 text-[12px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full">
-                  <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
-                  Landlord ref sent
-                </span>
+                landlordRefAnalyzed && tenant.landlord_ref_summary ? (
+                  <span className="flex items-center gap-1 text-[12px] font-medium border px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 border-violet-200">
+                    <MiniScoreRing score={refScore(tenant.landlord_ref_summary)} />
+                    📬 Landlord ref received
+                  </span>
+                ) : (
+                  <span className={`flex items-center gap-1 text-[12px] font-medium border px-2 py-0.5 rounded-full ${landlordRefAnalyzed ? "bg-violet-100 text-violet-700 border-violet-200" : "bg-emerald-50 text-emerald-700 border-emerald-200"}`}>
+                    {landlordRefAnalyzed ? "📬" : <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>}
+                    {landlordRefAnalyzed ? "Landlord ref received" : "Landlord ref sent"}
+                  </span>
+                )
               )}
               {tenantNotified && (
                 <span className="flex items-center gap-1 text-[12px] font-medium bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-full">
@@ -432,6 +491,21 @@ function ApplicantDrawer({
           )}
           {openSections.has("documents") && docCount === 0 && (
             <p className="text-xs text-slate-400">No documents uploaded.</p>
+          )}
+          {openSections.has("documents") && (
+            <div className="flex flex-wrap gap-2 pt-1">
+              <label className={`cursor-pointer inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors ${uploadingDoc === "id_document" ? "opacity-50 pointer-events-none" : ""}`}>
+                <svg className="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+                {uploadingDoc === "id_document" ? "Uploading…" : "Upload ID"}
+                <input type="file" className="hidden" accept="image/*,.pdf" onChange={e => { const f = e.target.files?.[0]; if (f) { handleUploadDoc("id_document", f); e.target.value = ""; } }} />
+              </label>
+              <label className={`cursor-pointer inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors ${uploadingDoc === "reference_letter" ? "opacity-50 pointer-events-none" : ""}`}>
+                <svg className="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+                {uploadingDoc === "reference_letter" ? "Uploading…" : "Upload reference letter"}
+                <input type="file" className="hidden" accept="image/*,.pdf,.doc,.docx" onChange={e => { const f = e.target.files?.[0]; if (f) { handleUploadDoc("reference_letter", f); e.target.value = ""; } }} />
+              </label>
+              {uploadDocError && <p className="w-full text-xs text-red-600">{uploadDocError}</p>}
+            </div>
           )}
 
           {/* Employer references */}
@@ -933,10 +1007,28 @@ export default function ScreeningPage() {
               {(t.employer_ref_sent || t.landlord_ref_sent || t.tenant_notified) && (
                 <div className="flex flex-wrap gap-1 mt-2">
                   {t.employer_ref_sent && (
-                    <span className="text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded-full">✓ Employer ref sent</span>
+                    t.employer_ref_analyzed && t.employer_ref_summary ? (
+                      <span className="flex items-center gap-1 text-[11px] font-medium border px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700 border-violet-200">
+                        <MiniScoreRing score={refScore(t.employer_ref_summary)} />
+                        📬 Employer ref received
+                      </span>
+                    ) : (
+                      <span className={`text-[11px] font-medium border px-1.5 py-0.5 rounded-full ${t.employer_ref_analyzed ? "bg-violet-100 text-violet-700 border-violet-200" : "bg-emerald-50 text-emerald-700 border-emerald-200"}`}>
+                        {t.employer_ref_analyzed ? "📬 Employer ref received" : "✓ Employer ref sent"}
+                      </span>
+                    )
                   )}
                   {t.landlord_ref_sent && (
-                    <span className="text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded-full">✓ Landlord ref sent</span>
+                    t.landlord_ref_analyzed && t.landlord_ref_summary ? (
+                      <span className="flex items-center gap-1 text-[11px] font-medium border px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700 border-violet-200">
+                        <MiniScoreRing score={refScore(t.landlord_ref_summary)} />
+                        📬 Landlord ref received
+                      </span>
+                    ) : (
+                      <span className={`text-[11px] font-medium border px-1.5 py-0.5 rounded-full ${t.landlord_ref_analyzed ? "bg-violet-100 text-violet-700 border-violet-200" : "bg-emerald-50 text-emerald-700 border-emerald-200"}`}>
+                        {t.landlord_ref_analyzed ? "📬 Landlord ref received" : "✓ Landlord ref sent"}
+                      </span>
+                    )
                   )}
                   {t.tenant_notified && (
                     <span className="text-[11px] font-medium bg-blue-50 text-blue-700 border border-blue-200 px-1.5 py-0.5 rounded-full">✓ Tenant notified</span>

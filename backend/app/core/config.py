@@ -17,9 +17,18 @@ class Settings(BaseSettings):
     STRIPE_WEBHOOK_SECRET: str = ""
     STRIPE_PRICE_ID: str = ""
     STRIPE_PRICE_ID_YEARLY: str = ""
+    GEMINI_API_KEY: str = ""
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    FROM_EMAIL: str = ""
+    FRONTEND_URL: str = "http://localhost:3000"
+    BILLING_SYNC_INTERVAL_SECONDS: int = 300
 
     class Config:
         env_file = ".env"
+        extra = "ignore"
 
 
 settings = Settings()

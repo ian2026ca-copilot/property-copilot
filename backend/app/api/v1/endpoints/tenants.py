@@ -150,6 +150,10 @@ def _tenant_to_out(
     employer_ref_sent: bool = False,
     landlord_ref_sent: bool = False,
     tenant_notified: bool = False,
+    employer_ref_analyzed: bool = False,
+    landlord_ref_analyzed: bool = False,
+    employer_ref_summary: dict | None = None,
+    landlord_ref_summary: dict | None = None,
 ) -> TenantOut:
     profile = user.tenant_profile
     return TenantOut(
@@ -174,6 +178,10 @@ def _tenant_to_out(
         employer_ref_sent=employer_ref_sent,
         landlord_ref_sent=landlord_ref_sent,
         tenant_notified=tenant_notified,
+        employer_ref_analyzed=employer_ref_analyzed,
+        landlord_ref_analyzed=landlord_ref_analyzed,
+        employer_ref_summary=employer_ref_summary,
+        landlord_ref_summary=landlord_ref_summary,
     )
 
 
@@ -583,7 +591,7 @@ async def list_persons(
     outreach: dict[str, dict[str, bool]] = {}
     for uid, note in notes_result.all():
         uid_str = str(uid)
-        flags = outreach.setdefault(uid_str, {"employer": False, "landlord": False, "tenant": False})
+        flags = outreach.setdefault(uid_str, {"employer": False, "landlord": False, "tenant": False, "ref_analyzed": False})
         if "(employer reference)" in note:
             flags["employer"] = True
         if "(landlord reference)" in note:
@@ -591,12 +599,45 @@ async def list_persons(
         if "requesting missing application info" in note:
             flags["tenant"] = True
 
+    # Bulk-fetch per-type analyzed status + ai_structured summary
+    analyzed_res = await db.execute(
+        select(
+            ReferenceCheckRequest.tenant_user_id,
+            ReferenceCheckRequest.reference_type,
+            ReferenceCheckRequest.ai_structured,
+        )
+        .where(
+            ReferenceCheckRequest.organization_id == member.organization_id,
+            ReferenceCheckRequest.tenant_user_id.in_(user_ids),
+            ReferenceCheckRequest.status == "ANALYZED",
+        )
+        .order_by(ReferenceCheckRequest.analyzed_at.desc())
+    )
+    employer_analyzed_ids: set[str] = set()
+    landlord_analyzed_ids: set[str] = set()
+    employer_summaries: dict[str, dict] = {}
+    landlord_summaries: dict[str, dict] = {}
+    for uid, ref_type, ai_struct in analyzed_res.all():
+        uid_str = str(uid)
+        if ref_type == "EMPLOYER":
+            employer_analyzed_ids.add(uid_str)
+            if uid_str not in employer_summaries and ai_struct:
+                employer_summaries[uid_str] = ai_struct
+        elif ref_type == "LANDLORD":
+            landlord_analyzed_ids.add(uid_str)
+            if uid_str not in landlord_summaries and ai_struct:
+                landlord_summaries[uid_str] = ai_struct
+
     return [
         _tenant_to_out(
             u, u.tenant_documents,
             employer_ref_sent=outreach.get(str(u.id), {}).get("employer", False),
             landlord_ref_sent=outreach.get(str(u.id), {}).get("landlord", False),
             tenant_notified=outreach.get(str(u.id), {}).get("tenant", False),
+            employer_ref_analyzed=str(u.id) in employer_analyzed_ids,
+            landlord_ref_analyzed=str(u.id) in landlord_analyzed_ids,
+            employer_ref_summary=employer_summaries.get(str(u.id)),
+            landlord_ref_summary=landlord_summaries.get(str(u.id)),
         )
         for u in users
     ]
@@ -1889,9 +1930,29 @@ async def check_reference_emails_now(
     if not org.reference_reply_email:
         raise HTTPException(status_code=400, detail="No reply-to email configured — set it up in Settings → Screening")
     try:
-        # Count existing notes before the check to report how many new ones were added
         from sqlalchemy import func
         from app.models.tenant_application import TenantScreeningNote
+        from app.models.reference_check import ReferenceCheckRequest
+
+        # Count pending (SENT) requests so we can diagnose if 0 is expected
+        pending_res = await db.execute(
+            select(func.count()).select_from(ReferenceCheckRequest).where(
+                ReferenceCheckRequest.organization_id == member.organization_id,
+                ReferenceCheckRequest.status == "SENT",
+            )
+        )
+        pending_count = pending_res.scalar() or 0
+
+        # Count already-analyzed requests
+        analyzed_res = await db.execute(
+            select(func.count()).select_from(ReferenceCheckRequest).where(
+                ReferenceCheckRequest.organization_id == member.organization_id,
+                ReferenceCheckRequest.status == "ANALYZED",
+            )
+        )
+        analyzed_count = analyzed_res.scalar() or 0
+
+        # Count notes before check
         count_before_res = await db.execute(
             select(func.count()).select_from(TenantScreeningNote).where(
                 TenantScreeningNote.organization_id == member.organization_id,
@@ -1899,7 +1960,11 @@ async def check_reference_emails_now(
             )
         )
         count_before = count_before_res.scalar() or 0
-        await check_org_inbox(org, db)
+
+        # Manual check scans ALL inbox messages (not just UNSEEN) so previously
+        # auto-fetched replies are still matched against any still-SENT requests.
+        await check_org_inbox(org, db, unseen_only=False)
+
         count_after_res = await db.execute(
             select(func.count()).select_from(TenantScreeningNote).where(
                 TenantScreeningNote.organization_id == member.organization_id,
@@ -1908,8 +1973,23 @@ async def check_reference_emails_now(
         )
         count_after = count_after_res.scalar() or 0
         new_count = count_after - count_before
-        return {"ok": True, "new_responses": new_count,
-                "message": f"Found {new_count} new reference response{'s' if new_count != 1 else ''}"}
+
+        if new_count > 0:
+            message = f"Found {new_count} new reference response{'s' if new_count != 1 else ''}"
+        elif pending_count == 0 and analyzed_count > 0:
+            message = f"All {analyzed_count} reference response{'s' if analyzed_count != 1 else ''} were already processed"
+        elif pending_count == 0:
+            message = "No reference emails have been sent yet"
+        else:
+            message = f"No new replies found ({pending_count} reference email{'s' if pending_count != 1 else ''} still awaiting reply)"
+
+        return {
+            "ok": True,
+            "new_responses": new_count,
+            "pending_count": pending_count,
+            "already_analyzed": analyzed_count,
+            "message": message,
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Email check failed: {str(e)}")
 

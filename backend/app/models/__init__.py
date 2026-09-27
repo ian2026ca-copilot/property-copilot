@@ -11,3 +11,4 @@ from app.models.invite_template import InviteTemplate  # noqa: F401
 from app.models.reference_template import ReferenceTemplate  # noqa: F401
 from app.models.profiles import TenantProfile, OwnerProfile  # noqa: F401
 from app.models.platform_settings import PlatformSettings  # noqa: F401
+from app.models.overdue_template import OverdueTemplate  # noqa: F401

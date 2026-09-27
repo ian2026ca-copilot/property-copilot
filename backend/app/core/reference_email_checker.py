@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.ai_client import generate_ai_text
 from app.models.organization import Organization
+from app.models.profiles import TenantProfile
 from app.models.reference_check import ReferenceCheckRequest
 from app.models.tenant_application import TenantScreeningNote, TenantEmployment, TenantAddressHistory
 
@@ -116,12 +117,13 @@ def _format_note(reference_type: str, contact_name: str | None, contact_email: s
     )
 
 
-def _fetch_unseen(host: str, port: int, username: str, password: str) -> list[bytes]:
+def _fetch_messages(host: str, port: int, username: str, password: str, unseen_only: bool = True) -> list[bytes]:
     conn = imaplib.IMAP4_SSL(host, port)
     try:
         conn.login(username, password)
         conn.select("INBOX")
-        result, data = conn.search(None, "UNSEEN")
+        criteria = "UNSEEN" if unseen_only else "ALL"
+        result, data = conn.search(None, criteria)
         if result != "OK":
             return []
         raw_messages = []
@@ -129,7 +131,8 @@ def _fetch_unseen(host: str, port: int, username: str, password: str) -> list[by
             result, msg_data = conn.fetch(uid, "(RFC822)")
             if result == "OK" and msg_data and msg_data[0]:
                 raw_messages.append(msg_data[0][1])
-                conn.store(uid, "+FLAGS", "\\Seen")
+                if unseen_only:
+                    conn.store(uid, "+FLAGS", "\\Seen")
         return raw_messages
     finally:
         try:
@@ -138,32 +141,71 @@ def _fetch_unseen(host: str, port: int, username: str, password: str) -> list[by
             pass
 
 
-async def check_org_inbox(org: Organization, db: AsyncSession) -> None:
+def _parse_from_email(from_header: str | None) -> str | None:
+    """Extract bare email address from a From header like 'Name <addr@example.com>'."""
+    if not from_header:
+        return None
+    m = re.search(r"<([^<>@]+@[^<>]+)>", from_header)
+    if m:
+        return m.group(1).strip().lower()
+    bare = from_header.strip()
+    if "@" in bare:
+        return bare.lower()
+    return None
+
+
+async def check_org_inbox(org: Organization, db: AsyncSession, unseen_only: bool = True) -> None:
     """Poll one org's configured inbox via IMAP for replies to outstanding
     reference-check requests, analyze matches with Gemini, and log a screening note."""
     raw_messages = await asyncio.to_thread(
-        _fetch_unseen,
+        _fetch_messages,
         org.reference_email_imap_host,
         org.reference_email_imap_port or 993,
         org.reference_reply_email,
         org.reference_email_app_password,
+        unseen_only,
     )
+
+    print(f"[reference_checker] fetched {len(raw_messages)} message(s) from inbox (unseen_only={unseen_only})", flush=True)
 
     for raw in raw_messages:
         msg = email_module.message_from_bytes(raw)
+        subject = msg.get("Subject", "")
+        from_addr = _parse_from_email(msg.get("From"))
         candidate_ids = _extract_message_ids(msg.get("In-Reply-To")) + _extract_message_ids(msg.get("References"))
-        if not candidate_ids:
-            continue
 
-        req_res = await db.execute(
-            select(ReferenceCheckRequest).where(
-                ReferenceCheckRequest.organization_id == org.id,
-                ReferenceCheckRequest.status == "SENT",
-                ReferenceCheckRequest.sent_message_id.in_(candidate_ids),
+        print(f"[reference_checker] email from={from_addr!r} subject={subject!r} candidate_ids={candidate_ids}", flush=True)
+
+        tracking = None
+
+        # Primary match: In-Reply-To / References header → sent_message_id
+        if candidate_ids:
+            req_res = await db.execute(
+                select(ReferenceCheckRequest).where(
+                    ReferenceCheckRequest.organization_id == org.id,
+                    ReferenceCheckRequest.status == "SENT",
+                    ReferenceCheckRequest.sent_message_id.in_(candidate_ids),
+                )
             )
-        )
-        tracking = req_res.scalar_one_or_none()
+            tracking = req_res.scalar_one_or_none()
+            if tracking:
+                print(f"[reference_checker] matched by message-id → request {tracking.id}", flush=True)
+
+        # Fallback match: sender email → contact_email on a SENT request for this org
+        if not tracking and from_addr:
+            fb_res = await db.execute(
+                select(ReferenceCheckRequest).where(
+                    ReferenceCheckRequest.organization_id == org.id,
+                    ReferenceCheckRequest.status == "SENT",
+                    ReferenceCheckRequest.contact_email.ilike(from_addr),
+                )
+            )
+            tracking = fb_res.scalars().first()
+            if tracking:
+                print(f"[reference_checker] matched by sender email {from_addr!r} → request {tracking.id}", flush=True)
+
         if not tracking:
+            print(f"[reference_checker] no matching SENT request for from={from_addr!r}, skipping", flush=True)
             continue
 
         reply_text = _strip_quoted_reply(_extract_plain_text(msg))
@@ -213,6 +255,16 @@ async def check_org_inbox(org: Organization, db: AsyncSession) -> None:
         tracking.status = "ANALYZED"
         tracking.ai_structured = analysis
         tracking.analyzed_at = datetime.now(timezone.utc)
+
+        # Move tenant to IN_REVIEW if they were waiting on more info
+        profile_res = await db.execute(
+            select(TenantProfile).where(TenantProfile.user_id == tracking.tenant_user_id)
+        )
+        profile = profile_res.scalar_one_or_none()
+        if profile and profile.application_status in ("MORE_INFO_REQUESTED", "NOT_STARTED"):
+            profile.application_status = "IN_REVIEW"
+            print(f"[reference_checker] updated tenant {tracking.tenant_user_id} status → IN_REVIEW", flush=True)
+
         await db.commit()
 
 

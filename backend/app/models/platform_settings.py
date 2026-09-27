@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import String, Text
+from sqlalchemy import String, Text, Integer, Boolean
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -29,3 +29,10 @@ class PlatformSettings(Base, TimestampMixin):
     gemini_model: Mapped[str | None] = mapped_column(String(100), nullable=True)
     grok_base_url: Mapped[str | None] = mapped_column(String(255), nullable=True)
     grok_model: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+    smtp_host: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    smtp_port: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    smtp_user: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    smtp_password: Mapped[str | None] = mapped_column(Text, nullable=True)
+    smtp_from_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    smtp_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")

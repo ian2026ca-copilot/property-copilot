@@ -70,6 +70,8 @@ class PaymentNoticeSend(BaseModel):
     subject: str
     message: str
     channels: list[str]
+    owner_email: str | None = None
+    owner_phone: str | None = None
 
 
 class PaymentNoticeSendOut(BaseModel):
@@ -77,3 +79,24 @@ class PaymentNoticeSendOut(BaseModel):
     sms_sent: bool
     skipped_channels: list[str] = []
     payment: PaymentOut
+
+
+class OverdueTemplateCreate(BaseModel):
+    name: str
+    subject: str = ""
+    body: str
+
+
+class OverdueTemplateUpdate(BaseModel):
+    name: str
+    subject: str = ""
+    body: str
+
+
+class OverdueTemplateOut(BaseModel):
+    id: str
+    name: str
+    subject: str
+    body: str
+    is_active: bool
+    created_at: str

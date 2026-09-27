@@ -213,6 +213,18 @@ async def get_signer_statuses(creds: dict, access_token: str, envelope_id: str) 
     return resp.json().get("signers", [])
 
 
+async def resend_envelope(creds: dict, access_token: str, envelope_id: str) -> None:
+    """Resend email notifications to all pending signers on an existing envelope."""
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.put(
+            f"{creds['base_path']}/v2.1/accounts/{creds['account_id']}/envelopes/{envelope_id}?resend_envelope=true",
+            headers={"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"},
+            json={},
+        )
+    if resp.status_code not in (200, 201):
+        raise RuntimeError(f"DocuSign resend failed: {resp.text[:300]}")
+
+
 async def get_combined_document(creds: dict, access_token: str, envelope_id: str) -> bytes:
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.get(

@@ -24,6 +24,7 @@ from app.models.marketing_site import MarketingSite, DEFAULT_MARKETING_SITES
 from app.schemas.auth import (
     RegisterRequest, LoginRequest, TokenResponse, UserOut, UserUpdate,
     ForgotPasswordRequest, ResetPasswordRequest, OrganizationPublicOut, OrganizationUpdate, VacantUnitOut,
+    LeaseEmailConfigUpdate, LeaseEmailConfigOut,
 )
 from app.api.deps import get_current_user, bearer, COOKIE_NAME, COOKIE_MAX_AGE
 
@@ -417,3 +418,103 @@ async def update_organization(
         screening_rental_history_enabled=org.screening_rental_history_enabled,
         reference_reply_email=org.reference_reply_email,
     )
+
+
+def _lease_email_config_out(org: Organization) -> LeaseEmailConfigOut:
+    return LeaseEmailConfigOut(
+        host=org.lease_email_host,
+        port=org.lease_email_port or 993,
+        user=org.lease_email_user,
+        from_address=org.lease_email_from,
+        enabled=bool(org.lease_email_enabled),
+        password_set=bool(org.lease_email_password),
+    )
+
+
+@router.get("/lease-email-config", response_model=LeaseEmailConfigOut)
+async def get_lease_email_config(
+    current=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    _, member = current
+    org_result = await db.execute(select(Organization).where(Organization.id == member.organization_id))
+    org = org_result.scalar_one()
+    return _lease_email_config_out(org)
+
+
+@router.post("/lease-email-config/copy-screening-password")
+async def copy_screening_password_to_lease(
+    current=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    _, member = current
+    if member.role != UserRole.OWNER:
+        raise HTTPException(status_code=403, detail="Only the owner can update email settings")
+    org_result = await db.execute(select(Organization).where(Organization.id == member.organization_id))
+    org = org_result.scalar_one()
+    if not org.reference_email_app_password:
+        raise HTTPException(status_code=400, detail="No screening app password saved")
+    org.lease_email_password = org.reference_email_app_password
+    # also copy the reply email as the SMTP username if not already set
+    if not org.lease_email_user and org.reference_reply_email:
+        org.lease_email_user = org.reference_reply_email
+    await db.commit()
+    return _lease_email_config_out(org)
+
+
+@router.post("/lease-email-config/test")
+async def test_lease_email_config(
+    current=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    import imaplib
+    _, member = current
+    org_result = await db.execute(select(Organization).where(Organization.id == member.organization_id))
+    org = org_result.scalar_one()
+    if not org.lease_email_host:
+        raise HTTPException(status_code=400, detail="No IMAP host configured")
+    if not org.lease_email_password:
+        raise HTTPException(status_code=400, detail="No password saved — save settings first")
+    host = org.lease_email_host
+    port = org.lease_email_port or 993
+    user = org.lease_email_user or org.lease_email_from or ""
+    password = org.lease_email_password
+    try:
+        if port == 993:
+            imap = imaplib.IMAP4_SSL(host, port)
+        else:
+            imap = imaplib.IMAP4(host, port)
+        imap.login(user, password)
+        imap.logout()
+        return {"ok": True, "message": f"Connected to {host}:{port} successfully"}
+    except imaplib.IMAP4.error as exc:
+        return {"ok": False, "message": f"Authentication failed — {exc}"}
+    except Exception as exc:
+        return {"ok": False, "message": str(exc)}
+
+
+@router.patch("/lease-email-config", response_model=LeaseEmailConfigOut)
+async def update_lease_email_config(
+    body: LeaseEmailConfigUpdate,
+    current=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    _, member = current
+    if member.role != UserRole.OWNER:
+        raise HTTPException(status_code=403, detail="Only the owner can update email settings")
+    org_result = await db.execute(select(Organization).where(Organization.id == member.organization_id))
+    org = org_result.scalar_one()
+    if body.host is not None:
+        org.lease_email_host = body.host.strip() or None
+    if body.port is not None:
+        org.lease_email_port = body.port
+    if body.user is not None:
+        org.lease_email_user = body.user.strip() or None
+    if body.password is not None:
+        org.lease_email_password = body.password.strip() or None
+    if body.from_address is not None:
+        org.lease_email_from = body.from_address.strip() or None
+    if body.enabled is not None:
+        org.lease_email_enabled = body.enabled
+    await db.commit()
+    return _lease_email_config_out(org)

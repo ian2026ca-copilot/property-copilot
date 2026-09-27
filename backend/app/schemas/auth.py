@@ -110,3 +110,21 @@ class OrganizationUpdate(BaseModel):
     screening_criminal_record_enabled: bool | None = None
     screening_rental_history_enabled: bool | None = None
     reference_reply_email: str | None = None
+
+
+class LeaseEmailConfigUpdate(BaseModel):
+    host: str | None = None
+    port: int | None = None
+    user: str | None = None
+    password: str | None = None
+    from_address: str | None = None
+    enabled: bool | None = None
+
+
+class LeaseEmailConfigOut(BaseModel):
+    host: str | None
+    port: int
+    user: str | None
+    from_address: str | None
+    enabled: bool
+    password_set: bool

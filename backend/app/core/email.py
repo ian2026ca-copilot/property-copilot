@@ -6,15 +6,37 @@ from email.mime.text import MIMEText
 from html import escape as _escape_html
 
 
+def _get_smtp_config() -> tuple[str, int, str, str, str]:
+    """Returns (host, port, user, password, from_email). DB settings take priority over env vars."""
+    try:
+        import psycopg2
+        db_url = os.getenv("DATABASE_URL", "")
+        # asyncpg URL → psycopg2 URL
+        sync_url = db_url.replace("postgresql+asyncpg://", "postgresql://")
+        conn = psycopg2.connect(sync_url)
+        cur = conn.cursor()
+        cur.execute("SELECT smtp_host, smtp_port, smtp_user, smtp_password, smtp_from_email, smtp_enabled FROM platform_settings LIMIT 1")
+        row = cur.fetchone()
+        cur.close(); conn.close()
+        if row and row[5] and row[0]:  # smtp_enabled and smtp_host
+            return (row[0], row[1] or 587, row[2] or "", row[3] or "", row[4] or row[2] or "")
+    except Exception:
+        pass
+    host = os.getenv("SMTP_HOST", "")
+    user = os.getenv("SMTP_USER", "")
+    return (
+        host,
+        int(os.getenv("SMTP_PORT", "587")),
+        user,
+        os.getenv("SMTP_PASSWORD", ""),
+        os.getenv("FROM_EMAIL", user),
+    )
+
+
 def _smtp_send(to_email: str, subject: str, html: str, reply_to: str | None = None, message_id: str | None = None) -> None:
-    smtp_host = os.getenv("SMTP_HOST", "")
+    smtp_host, smtp_port, smtp_user, smtp_password, from_email = _get_smtp_config()
     if not smtp_host:
         return  # dev fallback: caller prints to log before calling this
-
-    smtp_port = int(os.getenv("SMTP_PORT", "587"))
-    smtp_user = os.getenv("SMTP_USER", "")
-    smtp_password = os.getenv("SMTP_PASSWORD", "")
-    from_email = os.getenv("FROM_EMAIL", smtp_user)
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
@@ -231,17 +253,32 @@ def send_reference_letter_email(to_email: str, subject: str, body_text: str, rep
     _smtp_send(to_email, subject, html, reply_to=reply_to, message_id=message_id)
 
 
-def send_overdue_notice_email(to_email: str, subject: str, message: str) -> None:
+def send_overdue_notice_email(
+    to_email: str,
+    subject: str,
+    message: str,
+    owner_email: str | None = None,
+    owner_phone: str | None = None,
+) -> None:
     if not os.getenv("SMTP_HOST"):
         print(f"\n[Overdue Notice Email] To: {to_email}\nSubject: {subject}\n{message}\n", flush=True)
         return
 
     safe_message = _escape_html(message).replace("\n", "<br>")
+    contact_parts = [c for c in [owner_email, owner_phone] if c]
+    contact_block = ""
+    if contact_parts:
+        contact_items = "".join(f"<span style='margin-right:16px'>{_escape_html(c)}</span>" for c in contact_parts)
+        contact_block = f"""
+      <div style="margin-top:24px;padding-top:16px;border-top:1px solid #e2e8f0;font-size:13px;color:#64748b">
+        <strong style="color:#334155">Contact:</strong> {contact_items}
+      </div>"""
     html = f"""
     <div style="font-family:sans-serif;max-width:520px;margin:auto;padding:32px 24px;color:#111">
       {_logo_block()}
       <h2 style="margin:0 0 16px;font-size:20px">{_escape_html(subject)}</h2>
       <div style="color:#333;line-height:1.7">{safe_message}</div>
+      {contact_block}
     </div>
     """
     _smtp_send(to_email, subject, html)

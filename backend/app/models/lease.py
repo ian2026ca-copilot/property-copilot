@@ -51,6 +51,7 @@ class Lease(Base, TimestampMixin):
     document_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     landlord_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     landlord_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    landlord_phone: Mapped[str | None] = mapped_column(String(30), nullable=True)
     docusign_envelope_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     signature_status: Mapped[str | None] = mapped_column(String(30), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)

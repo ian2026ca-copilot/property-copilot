@@ -118,6 +118,7 @@ def _lease_to_out(lease: Lease) -> LeaseOut:
         document_url=doc_url,
         landlord_name=lease.landlord_name,
         landlord_email=lease.landlord_email,
+        landlord_phone=lease.landlord_phone,
         docusign_envelope_id=lease.docusign_envelope_id,
         signature_status=lease.signature_status,
         notes=lease.notes,
@@ -225,6 +226,8 @@ async def _create_lease_record(org_id, body: LeaseCreate, db: AsyncSession) -> L
         security_deposit=body.security_deposit,
         lease_type=body.lease_type,
         landlord_name=body.landlord_name or None,
+        landlord_email=body.landlord_email or None,
+        landlord_phone=body.landlord_phone or None,
         notes=body.notes,
         status=_compute_status_from_dates(body.start_date, body.end_date),
         signature_status="new",
@@ -689,6 +692,8 @@ async def renew_lease(
         security_deposit=body.security_deposit if body.security_deposit is not None else old.security_deposit,
         lease_type=body.lease_type if body.lease_type is not None else old.lease_type,
         landlord_name=body.landlord_name if body.landlord_name is not None else old.landlord_name,
+        landlord_email=body.landlord_email if body.landlord_email is not None else old.landlord_email,
+        landlord_phone=body.landlord_phone if body.landlord_phone is not None else old.landlord_phone,
         notes=body.notes if body.notes is not None else old.notes,
         status=_compute_status_from_dates(body.start_date, body.end_date),
         signature_status="new",
@@ -909,6 +914,8 @@ async def generate_lease_document(
         f"TENANT NAME(S): {tenant_names}\n"
         f"TENANT CONTACT(S):\n{tenant_contacts}\n"
         f"LANDLORD NAME: {landlord_name}\n"
+        f"LANDLORD EMAIL: {lease.landlord_email or '[NOT PROVIDED]'}\n"
+        f"LANDLORD PHONE: {lease.landlord_phone or '[NOT PROVIDED]'}\n"
         f"PROPERTY DETAILS:\n{unit_details}\n"
         f"MONTHLY RENT: ${lease.monthly_rent:,.2f}\n"
         f"SECURITY DEPOSIT: ${lease.security_deposit:,.2f}\n"
@@ -918,9 +925,9 @@ async def generate_lease_document(
     )
 
     instruction = (
-        "IMPORTANT: The PARTIES section must list each tenant's full name, email address, and phone number exactly as provided. "
-        "The PREMISES section must include the full property address, unit number, bedrooms, and bathrooms. "
-        "Do not omit any of these fields."
+        "IMPORTANT: The PREMISES section must include the full property address, unit number, bedrooms, and bathrooms. "
+        "Do not add a PARTIES or PREMISES section — they are already included separately. "
+        "Start from section 3. TERM and continue through all remaining sections."
     )
 
     if template_text:
@@ -960,6 +967,16 @@ async def generate_lease_document(
     landlord_p = out_doc.add_paragraph()
     landlord_p.add_run("Landlord: ").bold = True
     landlord_p.add_run(landlord_name)
+    if lease.landlord_email:
+        le_p = out_doc.add_paragraph(style="Normal")
+        le_p.paragraph_format.left_indent = Pt(18)
+        le_p.add_run("Email: ").bold = True
+        le_p.add_run(lease.landlord_email)
+    if lease.landlord_phone:
+        lp_p = out_doc.add_paragraph(style="Normal")
+        lp_p.paragraph_format.left_indent = Pt(18)
+        lp_p.add_run("Tel: ").bold = True
+        lp_p.add_run(lease.landlord_phone)
 
     for i, t in enumerate(all_tenants, 1):
         label = f"Tenant {i}" if len(all_tenants) > 1 else "Tenant"
@@ -1221,8 +1238,9 @@ async def send_lease_for_signature(
         raise HTTPException(status_code=400, detail="Upload or generate a lease document first")
     if not lease.tenant or not lease.tenant.email:
         raise HTTPException(status_code=400, detail="Tenant has no email on file")
-    if not lease.landlord_email:
-        raise HTTPException(status_code=400, detail="Set a landlord email before sending for signature")
+    landlord_sign_email = org.reference_reply_email or lease.landlord_email
+    if not landlord_sign_email:
+        raise HTTPException(status_code=400, detail="Set a screening email in Settings or a landlord email on the lease before sending for signature")
 
     file_path = UPLOAD_DIR / lease.document_path
     if not file_path.exists():
@@ -1240,7 +1258,7 @@ async def send_lease_for_signature(
             document_bytes,
             file_path.name,
             landlord_name,
-            lease.landlord_email,
+            landlord_sign_email,
             tenant_name,
             lease.tenant.email,
             subject=f"Please sign: lease agreement for Unit {lease.unit.unit_number if lease.unit else ''}",
@@ -1273,11 +1291,21 @@ async def check_lease_signature_status(
     if not lease.docusign_envelope_id:
         raise HTTPException(status_code=400, detail="This lease has not been sent for signature yet")
 
+    _SIGNER_STATUS_LABELS = {
+        "autoresponded": "email auto-responded (inbox may be invalid or has an auto-reply rule)",
+        "declined":      "declined to sign",
+        "authfailed":    "failed identity authentication",
+        "faxpending":    "fax pending",
+    }
+
+    warning_parts: list[str] = []
+
     try:
         access_token = await docusign.get_access_token(creds)
         envelope_status = await docusign.get_envelope_status(creds, access_token, lease.docusign_envelope_id)
 
         resolved_status = envelope_status
+        signers: list[dict] = []
         if envelope_status not in ("completed", "declined", "voided"):
             # Distinguish "tenant signed, awaiting landlord" from the envelope's
             # overall status, which stays "sent"/"delivered" until everyone signs.
@@ -1285,6 +1313,22 @@ async def check_lease_signature_status(
             tenant_signer = next((s for s in signers if s.get("recipientId") == "2"), None)
             if tenant_signer and tenant_signer.get("status") == "completed":
                 resolved_status = "tenant_signed"
+
+        # Build human-readable warnings for any signer with a problematic status
+        if not signers and envelope_status not in ("completed", "voided"):
+            signers = await docusign.get_signer_statuses(creds, access_token, lease.docusign_envelope_id)
+        for s in signers:
+            s_status = s.get("status", "")
+            if s_status in _SIGNER_STATUS_LABELS:
+                name = s.get("name", "Unknown")
+                email = s.get("email", "")
+                label = _SIGNER_STATUS_LABELS[s_status]
+                extra = s.get("autoRespondedReason", "")
+                detail = f" ({extra})" if extra else ""
+                warning_parts.append(
+                    f"{name} ({email}): {label}{detail}. "
+                    f"Please update their email address and resend the envelope."
+                )
 
         if envelope_status == "completed" and lease.signature_status != "completed":
             # DocuSign's combined-document download is always a PDF regardless of the
@@ -1306,5 +1350,37 @@ async def check_lease_signature_status(
 
     lease.signature_status = resolved_status
     await db.commit()
+
+    out = _lease_to_out(await _get_lease(lease_id, member.organization_id, db))
+    if warning_parts:
+        out = out.model_copy(update={"signature_warning": " | ".join(warning_parts)})
+    return out
+
+
+@router.post("/{lease_id}/resend-signature", response_model=LeaseOut)
+async def resend_lease_signature(
+    lease_id: str,
+    current: tuple[User, OrganizationMember] = Depends(require_min_role(UserRole.OWNER)),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.core import docusign
+
+    _, member = current
+    lease = await _get_lease(lease_id, member.organization_id, db)
+    org = await _get_org(member.organization_id, db)
+    creds = docusign.resolve_credentials(org)
+
+    if not docusign.is_configured(creds):
+        raise HTTPException(status_code=503, detail="DocuSign is not configured")
+    if not lease.docusign_envelope_id:
+        raise HTTPException(status_code=400, detail="This lease has not been sent for signature yet")
+    if lease.signature_status in ("completed", "declined", "voided"):
+        raise HTTPException(status_code=400, detail="Cannot resend a completed, declined, or voided envelope")
+
+    try:
+        access_token = await docusign.get_access_token(creds)
+        await docusign.resend_envelope(creds, access_token, lease.docusign_envelope_id)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"DocuSign error: {str(e)[:300]}")
 
     return _lease_to_out(await _get_lease(lease_id, member.organization_id, db))
