@@ -93,7 +93,7 @@ function markdownToPlainText(md: string): string {
 // ─── Campaign Modal (Create / Edit) ────────────────────────────────────────────
 
 export function CampaignModal({
-  campaign, units, onClose, onSave, onPhotosChanged, onDelete, initialUnitId,
+  campaign, units, onClose, onSave, onPhotosChanged, onDelete, initialUnitId, autoGenerate,
 }: {
   campaign: CampaignOut | null;
   units: UnitDetailOut[];
@@ -102,6 +102,7 @@ export function CampaignModal({
   onPhotosChanged: (c: CampaignOut) => void;
   onDelete?: () => void;
   initialUnitId?: string;
+  autoGenerate?: boolean;
 }) {
   const [form, setForm] = useState({
     title: campaign?.title ?? "",
@@ -207,6 +208,13 @@ export function CampaignModal({
     const el = descRef.current;
     requestAnimationFrame(() => { el?.focus(); el?.setSelectionRange(newValue.length, newValue.length); });
   }
+
+  useEffect(() => {
+    if (autoGenerate && !campaign && form.unit_id) {
+      handleAiGenerate();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (campaign || !form.unit_id) { setUnitImages([]); return; }

@@ -6,6 +6,7 @@ import { tenantsApi, leasesApi, paymentsApi, unitsApi, profileApi, type TenantOu
 import { useAuth } from "@/context/AuthContext";
 import AIReviewPanel from "@/components/workflow/AIReviewPanel";
 import BatchAIReviewPanel from "@/components/workflow/BatchAIReviewPanel";
+import { EditPaymentModal, paymentRowFromApi, type PaymentRow } from "@/components/EditPaymentModal";
 import {
   useRentalApplicationState, buildRentalApplicationPayload, RentalApplicationSections,
   type AddressEntry, type EmploymentEntry,
@@ -223,6 +224,8 @@ function TenantCard({
   onCreateLease,
   onSendSig,
   onOpenScreening,
+  sigCheckResult,
+  onEditPayment,
 }: {
   row: TenantRow;
   onAIReview: (row: TenantRow) => void;
@@ -232,6 +235,8 @@ function TenantCard({
   onCreateLease: (row: TenantRow) => void;
   onSendSig: (row: TenantRow) => void;
   onOpenScreening: (id: string) => void;
+  sigCheckResult?: { msg: string; isWarning: boolean };
+  onEditPayment: (payment: PaymentOut) => void;
 }) {
   const [changingStatus, setChangingStatus] = useState(false);
   const stage = stageOf(row);
@@ -359,13 +364,33 @@ function TenantCard({
             const style = sigStyles[sig] ?? "bg-slate-100 text-slate-500";
             const label = sigLabels[sig] ?? sig;
             const clickable = sig === "ready_to_send";
-            return clickable ? (
+            const badge = clickable ? (
               <button
                 onClick={e => { e.stopPropagation(); onSendSig(row); }}
                 className={`inline-flex items-center rounded-full px-2 py-0.5 text-[12px] font-medium ${style} hover:brightness-95 cursor-pointer`}
               >{label} →</button>
             ) : (
               <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[12px] font-medium ${style}`}>{label}</span>
+            );
+            const activeResult = sigCheckResult ?? (row.lease?.signature_warning ? { msg: row.lease.signature_warning, isWarning: true } : null);
+            const msgs = activeResult ? activeResult.msg.split(" | ") : [];
+            const tip = msgs.length > 0 ? getSigWarningTip(msgs) : null;
+            return (
+              <>
+                {badge}
+                {activeResult && (
+                  <div className={`mt-1 rounded-lg border px-2 py-1.5 text-[11px] space-y-0.5 ${activeResult.isWarning ? "border-amber-200 bg-amber-50 text-amber-800" : "border-red-200 bg-red-50 text-red-700"}`}>
+                    {activeResult.isWarning && <p className="font-semibold">⚠ Signature warning</p>}
+                    {msgs.map((m, j) => <p key={j}>{m}</p>)}
+                    {tip && (
+                      <div className="mt-1 rounded border border-blue-200 bg-blue-50 px-1.5 py-1 text-blue-800">
+                        <p className="font-semibold text-blue-700">💡 What to do</p>
+                        <p>{tip}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
             );
           })() : (
             <button
@@ -381,7 +406,21 @@ function TenantCard({
         <div className="space-y-1">
           <p className="text-[12px] font-medium text-slate-400 uppercase tracking-wide">Next payment</p>
           <div className="flex items-center gap-1.5 flex-wrap">
-            <StatusBadge map={PAYMENT_STATUS_LABEL} status={row.nextPayment.status} />
+            {row.nextPayment.status !== "PAID" && row.nextPayment.status !== "VOIDED" ? (
+              <button
+                type="button"
+                onClick={e => { e.stopPropagation(); onEditPayment(row.nextPayment!); }}
+                className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold transition-colors cursor-pointer ${
+                  row.nextPayment.status === "OVERDUE"
+                    ? "bg-red-100 text-red-700 hover:bg-red-200"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                {PAYMENT_STATUS_LABEL[row.nextPayment.status]?.label ?? row.nextPayment.status}
+              </button>
+            ) : (
+              <StatusBadge map={PAYMENT_STATUS_LABEL} status={row.nextPayment.status} />
+            )}
             <span className="text-[12px] text-slate-500">
               ${row.nextPayment.amount.toLocaleString()} · due {row.nextPayment.due_date}
             </span>
@@ -1249,10 +1288,11 @@ function CreateLeaseModal({ row, units, onClose, onCreated }: {
         notes: form.notes || null,
       });
 
-      if (selectedTemplateId) {
+      const templateId = selectedTemplateId || templates[0]?.id;
+      if (templateId) {
         setGenerating(true);
         try {
-          await leasesApi.generateDocument(lease.id, selectedTemplateId);
+          await leasesApi.generateDocument(lease.id, templateId);
         } catch (genErr: unknown) {
           setErr(`Lease created, but document generation failed: ${genErr instanceof Error ? genErr.message : "unknown error"}`);
         } finally {
@@ -1387,8 +1427,10 @@ function CreateLeaseModal({ row, units, onClose, onCreated }: {
                 <svg className="w-4 h-4 group-hover:text-violet-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
-                ✨ Select template for AI-generated agreement
-                <svg className="w-3.5 h-3.5 ml-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <span className="flex-1 text-left">
+                  {templates[0] ? <span>✨ Default: <span className="text-violet-600">{templates[0].name}</span></span> : "✨ Select template for AI-generated agreement"}
+                </span>
+                <svg className="w-3.5 h-3.5 ml-auto shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={showTemplatePicker ? "M5 15l7-7 7 7" : "M19 9l-7 7-7-7"} />
                 </svg>
               </button>
@@ -1583,28 +1625,50 @@ function CheckRefEmailsButton({ cards }: { cards: TenantRow[] }) {
   );
 }
 
-function CheckLeaseSignaturesButton({ cards, onUpdated }: { cards: TenantRow[]; onUpdated: () => void }) {
+function getSigWarningTip(msgs: string[]): string | null {
+  const combined = msgs.join(" ").toLowerCase();
+  if (combined.includes("auto-responded") || combined.includes("autoresponded"))
+    return "Update their email to a working inbox, then resend.";
+  if (combined.includes("declined"))
+    return "Contact the signer — void this envelope and send a new one.";
+  if (combined.includes("failed identity") || combined.includes("authfailed"))
+    return "Verify their identity info in DocuSign, then resend.";
+  if (combined.includes("fax"))
+    return "Wait for the fax, or switch to email and resend.";
+  if (combined.includes("does not exist"))
+    return "Envelope missing in DocuSign — void and resend.";
+  return null;
+}
+
+function CheckLeaseSignaturesButton({ cards, onUpdated, onResults }: {
+  cards: TenantRow[];
+  onUpdated: () => void;
+  onResults: (results: Record<string, { msg: string; isWarning: boolean }>) => void;
+}) {
   const [checking, setChecking] = useState(false);
   const [summary, setSummary] = useState<string | null>(null);
-  const [errors, setErrors] = useState<{ name: string; msg: string }[]>([]);
 
   const pendingCards = cards.filter(c => c.lease && ["sent", "delivered", "tenant_signed"].includes(c.lease.signature_status ?? ""));
 
   async function handleCheck() {
-    setChecking(true); setSummary(null); setErrors([]);
+    setChecking(true); setSummary(null); onResults({});
     const outcomes = await Promise.allSettled(
       pendingCards.map(c => leasesApi.checkSignatureStatus(c.lease!.id))
     );
-    const errs: { name: string; msg: string }[] = [];
+    const byId: Record<string, { msg: string; isWarning: boolean }> = {};
     outcomes.forEach((o, i) => {
+      const id = pendingCards[i].id;
       if (o.status === "rejected") {
         const raw = o.reason instanceof Error ? o.reason.message : String(o.reason);
-        errs.push({ name: pendingCards[i].name, msg: raw });
+        byId[id] = { msg: raw, isWarning: false };
+      } else if (o.value.signature_warning) {
+        byId[id] = { msg: o.value.signature_warning, isWarning: true };
       }
     });
     const ok = outcomes.filter(o => o.status === "fulfilled").length;
-    setSummary(ok > 0 ? `✓ Checked ${ok} lease${ok > 1 ? "s" : ""}${errs.length > 0 ? ` · ${errs.length} error${errs.length > 1 ? "s" : ""}` : ""}` : errs.length > 0 ? null : "✓ All leases up to date");
-    setErrors(errs);
+    const hasIssues = Object.keys(byId).length > 0;
+    setSummary(!hasIssues ? (ok > 0 ? `✓ Checked ${ok} lease${ok > 1 ? "s" : ""}` : "✓ All up to date") : null);
+    onResults(byId);
     setChecking(false);
     if (ok > 0) onUpdated();
   }
@@ -1617,20 +1681,9 @@ function CheckLeaseSignaturesButton({ cards, onUpdated }: { cards: TenantRow[]; 
         title={pendingCards.length === 0 ? "No leases with pending signatures" : `Check signature status for ${pendingCards.length} lease${pendingCards.length > 1 ? "s" : ""}`}
         className="w-full px-2 py-1.5 text-[13px] font-medium border border-slate-200 text-slate-600 rounded-lg hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
       >
-        {checking ? "Checking…" : `🖊 Check lease signatures${pendingCards.length > 0 ? ` (${pendingCards.length})` : ""}`}
+        {checking ? "Checking…" : `🖊 Check all signature status${pendingCards.length > 0 ? ` (${pendingCards.length})` : ""}`}
       </button>
       {summary && <p className="text-[12px] text-emerald-600 text-center">{summary}</p>}
-      {errors.length > 0 && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 space-y-1">
-          <p className="text-[11px] font-semibold text-red-600 uppercase tracking-wide">Send errors</p>
-          {errors.map((e, i) => (
-            <div key={i}>
-              <p className="text-[12px] font-medium text-red-700">{e.name}</p>
-              <p className="text-[12px] text-red-500">{e.msg}</p>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
@@ -2313,6 +2366,352 @@ function WorkflowScreeningDrawer({
   );
 }
 
+// ─── AI Copilot ───────────────────────────────────────────────────────────────
+
+// ─── AI Copilot ───────────────────────────────────────────────────────────────
+
+type CopilotStatus = "idle" | "running" | "done";
+type StepState = "pending" | "running" | "ok" | "warn" | "error" | "skipped" | "info";
+
+interface CopilotStep {
+  key: string;
+  icon: string;
+  label: string;
+  state: StepState;
+  detail: string;
+  actions?: string[];
+}
+
+const STEP_STYLE: Record<StepState, string> = {
+  pending:  "border-slate-200 bg-slate-50 text-slate-400",
+  running:  "border-violet-200 bg-violet-50 text-violet-700",
+  ok:       "border-emerald-200 bg-emerald-50 text-emerald-800",
+  warn:     "border-amber-200 bg-amber-50 text-amber-800",
+  error:    "border-red-200 bg-red-50 text-red-700",
+  skipped:  "border-slate-100 bg-white text-slate-400",
+  info:     "border-blue-200 bg-blue-50 text-blue-700",
+};
+
+function AICopilotPanel({ rows, templates, onSigResults, onReload, onClose }: {
+  rows: TenantRow[];
+  templates: LeaseTemplateOut[];
+  onSigResults: (r: Record<string, { msg: string; isWarning: boolean }>) => void;
+  onReload: () => void;
+  onClose: () => void;
+}) {
+  const [status, setStatus] = useState<CopilotStatus>("idle");
+  const [steps, setSteps] = useState<CopilotStep[]>([]);
+
+  // Pre-compute which tenants need what
+  const needsRefEmail = rows.filter(r =>
+    r.screeningStatus !== "APPROVED" && r.screeningStatus !== "DECLINED" &&
+    !r.employerRefSent && !r.landlordRefSent
+  );
+  const refSentRows   = rows.filter(r => r.employerRefSent || r.landlordRefSent);
+  const approvedNoLease = rows.filter(r => r.screeningStatus === "APPROVED" && !r.lease);
+  const leasesNoDoc   = rows.filter(r => r.lease && !r.lease.document_url && r.lease.status !== "VOIDED");
+  const readyToSend   = rows.filter(r => r.lease?.signature_status === "ready_to_send" && r.lease.document_url);
+  const pendingSig    = rows.filter(r => r.lease && ["sent", "delivered", "tenant_signed"].includes(r.lease.signature_status ?? ""));
+  const overdueRows   = rows.filter(r => r.nextPayment?.status === "OVERDUE");
+
+  function makeSteps(): CopilotStep[] {
+    return [
+      {
+        key: "send_refs",
+        icon: "📨",
+        label: `Send reference emails`,
+        state: "pending",
+        detail: needsRefEmail.length > 0
+          ? `${needsRefEmail.length} tenant${needsRefEmail.length > 1 ? "s" : ""} in screening haven't had references contacted`
+          : "All screening tenants already have references sent",
+        actions: needsRefEmail.map(r => r.name),
+      },
+      {
+        key: "check_refs",
+        icon: "📬",
+        label: "Check reference email replies",
+        state: "pending",
+        detail: refSentRows.length > 0
+          ? `Check replies for ${refSentRows.length} tenant${refSentRows.length > 1 ? "s" : ""}`
+          : "No references sent yet",
+        actions: [],
+      },
+      {
+        key: "create_leases",
+        icon: "📄",
+        label: "Create lease agreements",
+        state: "pending",
+        detail: approvedNoLease.length > 0
+          ? `${approvedNoLease.length} approved tenant${approvedNoLease.length > 1 ? "s" : ""} need a lease`
+          : "All approved tenants have leases",
+        actions: approvedNoLease.map(r => r.name),
+      },
+      {
+        key: "gen_docs",
+        icon: "📝",
+        label: "Generate lease documents",
+        state: "pending",
+        detail: leasesNoDoc.length > 0
+          ? `${leasesNoDoc.length} lease${leasesNoDoc.length > 1 ? "s" : ""} missing an agreement document`
+          : "All leases have documents",
+        actions: leasesNoDoc.map(r => r.name),
+      },
+      {
+        key: "send_sig",
+        icon: "✉",
+        label: "Send leases for signature",
+        state: "pending",
+        detail: readyToSend.length > 0
+          ? `${readyToSend.length} lease${readyToSend.length > 1 ? "s" : ""} ready to send for DocuSign`
+          : "No leases waiting to be sent",
+        actions: readyToSend.map(r => r.name),
+      },
+      {
+        key: "check_sig",
+        icon: "🖊",
+        label: "Check signature statuses",
+        state: "pending",
+        detail: pendingSig.length > 0
+          ? `${pendingSig.length} lease${pendingSig.length > 1 ? "s" : ""} pending signature`
+          : "No leases pending signature",
+        actions: [],
+      },
+      {
+        key: "overdue",
+        icon: "💸",
+        label: "Overdue payment summary",
+        state: "pending",
+        detail: overdueRows.length > 0
+          ? `${overdueRows.length} tenant${overdueRows.length > 1 ? "s" : ""} overdue — $${overdueRows.reduce((s, r) => s + (r.nextPayment?.amount ?? 0), 0).toLocaleString()} total`
+          : "No overdue payments",
+        actions: overdueRows.map(r => r.name),
+      },
+    ];
+  }
+
+  function upd(key: string, patch: Partial<CopilotStep>) {
+    setSteps(prev => prev.map(s => s.key === key ? { ...s, ...patch } : s));
+  }
+
+  async function runAll() {
+    const initial = makeSteps();
+    setSteps(initial);
+    setStatus("running");
+
+    // Step 1: Send reference emails (draft + send for each tenant without refs)
+    if (needsRefEmail.length > 0) {
+      upd("send_refs", { state: "running", detail: `Drafting and sending for ${needsRefEmail.length} tenant${needsRefEmail.length > 1 ? "s" : ""}…` });
+      let sent = 0; let errs = 0;
+      for (const row of needsRefEmail) {
+        try {
+          const app = await tenantsApi.getApplication(row.id);
+          // Employer refs
+          for (const emp of (app.employment_history ?? [])) {
+            if (emp.id && emp.employer_reference_email && emp.employer_reference_name) {
+              const letter = await tenantsApi.generateReferenceLetter(row.id, emp.id);
+              await tenantsApi.contactEmployerReference(row.id, emp.id, "EMAIL", { subject: letter.subject, body: letter.body });
+              sent++;
+            }
+          }
+          // Landlord refs
+          for (const addr of (app.address_history ?? [])) {
+            if (addr.id && addr.landlord_email && addr.landlord_name) {
+              const letter = await tenantsApi.generateLandlordReferenceLetter(row.id, addr.id);
+              await tenantsApi.contactLandlordReference(row.id, addr.id, "EMAIL", { subject: letter.subject, body: letter.body });
+              sent++;
+            }
+          }
+        } catch { errs++; }
+      }
+      upd("send_refs", {
+        state: errs === 0 ? "ok" : sent > 0 ? "warn" : "error",
+        detail: sent > 0 ? `Sent ${sent} reference email${sent > 1 ? "s" : ""}${errs > 0 ? `, ${errs} failed` : ""}` : errs > 0 ? "Failed to send — check tenant application data" : "No reference contacts found in applications",
+      });
+      if (sent > 0) onReload();
+    } else {
+      upd("send_refs", { state: "skipped", detail: "All tenants already have references sent" });
+    }
+
+    // Step 2: Check reference email replies
+    if (refSentRows.length > 0 || needsRefEmail.length > 0) {
+      upd("check_refs", { state: "running", detail: "Checking inbox for replies…" });
+      try {
+        const res = await tenantsApi.checkReferenceEmailsNow();
+        upd("check_refs", {
+          state: res.new_responses > 0 ? "ok" : "info",
+          detail: res.message,
+        });
+        if (res.new_responses > 0) onReload();
+      } catch (e: unknown) {
+        upd("check_refs", { state: "error", detail: e instanceof Error ? e.message : "Check failed" });
+      }
+    } else {
+      upd("check_refs", { state: "skipped", detail: "No references sent yet" });
+    }
+
+    // Step 3: Create leases for approved tenants without one
+    if (approvedNoLease.length > 0) {
+      upd("create_leases", { state: "running", detail: `Creating ${approvedNoLease.length} lease${approvedNoLease.length > 1 ? "s" : ""}…` });
+      let created = 0; let errs = 0;
+      for (const row of approvedNoLease) {
+        try {
+          await leasesApi.create({ tenant_user_id: row.id });
+          created++;
+        } catch { errs++; }
+      }
+      upd("create_leases", {
+        state: errs === 0 ? "ok" : created > 0 ? "warn" : "error",
+        detail: created > 0 ? `Created ${created} lease${created > 1 ? "s" : ""}${errs > 0 ? `, ${errs} failed` : ""}` : "Failed to create leases",
+      });
+      if (created > 0) onReload();
+    } else {
+      upd("create_leases", { state: "skipped", detail: "No approved tenants without leases" });
+    }
+
+    // Step 4: Generate documents for leases without one
+    const defaultTemplate = templates[0];
+    if (leasesNoDoc.length > 0 && defaultTemplate) {
+      upd("gen_docs", { state: "running", detail: `Generating documents using "${defaultTemplate.name}"…` });
+      let genOk = 0; let errs = 0;
+      for (const row of leasesNoDoc) {
+        try {
+          await leasesApi.generateDocument(row.lease!.id, defaultTemplate.id);
+          genOk++;
+        } catch { errs++; }
+      }
+      upd("gen_docs", {
+        state: errs === 0 ? "ok" : genOk > 0 ? "warn" : "error",
+        detail: genOk > 0 ? `Generated ${genOk} document${genOk > 1 ? "s" : ""}${errs > 0 ? `, ${errs} failed` : ""}` : "Failed to generate documents",
+      });
+      if (genOk > 0) onReload();
+    } else if (leasesNoDoc.length > 0 && !defaultTemplate) {
+      upd("gen_docs", { state: "warn", detail: "No lease template found — add one in Settings first" });
+    } else {
+      upd("gen_docs", { state: "skipped", detail: "All leases already have documents" });
+    }
+
+    // Step 5: Send for signature
+    if (readyToSend.length > 0) {
+      upd("send_sig", { state: "running", detail: `Sending ${readyToSend.length} lease${readyToSend.length > 1 ? "s" : ""} for signature…` });
+      let sent = 0; let errs = 0;
+      for (const row of readyToSend) {
+        try {
+          await leasesApi.sendForSignature(row.lease!.id);
+          sent++;
+        } catch { errs++; }
+      }
+      upd("send_sig", {
+        state: errs === 0 ? "ok" : sent > 0 ? "warn" : "error",
+        detail: sent > 0 ? `Sent ${sent} lease${sent > 1 ? "s" : ""} to DocuSign${errs > 0 ? `, ${errs} failed` : ""}` : "Failed to send for signature",
+      });
+      if (sent > 0) onReload();
+    } else {
+      upd("send_sig", { state: "skipped", detail: "No leases with documents ready to send" });
+    }
+
+    // Step 6: Check signature statuses
+    if (pendingSig.length > 0) {
+      upd("check_sig", { state: "running", detail: `Checking ${pendingSig.length} lease${pendingSig.length > 1 ? "s" : ""}…` });
+      const outcomes = await Promise.allSettled(pendingSig.map(c => leasesApi.checkSignatureStatus(c.lease!.id)));
+      const byId: Record<string, { msg: string; isWarning: boolean }> = {};
+      let warnings = 0;
+      outcomes.forEach((o, i) => {
+        const id = pendingSig[i].id;
+        if (o.status === "rejected") { byId[id] = { msg: o.reason instanceof Error ? o.reason.message : String(o.reason), isWarning: false }; warnings++; }
+        else if (o.value.signature_warning) { byId[id] = { msg: o.value.signature_warning, isWarning: true }; warnings++; }
+      });
+      onSigResults(byId);
+      const checked = outcomes.filter(o => o.status === "fulfilled").length;
+      upd("check_sig", {
+        state: warnings === 0 ? "ok" : "warn",
+        detail: warnings === 0 ? `All ${checked} lease${checked > 1 ? "s" : ""} up to date` : `${warnings} issue${warnings > 1 ? "s" : ""} found — warnings shown on cards below`,
+      });
+    } else {
+      upd("check_sig", { state: "skipped", detail: "No leases with pending signatures" });
+    }
+
+    // Step 7: Overdue summary (informational only)
+    if (overdueRows.length > 0) {
+      const total = overdueRows.reduce((s, r) => s + (r.nextPayment?.amount ?? 0), 0);
+      upd("overdue", { state: "warn", detail: `${overdueRows.length} tenant${overdueRows.length > 1 ? "s" : ""} overdue — $${total.toLocaleString()} total. Click each Overdue badge to manage.` });
+    } else {
+      upd("overdue", { state: "ok", detail: "No overdue payments" });
+    }
+
+    setStatus("done");
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-start justify-end p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm max-h-[92vh] flex flex-col mt-2 mr-2">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 shrink-0">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-lg bg-black flex items-center justify-center text-sm">✨</div>
+            <div>
+              <h2 className="text-sm font-semibold text-slate-900 leading-none">AI Property Assistant</h2>
+              <p className="text-[11px] text-slate-400 mt-0.5">Runs all workflow actions automatically</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-700 text-lg leading-none">✕</button>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-2">
+          {status === "idle" && (
+            <>
+              <p className="text-[13px] text-slate-500 mb-3">Will run the following steps in order:</p>
+              {makeSteps().map(s => (
+                <div key={s.key} className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
+                  <p className="text-[13px] font-medium text-slate-700">{s.icon} {s.label}</p>
+                  <p className="text-[11px] text-slate-400 mt-0.5">{s.detail}</p>
+                  {s.actions && s.actions.length > 0 && (
+                    <p className="text-[11px] text-slate-500 mt-0.5">→ {s.actions.slice(0, 3).join(", ")}{s.actions.length > 3 ? ` +${s.actions.length - 3} more` : ""}</p>
+                  )}
+                </div>
+              ))}
+            </>
+          )}
+
+          {(status === "running" || status === "done") && steps.map(s => (
+            <div key={s.key} className={`rounded-lg border px-3 py-2 transition-all ${STEP_STYLE[s.state]}`}>
+              <div className="flex items-center gap-2">
+                {s.state === "running" && <div className="w-3 h-3 border-2 border-violet-500 border-t-transparent rounded-full animate-spin shrink-0" />}
+                {s.state === "ok"      && <span className="text-emerald-600 shrink-0">✓</span>}
+                {s.state === "warn"    && <span className="shrink-0">⚠</span>}
+                {s.state === "error"   && <span className="text-red-600 shrink-0">✕</span>}
+                {s.state === "skipped" && <span className="shrink-0">—</span>}
+                {s.state === "pending" && <span className="shrink-0">·</span>}
+                {s.state === "info"    && <span className="shrink-0">ℹ</span>}
+                <p className="text-[13px] font-medium">{s.icon} {s.label}</p>
+              </div>
+              <p className="text-[11px] mt-0.5 ml-5">{s.detail}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Footer */}
+        <div className="flex gap-2 px-5 py-4 border-t border-slate-100 shrink-0">
+          <button onClick={onClose} className="flex-1 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">
+            {status === "done" ? "Close" : "Cancel"}
+          </button>
+          {status !== "running" && (
+            <button
+              onClick={runAll}
+              className="flex-1 py-2 text-sm bg-black text-white rounded-lg hover:bg-slate-800 font-medium"
+            >
+              {status === "done" ? "↺ Run again" : "✨ Run all"}
+            </button>
+          )}
+          {status === "running" && (
+            <div className="flex-1 py-2 text-sm bg-slate-100 text-slate-400 rounded-lg font-medium text-center">Running…</div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 const HIDDEN_KEY = "workflow_hidden_ids";
@@ -2333,6 +2732,10 @@ export default function WorkflowPage() {
   const [createLeaseRow, setCreateLeaseRow] = useState<TenantRow | null>(null);
   const [batchCreateLeaseRows, setBatchCreateLeaseRows] = useState<TenantRow[] | null>(null);
   const [sendSigRow, setSendSigRow] = useState<TenantRow | null>(null);
+  const [sigCheckResults, setSigCheckResults] = useState<Record<string, { msg: string; isWarning: boolean }>>({});
+  const [editingPayment, setEditingPayment] = useState<PaymentRow | null>(null);
+  const [showCopilot, setShowCopilot] = useState(false);
+  const [pageTemplates, setPageTemplates] = useState<LeaseTemplateOut[]>([]);
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(() => {
     try {
       const saved = localStorage.getItem(HIDDEN_KEY);
@@ -2349,13 +2752,15 @@ export default function WorkflowPage() {
     setLoading(true);
     setError("");
     try {
-      const [persons, leases, payments, units] = await Promise.all([
+      const [persons, leases, payments, units, tmpl] = await Promise.all([
         tenantsApi.listPersons(),
         leasesApi.list(),
         paymentsApi.list(),
         unitsApi.listAll(),
+        leasesApi.listTemplates().catch(() => [] as LeaseTemplateOut[]),
       ]);
       setAllUnits(units);
+      setPageTemplates(tmpl);
       setAllPersons(persons);
       const unitRentById = new Map(units.map(u => [u.id, u.monthly_rent]));
 
@@ -2505,6 +2910,33 @@ export default function WorkflowPage() {
         />
       )}
 
+      {/* AI Copilot */}
+      {showCopilot && (
+        <AICopilotPanel
+          rows={allRows}
+          templates={pageTemplates}
+          onSigResults={setSigCheckResults}
+          onReload={load}
+          onClose={() => setShowCopilot(false)}
+        />
+      )}
+
+      {/* Edit payment modal (opened from Overdue badge) */}
+      {editingPayment && (
+        <EditPaymentModal
+          payment={editingPayment}
+          onClose={() => setEditingPayment(null)}
+          onSaved={updated => {
+            setAllRows(prev => prev.map(r =>
+              r.nextPayment?.id === updated.id
+                ? { ...r, nextPayment: { ...r.nextPayment!, status: updated.status, amount: updated.amount, due_date: updated.dueDate, paid_date: updated.paidDate ?? null } }
+                : r
+            ));
+            setEditingPayment(null);
+          }}
+        />
+      )}
+
       {/* Header */}
       <div className="flex items-start justify-between gap-4 mb-6 flex-wrap">
         <div>
@@ -2512,6 +2944,12 @@ export default function WorkflowPage() {
           <p className="text-sm text-slate-500 mt-0.5">Track every tenant through screening → lease → payment</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={() => setShowCopilot(true)}
+            className="px-3 py-2 text-xs font-semibold bg-black text-white rounded-lg hover:bg-slate-800 transition-colors flex items-center gap-1.5"
+          >
+            <span>✨</span> AI Copilot
+          </button>
           {/* Filter */}
           <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
             {(["all", "new", "renew"] as const).map(f => (
@@ -2580,7 +3018,7 @@ export default function WorkflowPage() {
                           📄 Create all lease agreements
                         </button>
                       )}
-                      {cards.length > 0 && <CheckLeaseSignaturesButton cards={cards} onUpdated={load} />}
+                      {cards.length > 0 && <CheckLeaseSignaturesButton cards={cards} onUpdated={load} onResults={setSigCheckResults} />}
                     </>
                   )}
                 </div>
@@ -2603,6 +3041,8 @@ export default function WorkflowPage() {
                       onCreateLease={setCreateLeaseRow}
                       onSendSig={setSendSigRow}
                       onOpenScreening={setScreeningTenantId}
+                      sigCheckResult={sigCheckResults[row.id]}
+                      onEditPayment={p => setEditingPayment(paymentRowFromApi(p))}
                     />
                   ))}
                 </div>

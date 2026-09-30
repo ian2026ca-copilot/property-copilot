@@ -1543,6 +1543,8 @@ function DocUploadCell({ lease, templates, onUploaded }: DocUploadProps) {
 interface SignatureCellProps {
   lease: LeaseRow;
   onUpdated: (lease: LeaseOut) => void;
+  bulkError?: string;
+  bulkWarning?: string;
 }
 
 const SIGNATURE_STATUS_STYLES: Record<string, string> = {
@@ -1563,7 +1565,7 @@ const SIGNATURE_STATUS_LABEL: Record<string, string> = {
   voided: "Voided",
 };
 
-function SignatureCell({ lease, onUpdated }: SignatureCellProps) {
+function SignatureCell({ lease, onUpdated, bulkError, bulkWarning }: SignatureCellProps) {
   const { user } = useAuth();
   const [sending, setSending] = useState(false);
   const [checking, setChecking] = useState(false);
@@ -1615,7 +1617,46 @@ function SignatureCell({ lease, onUpdated }: SignatureCellProps) {
     }
   }
 
-  if (!lease.document_url) return null;
+  const displayWarning = warning ?? bulkWarning ?? lease.signature_warning ?? null;
+  const displayMessages = [
+    ...(displayWarning ? displayWarning.split(" | ") : []),
+    ...(bulkError ? [bulkError] : []),
+  ];
+
+  function getSolution(msgs: string[]): string | null {
+    const combined = msgs.join(" ").toLowerCase();
+    if (combined.includes("auto-responded") || combined.includes("autoresponded"))
+      return "Update their email address to a working inbox, then use Resend to send a new signature request.";
+    if (combined.includes("declined"))
+      return "Contact the signer to address their concerns. You may need to void this envelope and send a new one after resolving the issue.";
+    if (combined.includes("failed identity") || combined.includes("authfailed"))
+      return "Verify the signer's identity information is correct in DocuSign, then resend the envelope.";
+    if (combined.includes("fax pending"))
+      return "Wait for the fax to be received, or switch the signer to email and resend.";
+    if (combined.includes("does not exist") || combined.includes("envelope_does_not_exist"))
+      return "This envelope no longer exists in DocuSign. Void the lease and send a new signature request.";
+    return null;
+  }
+
+  const solution = displayMessages.length > 0 ? getSolution(displayMessages) : null;
+
+  const warningBox = displayMessages.length > 0 ? (
+    <div className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2 text-[12px] text-amber-800 break-words space-y-1">
+      <p className="font-semibold">⚠ Signature warning</p>
+      {displayMessages.map((w, i) => <p key={i}>{w}</p>)}
+      {solution && (
+        <div className="mt-1.5 rounded-md border border-blue-200 bg-blue-50 px-2 py-1.5 text-blue-800 space-y-0.5">
+          <p className="font-semibold text-blue-700">💡 What to do</p>
+          <p>{solution}</p>
+        </div>
+      )}
+    </div>
+  ) : null;
+
+  if (!lease.document_url) {
+    if (!warningBox) return null;
+    return <div className="mt-1">{warningBox}</div>;
+  }
 
   return (
     <div className="mt-1 space-y-1">
@@ -1624,12 +1665,7 @@ function SignatureCell({ lease, onUpdated }: SignatureCellProps) {
           <span className="font-semibold">DocuSign error: </span>{error}
         </div>
       )}
-      {warning && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2 text-[12px] text-amber-800 break-words space-y-0.5">
-          <p className="font-semibold">⚠ Signature warning</p>
-          {warning.split(" | ").map((w, i) => <p key={i}>{w}</p>)}
-        </div>
-      )}
+      {warningBox}
       {lease.docusign_envelope_id ? (
         <div className="flex items-center gap-1">
           <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[12px] font-medium ${SIGNATURE_STATUS_STYLES[lease.signature_status ?? ""] ?? "bg-slate-100 text-slate-500"}`}>
@@ -1700,24 +1736,29 @@ export default function LeasesPage() {
   const [modal, setModal] = useState<Modal | null>(presetTenantId && !presetLeaseId ? { type: "create" } : null);
   const [terminateLoading, setTerminateLoading] = useState(false);
   const [checkingSignatures, setCheckingSignatures] = useState(false);
-  const [sigCheckErrors, setSigCheckErrors] = useState<{ name: string; msg: string }[]>([]);
+  const [sigCheckErrors, setSigCheckErrors] = useState<Record<string, string>>({});
+  const [sigCheckWarnings, setSigCheckWarnings] = useState<Record<string, string>>({});
 
   async function handleCheckAllSignatures() {
     const pending = leases.filter(l => l.docusign_envelope_id && l.signature_status !== "completed");
     if (!pending.length) return;
     setCheckingSignatures(true);
-    setSigCheckErrors([]);
+    setSigCheckErrors({});
+    setSigCheckWarnings({});
     const outcomes = await Promise.allSettled(pending.map(l => leasesApi.checkSignatureStatus(l.id)));
-    const errs: { name: string; msg: string }[] = [];
+    const errs: Record<string, string> = {};
+    const warns: Record<string, string> = {};
     outcomes.forEach((r, i) => {
       if (r.status === "fulfilled") {
         handleSave(r.value);
+        if (r.value.signature_warning) warns[pending[i].id] = r.value.signature_warning;
       } else {
         const msg = r.reason instanceof Error ? r.reason.message : String(r.reason);
-        errs.push({ name: pending[i].tenant?.full_name ?? pending[i].id, msg });
+        errs[pending[i].id] = msg;
       }
     });
     setSigCheckErrors(errs);
+    setSigCheckWarnings(warns);
     setCheckingSignatures(false);
   }
 
@@ -1837,19 +1878,8 @@ export default function LeasesPage() {
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
               </svg>
-              {checkingSignatures ? "Checking…" : "Check all signatures"}
+              {checkingSignatures ? "Checking…" : "Check all signature status"}
             </button>
-            {sigCheckErrors.length > 0 && (
-              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12px] space-y-1 max-w-xs text-left">
-                <p className="font-semibold text-red-600">DocuSign errors</p>
-                {sigCheckErrors.map((e, i) => (
-                  <div key={i}>
-                    <span className="font-medium text-red-700">{e.name}: </span>
-                    <span className="text-red-500 break-words">{e.msg}</span>
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
           <button onClick={() => setModal({ type: "templates" })}
             className="px-4 py-2 bg-white border border-slate-200 text-slate-700 text-sm font-medium rounded-xl hover:bg-slate-50 transition-colors flex items-center gap-1.5">
@@ -1973,7 +2003,7 @@ export default function LeasesPage() {
                     </td>
                     <td className="px-4 py-3">
                       <DocUploadCell lease={l} templates={pageTemplates} onUploaded={updated => handleSave(updated)} />
-                      <SignatureCell lease={l} onUpdated={updated => handleSave(updated)} />
+                      <SignatureCell lease={l} onUpdated={updated => handleSave(updated)} bulkError={sigCheckErrors[l.id]} bulkWarning={sigCheckWarnings[l.id]} />
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">

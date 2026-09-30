@@ -1357,6 +1357,7 @@ async def check_lease_signature_status(
     return out
 
 
+
 @router.post("/{lease_id}/resend-signature", response_model=LeaseOut)
 async def resend_lease_signature(
     lease_id: str,

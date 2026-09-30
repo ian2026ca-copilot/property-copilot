@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { unitsApi, type UnitDetailOut } from "@/lib/api";
+import { unitsApi, campaignsApi, type UnitDetailOut } from "@/lib/api";
 import { MOCK_MODE } from "@/lib/useApiData";
 import { CampaignModal } from "@/components/CampaignModal";
 
@@ -119,7 +119,7 @@ function LeadCard({ lead, onMove, onSelect, onCreateCampaign }: {
             onClick={() => onCreateCampaign(lead)}
             className="w-full py-1 text-[12px] font-medium text-violet-700 border border-violet-200 rounded hover:bg-violet-50 transition-colors"
           >
-            + Create new campaign
+            ✨ Market this unit
           </button>
         </div>
       )}
@@ -205,6 +205,8 @@ export default function VacancyPage() {
   const [loadingUnits, setLoadingUnits] = useState(!MOCK_MODE);
   const [campaignUnits, setCampaignUnits] = useState<UnitDetailOut[]>([]);
   const [campaignLead, setCampaignLead] = useState<Lead | null>(null);
+  const [bulkMarketing, setBulkMarketing] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState<{ unit: string; status: "pending" | "ok" | "error" }[]>([]);
 
   useEffect(() => {
     if (MOCK_MODE) return;
@@ -217,6 +219,28 @@ export default function VacancyPage() {
       .catch(() => {})
       .finally(() => setLoadingUnits(false));
   }, []);
+
+  async function marketAllAvailable() {
+    const availableLeads = leads.filter(l => l.stage === "Available" && l.avatar === "🏠");
+    if (availableLeads.length === 0) return;
+    setBulkMarketing(true);
+    setBulkProgress(availableLeads.map(l => ({ unit: `${l.property} · Unit ${l.unit}`, status: "pending" })));
+    for (let i = 0; i < availableLeads.length; i++) {
+      const lead = availableLeads[i];
+      try {
+        const ai = await campaignsApi.aiGenerate({ unit_id: lead.id, monthly_rent: lead.rent });
+        await campaignsApi.create({
+          unit_id: lead.id,
+          title: ai.title,
+          description: ai.description,
+          monthly_rent: ai.suggested_rent ?? lead.rent,
+        });
+        setBulkProgress(prev => prev.map((p, idx) => idx === i ? { ...p, status: "ok" } : p));
+      } catch {
+        setBulkProgress(prev => prev.map((p, idx) => idx === i ? { ...p, status: "error" } : p));
+      }
+    }
+  }
 
   const move = (id: string, dir: 1 | -1) => {
     setLeads(prev => prev.map(l => {
@@ -240,10 +264,38 @@ export default function VacancyPage() {
           campaign={null}
           units={campaignUnits}
           initialUnitId={campaignLead.id}
+          autoGenerate
           onClose={() => setCampaignLead(null)}
           onSave={() => { setCampaignLead(null); router.push("/marketing"); }}
           onPhotosChanged={() => {}}
         />
+      )}
+
+      {/* Bulk marketing progress modal */}
+      {bulkMarketing && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+            <h2 className="text-base font-bold text-slate-900">✨ Marketing all available units</h2>
+            <div className="space-y-2 max-h-60 overflow-y-auto">
+              {bulkProgress.map((p, i) => (
+                <div key={i} className="flex items-center gap-2.5 text-sm">
+                  {p.status === "pending" && <span className="w-4 h-4 border-2 border-slate-300 border-t-violet-500 rounded-full animate-spin shrink-0" />}
+                  {p.status === "ok" && <span className="text-emerald-500 shrink-0">✓</span>}
+                  {p.status === "error" && <span className="text-red-500 shrink-0">✕</span>}
+                  <span className={p.status === "error" ? "text-red-600" : "text-slate-700"}>{p.unit}</span>
+                </div>
+              ))}
+            </div>
+            {bulkProgress.every(p => p.status !== "pending") && (
+              <button
+                onClick={() => { setBulkMarketing(false); router.push("/marketing"); }}
+                className="w-full py-2 bg-black text-white text-sm font-medium rounded-lg hover:bg-slate-800 transition-colors"
+              >
+                View campaigns →
+              </button>
+            )}
+          </div>
+        </div>
       )}
 
       {/* Header */}
@@ -252,9 +304,19 @@ export default function VacancyPage() {
           <p className="text-[13px] uppercase tracking-widest text-slate-400 font-medium">Leasing</p>
           <h1 className="text-xl font-bold text-slate-900 mt-0.5">Vacancy pipeline</h1>
         </div>
-        <button className="px-3 py-1.5 bg-black text-white text-xs font-medium rounded-lg hover:bg-slate-800 transition-colors">
-          + Publish listing
-        </button>
+        <div className="flex items-center gap-2">
+          {leads.filter(l => l.stage === "Available" && l.avatar === "🏠").length > 0 && (
+            <button
+              onClick={marketAllAvailable}
+              className="px-3 py-1.5 bg-violet-600 text-white text-xs font-medium rounded-lg hover:bg-violet-700 transition-colors"
+            >
+              ✨ Market all available ({leads.filter(l => l.stage === "Available" && l.avatar === "🏠").length})
+            </button>
+          )}
+          <button className="px-3 py-1.5 bg-black text-white text-xs font-medium rounded-lg hover:bg-slate-800 transition-colors">
+            + Publish listing
+          </button>
+        </div>
       </div>
 
       {/* Summary chips */}
