@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { campaignsApi, imagesApi, type CampaignOut, type CampaignStatus, type UnitDetailOut, type ImageOut, type MarketingSiteOut } from "@/lib/api";
+import { campaignsApi, imagesApi, profileApi, type CampaignOut, type CampaignStatus, type UnitDetailOut, type ImageOut, type MarketingSiteOut } from "@/lib/api";
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
@@ -210,8 +210,25 @@ export function CampaignModal({
   }
 
   useEffect(() => {
-    if (autoGenerate && !campaign && form.unit_id) {
-      handleAiGenerate();
+    if (!campaign) {
+      profileApi.me().then(user => {
+        const contactOverrides = {
+          contact_name: user.full_name || "",
+          contact_phone: user.phone || "",
+          contact_email: user.email || "",
+        };
+        setForm(f => ({
+          ...f,
+          contact_name: f.contact_name || contactOverrides.contact_name,
+          contact_phone: f.contact_phone || contactOverrides.contact_phone,
+          contact_email: f.contact_email || contactOverrides.contact_email,
+        }));
+        if (autoGenerate && form.unit_id) {
+          handleAiGenerate(contactOverrides);
+        }
+      }).catch(() => {
+        if (autoGenerate && form.unit_id) handleAiGenerate();
+      });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -331,7 +348,7 @@ export function CampaignModal({
 
   function set(k: string, v: string) { setForm(f => ({ ...f, [k]: v })); }
 
-  async function handleAiGenerate() {
+  async function handleAiGenerate(overrides?: { contact_name?: string; contact_phone?: string; contact_email?: string }) {
     setGenerating(true); setAiError("");
     try {
       const result = await campaignsApi.aiGenerate({
@@ -339,9 +356,9 @@ export function CampaignModal({
         extra_instructions: aiInstructions || undefined,
         monthly_rent: form.monthly_rent ? Number(form.monthly_rent) : undefined,
         available_from: form.available_from || undefined,
-        contact_name: form.contact_name || undefined,
-        contact_phone: form.contact_phone || undefined,
-        contact_email: form.contact_email || undefined,
+        contact_name: overrides?.contact_name || form.contact_name || undefined,
+        contact_phone: overrides?.contact_phone || form.contact_phone || undefined,
+        contact_email: overrides?.contact_email || form.contact_email || undefined,
         existing_photo_filenames: campaign ? existingPhotos.map(url => url.split("/").pop()!) : undefined,
         files: !campaign ? photos.map(p => p.file) : undefined,
       });
@@ -743,7 +760,7 @@ export function CampaignModal({
                     className="px-3 py-1.5 text-xs text-slate-500 hover:text-slate-700">
                     Cancel
                   </button>
-                  <button type="button" onClick={handleAiGenerate} disabled={generating}
+                  <button type="button" onClick={() => handleAiGenerate()} disabled={generating}
                     className="ml-auto px-3 py-1.5 bg-violet-600 text-white rounded-lg text-xs font-medium hover:bg-violet-700 disabled:opacity-50">
                     {generating ? "Generating…" : "✨ Generate"}
                   </button>

@@ -2,11 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { unitsApi, campaignsApi, type UnitDetailOut } from "@/lib/api";
+import { unitsApi, campaignsApi, type UnitDetailOut, type CampaignOut } from "@/lib/api";
 import { MOCK_MODE } from "@/lib/useApiData";
 import { CampaignModal } from "@/components/CampaignModal";
 
-type Stage = "Available" | "Showing" | "Applied" | "Approved" | "Leased";
+type Stage = "Available" | "Marketing" | "Showing" | "Applied" | "Approved" | "Leased";
 
 interface Lead {
   id: string;
@@ -48,14 +48,15 @@ function unitToLead(u: UnitDetailOut): Lead {
   };
 }
 
-const STAGES: Stage[] = ["Available", "Showing", "Applied", "Approved", "Leased"];
+const STAGES: Stage[] = ["Available", "Marketing", "Showing", "Applied", "Approved", "Leased"];
 
 const STAGE_STYLES: Record<Stage, { bg: string; border: string; dot: string; count: string }> = {
-  Available:  { bg: "bg-slate-50",    border: "border-slate-200", dot: "bg-slate-400",   count: "bg-slate-100 text-slate-600" },
-  Showing:    { bg: "bg-blue-50",     border: "border-blue-200",  dot: "bg-blue-400",    count: "bg-blue-100 text-blue-700" },
-  Applied:    { bg: "bg-violet-50",   border: "border-violet-200",dot: "bg-violet-400",  count: "bg-violet-100 text-violet-700" },
-  Approved:   { bg: "bg-amber-50",    border: "border-amber-200", dot: "bg-amber-400",   count: "bg-amber-100 text-amber-700" },
-  Leased:     { bg: "bg-emerald-50",  border: "border-emerald-200",dot:"bg-emerald-500", count: "bg-emerald-100 text-emerald-700" },
+  Available:  { bg: "bg-slate-50",    border: "border-slate-200",  dot: "bg-slate-400",   count: "bg-slate-100 text-slate-600" },
+  Marketing:  { bg: "bg-purple-50",   border: "border-purple-200", dot: "bg-purple-400",  count: "bg-purple-100 text-purple-700" },
+  Showing:    { bg: "bg-blue-50",     border: "border-blue-200",   dot: "bg-blue-400",    count: "bg-blue-100 text-blue-700" },
+  Applied:    { bg: "bg-violet-50",   border: "border-violet-200", dot: "bg-violet-400",  count: "bg-violet-100 text-violet-700" },
+  Approved:   { bg: "bg-amber-50",    border: "border-amber-200",  dot: "bg-amber-400",   count: "bg-amber-100 text-amber-700" },
+  Leased:     { bg: "bg-emerald-50",  border: "border-emerald-200",dot: "bg-emerald-500", count: "bg-emerald-100 text-emerald-700" },
 };
 
 const initialLeads: Lead[] = [
@@ -72,15 +73,17 @@ function ScoreBadge({ score }: { score: number }) {
   return <span className={`text-[12px] font-bold px-1.5 py-0.5 rounded ${color}`}>{score}</span>;
 }
 
-function LeadCard({ lead, onMove, onSelect, onCreateCampaign }: {
+function LeadCard({ lead, onMove, onSelect, onCreateCampaign, onEditCampaign }: {
   lead: Lead;
   onMove: (id: string, dir: 1 | -1) => void;
   onSelect: (l: Lead) => void;
   onCreateCampaign: (l: Lead) => void;
+  onEditCampaign: (l: Lead) => void;
 }) {
   const isUnit = lead.avatar === "🏠";
   const stageIdx = STAGES.indexOf(lead.stage);
-  const canCreateCampaign = lead.stage === "Available" || lead.stage === "Showing";
+  const canCreateCampaign = lead.stage === "Available";
+  const isMarketing = lead.stage === "Marketing";
 
   return (
     <div
@@ -120,6 +123,16 @@ function LeadCard({ lead, onMove, onSelect, onCreateCampaign }: {
             className="w-full py-1 text-[12px] font-medium text-violet-700 border border-violet-200 rounded hover:bg-violet-50 transition-colors"
           >
             ✨ Market this unit
+          </button>
+        </div>
+      )}
+      {isMarketing && (
+        <div className="mt-2.5" onClick={e => e.stopPropagation()}>
+          <button
+            onClick={() => onEditCampaign(lead)}
+            className="w-full py-1 text-[12px] font-medium text-purple-700 border border-purple-200 rounded hover:bg-purple-50 transition-colors"
+          >
+            ✨ Campaign active — Edit
           </button>
         </div>
       )}
@@ -205,15 +218,25 @@ export default function VacancyPage() {
   const [loadingUnits, setLoadingUnits] = useState(!MOCK_MODE);
   const [campaignUnits, setCampaignUnits] = useState<UnitDetailOut[]>([]);
   const [campaignLead, setCampaignLead] = useState<Lead | null>(null);
+  const [editingCampaign, setEditingCampaign] = useState<CampaignOut | null>(null);
+  const [unitCampaigns, setUnitCampaigns] = useState<Record<string, CampaignOut>>({});
   const [bulkMarketing, setBulkMarketing] = useState(false);
   const [bulkProgress, setBulkProgress] = useState<{ unit: string; status: "pending" | "ok" | "error" }[]>([]);
 
   useEffect(() => {
     if (MOCK_MODE) return;
-    unitsApi.listAll()
-      .then(units => {
+    Promise.all([unitsApi.listAll(), campaignsApi.list().catch(() => [])])
+      .then(([units, campaigns]) => {
         setCampaignUnits(units);
-        const vacant = units.filter(u => u.status === "VACANT").map(unitToLead);
+        const activeCampaigns = campaigns.filter(c => c.status === "PUBLISHED" || c.status === "DRAFT");
+        const campaignMap: Record<string, CampaignOut> = {};
+        activeCampaigns.forEach(c => { if (c.unit_id) campaignMap[c.unit_id] = c; });
+        setUnitCampaigns(campaignMap);
+        const activeCampaignUnitIds = new Set(Object.keys(campaignMap));
+        const vacant = units.filter(u => u.status === "VACANT").map(u => ({
+          ...unitToLead(u),
+          stage: activeCampaignUnitIds.has(u.id) ? "Marketing" as const : "Available" as const,
+        }));
         setLeads(prev => [...vacant, ...prev]);
       })
       .catch(() => {})
@@ -236,6 +259,7 @@ export default function VacancyPage() {
           monthly_rent: ai.suggested_rent ?? lead.rent,
         });
         setBulkProgress(prev => prev.map((p, idx) => idx === i ? { ...p, status: "ok" } : p));
+        setLeads(prev => prev.map(l => l.id === lead.id ? { ...l, stage: "Marketing" } : l));
       } catch {
         setBulkProgress(prev => prev.map((p, idx) => idx === i ? { ...p, status: "error" } : p));
       }
@@ -259,6 +283,25 @@ export default function VacancyPage() {
   return (
     <div className="max-w-[1280px] mx-auto px-6 py-6 space-y-6">
       {selected && <LeadDrawer lead={selected} onClose={() => setSelected(null)} />}
+      {editingCampaign && (
+        <CampaignModal
+          campaign={editingCampaign}
+          units={campaignUnits}
+          onClose={() => setEditingCampaign(null)}
+          onSave={updated => {
+            setUnitCampaigns(prev => updated.unit_id ? { ...prev, [updated.unit_id]: updated } : prev);
+            setEditingCampaign(null);
+          }}
+          onPhotosChanged={updated => setUnitCampaigns(prev => updated.unit_id ? { ...prev, [updated.unit_id]: updated } : prev)}
+          onDelete={() => {
+            if (editingCampaign.unit_id) {
+              setUnitCampaigns(prev => { const next = { ...prev }; delete next[editingCampaign.unit_id!]; return next; });
+              setLeads(prev => prev.map(l => l.id === editingCampaign.unit_id ? { ...l, stage: "Available" } : l));
+            }
+            setEditingCampaign(null);
+          }}
+        />
+      )}
       {campaignLead && (
         <CampaignModal
           campaign={null}
@@ -266,7 +309,10 @@ export default function VacancyPage() {
           initialUnitId={campaignLead.id}
           autoGenerate
           onClose={() => setCampaignLead(null)}
-          onSave={() => { setCampaignLead(null); router.push("/marketing"); }}
+          onSave={() => {
+            if (campaignLead) setLeads(prev => prev.map(l => l.id === campaignLead.id ? { ...l, stage: "Marketing" } : l));
+            setCampaignLead(null);
+          }}
           onPhotosChanged={() => {}}
         />
       )}
@@ -334,7 +380,7 @@ export default function VacancyPage() {
       </div>
 
       {/* Kanban board */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
         {STAGES.map(stage => {
           const s = STAGE_STYLES[stage];
           const cards = byStage(stage);
@@ -352,7 +398,7 @@ export default function VacancyPage() {
               {/* Cards */}
               <div className="flex flex-col gap-2 flex-1">
                 {cards.map(lead => (
-                  <LeadCard key={lead.id} lead={lead} onMove={move} onSelect={setSelected} onCreateCampaign={setCampaignLead} />
+                  <LeadCard key={lead.id} lead={lead} onMove={move} onSelect={setSelected} onCreateCampaign={setCampaignLead} onEditCampaign={l => setEditingCampaign(unitCampaigns[l.id] ?? null)} />
                 ))}
                 {cards.length === 0 && stage === "Available" && loadingUnits && (
                   <div className="flex-1 flex items-center justify-center">

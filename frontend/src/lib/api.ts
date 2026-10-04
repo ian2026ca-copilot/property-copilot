@@ -1,4 +1,4 @@
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1";
+﻿const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1";
 export const UPLOADS_BASE = BASE_URL.replace("/api/v1", "");
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -397,14 +397,9 @@ export const leasesApi = {
   deleteDocument: (leaseId: string) => api.delete<void>(`/leases/${leaseId}/document`),
   listTemplates: () => api.get<LeaseTemplateOut[]>("/leases/templates"),
   aiGenerateTemplate: (params: { province: string; lease_type: string; property_type: string; bedrooms: string; notes: string }) => {
-    const token = typeof document !== "undefined"
-      ? (document.cookie.match(/(?:^|; )token=([^;]*)/) || [])[1]
-      : null;
-    const headers: Record<string, string> = {};
-    if (token) headers["Authorization"] = `Bearer ${decodeURIComponent(token)}`;
     const body = new FormData();
     Object.entries(params).forEach(([k, v]) => body.append(k, v));
-    return fetch(`${BASE_URL}/leases/templates/ai-generate`, { method: "POST", headers, body })
+    return fetch(`${BASE_URL}/leases/templates/ai-generate`, { method: "POST", body, credentials: "include" })
       .then(async r => {
         if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.detail ?? "Generation failed"); }
         return r.json() as Promise<LeaseTemplateOut>;
@@ -413,16 +408,11 @@ export const leasesApi = {
   deleteTemplate: (id: string) => api.delete<void>(`/leases/templates/${id}`),
   activateTemplate: (id: string) => api.post<LeaseTemplateOut[]>(`/leases/templates/${id}/activate`, {}),
   uploadTemplate: (name: string, description: string, file: File) => {
-    const token = typeof document !== "undefined"
-      ? (document.cookie.match(/(?:^|; )token=([^;]*)/) || [])[1]
-      : null;
-    const headers: Record<string, string> = {};
-    if (token) headers["Authorization"] = `Bearer ${decodeURIComponent(token)}`;
     const body = new FormData();
     body.append("file", file);
     body.append("name", name);
     body.append("description", description);
-    return fetch(`${BASE_URL}/leases/templates`, { method: "POST", headers, body })
+    return fetch(`${BASE_URL}/leases/templates`, { method: "POST", body, credentials: "include" })
       .then(async r => {
         if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.detail ?? "Upload failed"); }
         return r.json() as Promise<LeaseTemplateOut>;
@@ -463,14 +453,9 @@ export const leasesApi = {
     use_own_account?: boolean;
   }) => api.patch<DocuSignConfigOut>("/leases/docusign/config", body),
   uploadDocument: (leaseId: string, file: File) => {
-    const token = typeof document !== "undefined"
-      ? (document.cookie.match(/(?:^|; )token=([^;]*)/) || [])[1]
-      : null;
-    const headers: Record<string, string> = {};
-    if (token) headers["Authorization"] = `Bearer ${decodeURIComponent(token)}`;
     const body = new FormData();
     body.append("file", file);
-    return fetch(`${BASE_URL}/leases/${leaseId}/document`, { method: "POST", headers, body })
+    return fetch(`${BASE_URL}/leases/${leaseId}/document`, { method: "POST", body, credentials: "include" })
       .then(async (r) => {
         if (!r.ok) {
           const err = await r.json().catch(() => ({ detail: r.statusText }));
@@ -671,14 +656,9 @@ export const tenantsApi = {
   deleteDocument: (tenantUserId: string, docId: string) =>
     api.delete<void>(`/tenants/${tenantUserId}/documents/${docId}`),
   uploadAvatar: (tenantUserId: string, file: File) => {
-    const token = typeof document !== "undefined"
-      ? (document.cookie.match(/(?:^|; )token=([^;]*)/) || [])[1]
-      : null;
-    const headers: Record<string, string> = {};
-    if (token) headers["Authorization"] = `Bearer ${decodeURIComponent(token)}`;
     const body = new FormData();
     body.append("file", file);
-    return fetch(`${BASE_URL}/tenants/${tenantUserId}/avatar`, { method: "POST", headers, body })
+    return fetch(`${BASE_URL}/tenants/${tenantUserId}/avatar`, { method: "POST", body, credentials: "include" })
       .then(async (r) => {
         if (!r.ok) {
           const err = await r.json().catch(() => ({ detail: r.statusText }));
@@ -689,16 +669,11 @@ export const tenantsApi = {
   },
   deleteAvatar: (tenantUserId: string) => api.delete<void>(`/tenants/${tenantUserId}/avatar`),
   uploadDocument: (tenantUserId: string, docType: string, file: File) => {
-    const token = typeof document !== "undefined"
-      ? (document.cookie.match(/(?:^|; )token=([^;]*)/) || [])[1]
-      : null;
-    const headers: Record<string, string> = {};
-    if (token) headers["Authorization"] = `Bearer ${decodeURIComponent(token)}`;
     const body = new FormData();
     body.append("file", file);
     return fetch(
       `${BASE_URL}/tenants/${tenantUserId}/documents?doc_type=${docType}`,
-      { method: "POST", headers, body }
+      { method: "POST", body, credentials: "include" }
     ).then(async (r) => {
       if (!r.ok) {
         const err = await r.json().catch(() => ({ detail: r.statusText }));
@@ -708,16 +683,11 @@ export const tenantsApi = {
     });
   },
   uploadMyDocument: (docType: string, file: File) => {
-    const token = typeof document !== "undefined"
-      ? (document.cookie.match(/(?:^|; )token=([^;]*)/) || [])[1]
-      : null;
-    const headers: Record<string, string> = {};
-    if (token) headers["Authorization"] = `Bearer ${decodeURIComponent(token)}`;
     const body = new FormData();
     body.append("file", file);
     return fetch(
       `${BASE_URL}/tenants/me/documents?doc_type=${docType}`,
-      { method: "POST", headers, body }
+      { method: "POST", body, credentials: "include" }
     ).then(async (r) => {
       if (!r.ok) {
         const err = await r.json().catch(() => ({ detail: r.statusText }));
@@ -788,13 +758,9 @@ export const maintenanceApi = {
   schedule: (id: string, body: object) => api.put<MaintenanceOut>(`/maintenance/${id}/schedule`, body),
   remove: (id: string) => api.delete<void>(`/maintenance/${id}`),
   uploadAttachment: (id: string, file: File) => {
-    const token = typeof document !== "undefined"
-      ? (document.cookie.match(/(?:^|; )token=([^;]*)/) || [])[1] : null;
-    const headers: Record<string, string> = {};
-    if (token) headers["Authorization"] = `Bearer ${decodeURIComponent(token)}`;
     const body = new FormData();
     body.append("file", file);
-    return fetch(`${BASE_URL}/maintenance/${id}/attachments`, { method: "POST", headers, body })
+    return fetch(`${BASE_URL}/maintenance/${id}/attachments`, { method: "POST", body, credentials: "include" })
       .then(async r => {
         if (!r.ok) { const e = await r.json().catch(() => ({ detail: r.statusText })); throw new Error(e.detail); }
         return r.json() as Promise<MaintenanceOut>;
@@ -977,16 +943,12 @@ export const campaignsApi = {
     contact_name?: string; contact_phone?: string; contact_email?: string;
     existing_photo_filenames?: string[]; files?: File[];
   }) => {
-    const token = typeof document !== "undefined"
-      ? (document.cookie.match(/(?:^|; )token=([^;]*)/) || [])[1] : null;
-    const headers: Record<string, string> = {};
-    if (token) headers["Authorization"] = `Bearer ${decodeURIComponent(token)}`;
     const body = new FormData();
     const { existing_photo_filenames, files, ...fields } = params;
     Object.entries(fields).forEach(([k, v]) => { if (v !== undefined) body.append(k, String(v)); });
     if (existing_photo_filenames?.length) body.append("existing_photo_filenames", existing_photo_filenames.join(","));
     files?.forEach(f => body.append("files", f));
-    return fetch(`${BASE_URL}/campaigns/ai-generate`, { method: "POST", headers, body })
+    return fetch(`${BASE_URL}/campaigns/ai-generate`, { method: "POST", body, credentials: "include" })
       .then(async r => {
         if (!r.ok) { const e = await r.json().catch(() => ({ detail: r.statusText })); throw new Error(e.detail); }
         return r.json() as Promise<CampaignAIGenerateOut>;
@@ -997,13 +959,9 @@ export const campaignsApi = {
   publish: (id: string) => api.post<CampaignOut>(`/campaigns/${id}/publish`, {}),
   archive: (id: string) => api.post<CampaignOut>(`/campaigns/${id}/archive`, {}),
   uploadPhoto: (id: string, file: File) => {
-    const token = typeof document !== "undefined"
-      ? (document.cookie.match(/(?:^|; )token=([^;]*)/) || [])[1] : null;
-    const headers: Record<string, string> = {};
-    if (token) headers["Authorization"] = `Bearer ${decodeURIComponent(token)}`;
     const body = new FormData();
     body.append("file", file);
-    return fetch(`${BASE_URL}/campaigns/${id}/photos`, { method: "POST", headers, body })
+    return fetch(`${BASE_URL}/campaigns/${id}/photos`, { method: "POST", body, credentials: "include" })
       .then(async r => {
         if (!r.ok) { const e = await r.json().catch(() => ({ detail: r.statusText })); throw new Error(e.detail); }
         return r.json() as Promise<CampaignOut>;
